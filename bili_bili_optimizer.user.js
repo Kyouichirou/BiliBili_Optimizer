@@ -17,6 +17,7 @@
 // @grant        GM_notification
 // @grant        window.onurlchange
 // @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // @grant        GM_addValueChangeListener
 // @noframes
 // @run-at       document-start
@@ -716,10 +717,7 @@
          * 判断视频是否为合集
          * @returns {boolean}
          */
-        get #check_is_collection() {
-            const h = document.getElementsByTagName('h3');
-            return h.length > 0 && h[0].innerText === '视频选集';
-        }
+        get #check_is_collection() { return document.getElementsByTagName('h3')[0]?.innerText === '视频选集' || false; }
         /**
          * 获取视频元素
          * @returns {HTMLElement | null}
@@ -765,6 +763,42 @@
             this.#video_speed += (mode ? 0.5 : -0.5);
             if (0 < this.#video_speed < 5) this.#video.playbackRate = this.#video_speed, this.#is_first = this.#video_speed < 2;
         }
+        #auto_light = {
+            _light_off: false,
+            _mode: GM_getValue('auto_light') || 0,
+            _names: ['auto_light_off', 'always_light_off', 'disable_light_off'],
+            _mid: null,
+            _create_menus() { this._mid = GM_registerMenuCommand(this._names[this._mode === 2 ? 0 : this._mode + 1], this._func.bind(this)); },
+            _func() {
+                this._mid && GM_unregisterMenuCommand(this._mid);
+                this._mode === 2 ? (this._mode = 0) : ++this._mode;
+                if (this._mode !== 0) this._light_off = this._mode === 1;
+                GM_setValue('auto_light', this._mode);
+                this._create_menus();
+            },
+            _monitor: () => {
+                let tmp = null;
+                Object.defineProperty(this.#auto_light, '_light_off', {
+                    set: (val) => {
+                        tmp = val;
+                        this.light_control(val ? 1 : 2);
+                    },
+                    get: () => tmp
+                });
+            },
+            main() {
+                let flag = false;
+                if (this._mode === 0) {
+                    const date = new Date();
+                    const m = date.getMonth() + 1;
+                    const h = date.getHours();
+                    flag = h > (m > 8 ? 16 : 17);
+                } else if (this._mode === 1) flag = true;
+                this._create_menus();
+                this._monitor();
+                return flag;
+            }
+        };
         // 速度控制, 菜单函数
         #regist_menus_command() { [['speedup', true], ['slow', false]].forEach(e => GM_registerMenuCommand(e[0], this.#speed_control.bind(this, e[1]))); }
         // 访问视频记录
@@ -947,7 +981,8 @@
                         this.#visited_record();
                     }, 500);
                 });
-            } else Colorful_Console.main('browser do not support urlchange event', 'warning');
+                return true;
+            } else Colorful_Console.main('browser does not support urlchange event, please update browser', 'warning', true);
         }
         /**
          * 声音控制
@@ -960,7 +995,12 @@
         // 播放控制
         play_control() { this.#video.paused ? this.#video.play() : this.#video.pause(); }
         // 灯光控制
-        light_control() {
+        light_control(mode = 0) {
+            if (mode > 0) {
+                const i = document.getElementsByClassName('bpx-docker bpx-docker-major bpx-state-light-off').length;
+                if (mode === 1 && i > 0) return;
+                else if (mode === 2 && i === 0) return;
+            }
             const nodes = document.getElementsByClassName('bui-checkbox-input');
             for (const node of nodes) {
                 if (node.ariaLabel === '关灯模式') {
@@ -969,22 +1009,23 @@
                 }
             }
         }
+        wide_screen() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-web'); }
+        #click_target(classname) { document.getElementsByClassName(classname)[0]?.click(); }
         // 影院宽屏模式
-        theatre_mode() {
-            const nodes = document.getElementsByClassName('bpx-player-ctrl-btn bpx-player-ctrl-wide');
-            nodes.length > 0 && nodes[0].click();
-        }
+        theatre_mode() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-wide'); }
         constructor() {
             this.#video = this.#video_elemment;
             if (this.#video) this.#init_flag = true;
         }
         main() {
             this.#load_video_info();
-            this.#add_video_rate_element();
-            this.#create_video_event();
-            this.#url_change_monitor();
-            this.#regist_menus_command();
-            this.#visited_record();
+            if (this.#url_change_monitor()) {
+                this.#add_video_rate_element();
+                this.#create_video_event();
+                this.#regist_menus_command();
+                this.#auto_light.main() && setTimeout(() => this.light_control(1), 300);
+                this.#visited_record();
+            }
         }
     }
     // 视频控制模块 ---------
@@ -1391,7 +1432,8 @@
                     video_page
                     p = play / pause, 判断是否播放, 反向操作
                     l = light on / off, 灯控制
-                    t = theatre
+                    t = theatre, 影院模式
+                    u = 宽屏
                     +, 声音 +
                     -, 声音 -
 
@@ -1430,6 +1472,7 @@
                     p: () => this.#video_instance.play_control(),
                     l: () => this.#video_instance.light_control(),
                     t: () => this.#video_instance.theatre_mode(),
+                    u: () => this.#video_instance.wide_screen(),
                     '=': () => this.#video_instance.voice_control(true),
                     '-': () => this.#video_instance.voice_control(false),
                     main(key) { this[key]?.(); }
