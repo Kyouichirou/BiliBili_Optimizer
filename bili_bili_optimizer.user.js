@@ -52,9 +52,9 @@
         // up uid, up的长度范围很广从1位数到16位数
         _up_id_reg: /(?<=com\/)\d+/,
         /**
-         *
-         * @param {RegExp} reg
-         * @param {string} href
+         * 
+         * @param {RegExp} reg 
+         * @param {string} href 
          * @returns {string}
          */
         _match(reg, href) {
@@ -94,8 +94,8 @@
             this.#id_name = id_name;
         }
         /**
-         *
-         * @param {string} id
+         * 
+         * @param {string} id 
          * @returns {boolean}
          */
         includes_r(id, mode = false) {
@@ -115,7 +115,7 @@
             return mode ? target : f;
         }
         /**
-         *
+         * 
          * @param {string} id
          * @returns {boolean}
          */
@@ -126,8 +126,8 @@
             return index > -1 && (super.splice(index, 1), true);
         }
         /**
-         *
-         * @param {object} info
+         * 
+         * @param {object} info 
          */
         update_active_status(info) {
             const id = info.id;
@@ -153,7 +153,7 @@
             limit > 999 ? this.#limit = limit : null;
         }
         /**
-         *
+         * 
          * @param {string} id
          */
         push(id) {
@@ -445,7 +445,43 @@
                 '\u6bd5\u4e1a\u5b63',
                 'cctv',
                 '\u9ec4\u6653\u660e'
-            ]
+            ],
+            /**
+             * 
+             * @param {Array} data 
+             */
+            add(data) {
+                const a = this._get_data();
+                if (a) {
+                    const t = [...new Set([...a, ...data])];
+                    let i = t.length;
+                    if (i !== a.length) {
+                        while (i > 1000) t.pop(), --i;
+                        this._write_data(t);
+                    }
+                } else this._write_data(data);
+                this.a = [...new Set([...this.a, ...data])];
+                // 注意这里, 需要重新添加函数
+                this.a.includes_r = includes_r;
+            },
+            /**
+             * 
+             * @param {Array} data 
+             */
+            remove(data) {
+                this.a = this.a.filter(e => !data.includes(e));
+                const arr = this._get_data();
+                if (arr) {
+                    const t = arr.filter(e => !data.includes(e));
+                    t.length !== arr.length && this._write_data(t);
+                }
+            },
+            _write_data(data) { GM_setValue('black_keys', data), Colorful_Console.main('update black keys'); },
+            _get_data() { return GM_getValue('black_keys'); },
+            _main() {
+                const c = this._get_data();
+                c && c.forEach(e => this.a.push(e));
+            }
         },
         // 手动拉黑的up, 重要数据, 结构 [{}], 跨标签通信
         block_ups: null,
@@ -599,6 +635,7 @@
         },
         data_init(site_id) {
             // 全局启用, 关键词过滤
+            this.black_keys._main();
             this.black_keys.a.includes_r = includes_r, this.black_keys.b.includes_r = includes_r;
             if (site_id > 2) return;
             // 这个除了space页面全部启用
@@ -654,8 +691,8 @@
              */
             get _data() { return Dynamic_Variants_Manager.init_rate_videos(); },
             /**
-             *
-             * @param {string} video_id
+             * 
+             * @param {string} video_id 
              * @returns {number}
              */
             check_video_rate(video_id) { return this._data.check_rate(video_id, false); },
@@ -674,7 +711,7 @@
         },
         /**
          * 历史访问, 只有添加, 没有删除
-         * @param {string} video_id
+         * @param {string} video_id 
          */
         add_visited_video(video_id) {
             const arr = Dynamic_Variants_Manager.init_visited_videos();
@@ -982,7 +1019,7 @@
                     }, 500);
                 });
                 return true;
-            } else Colorful_Console.main('browser does not support urlchange event, please update browser', 'warning', true);
+            } else Colorful_Console.main('browser does not support url_change event, please update browser', 'warning', true);
         }
         /**
          * 声音控制
@@ -1157,7 +1194,7 @@
         #utilities_module = {
             /**
              * 获取节点的up, video的信息
-             * @param {HTMLElement} node
+             * @param {HTMLElement} node 
              * @returns {object}
              */
             get_up_video_info: (node) => {
@@ -1186,7 +1223,7 @@
             },
             /**
              * 将拦截对象的数据设置为空
-             * @param {object} data
+             * @param {object} data 
              */
             clear_data(data) {
                 for (const key in data) {
@@ -1216,7 +1253,7 @@
                     apply(...args) {
                         if (args.length === 3) {
                             const b = args[2][2];
-                            if (b && ['/?vd_source=', '?spm_id_from'].some(e => b.includes(e))) return;
+                            if (b && ['vd_source=', 'spm_id_from'].some(e => b.includes(e))) return;
                         }
                         Reflect.apply(...args);
                     }
@@ -1230,7 +1267,10 @@
                             const a = args[2];
                             const i = a.length - 1;
                             const b = a[i];
-                            b && (a[i] = b.split('?spm_id_from')[0]);
+                            if (b) {
+                                const t = b.split('spm_id_from')[0];
+                                a[i] = t.endsWith('&') || t.endsWith('?') ? t.slice(0, -1) : t;
+                            }
                         }
                         Reflect.apply(...args);
                     }
@@ -1249,9 +1289,14 @@
             _search_box_clear() {
                 this.__proxy(unsafeWindow, 'open', {
                     apply(...args) {
-                        const url = args[2][0].split('&')[0];
-                        if (Dynamic_Variants_Manager.key_check(decodeURIComponent(url))) Colorful_Console.main('search content contain black key', 'warning', true);
-                        else args[2][0] = url, Reflect.apply(...args);
+                        const url = args[2]?.[0]?.split('&')[0] || '';
+                        if (url) {
+                            if (Dynamic_Variants_Manager.key_check(decodeURIComponent(url))) {
+                                Colorful_Console.main('search content contain black key', 'warning', true);
+                                return;
+                            } else args[2][0] = url;
+                        }
+                        Reflect.apply(...args);
                     }
                 });
             },
@@ -1262,15 +1307,12 @@
                         const [url, config] = args;
                         const response = await fetch(url, config);
                         const hfu = this.#configs.handle_fetch_url(url);
-                        if (hfu) {
-                            // response, 只允许访问一次, clone一份, 在复制上进行操作, 拦截json函数
-                            const json = () => response.clone().json().then((data) => {
-                                const results = hfu(data), hdf = this.#configs.handle_data_func;
-                                results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.main('url no match rule: ' + url, 'debug');
-                                return data;
-                            });
-                            response.json = json;
-                        }
+                        // response, 只允许访问一次, clone一份, 在复制上进行操作, 拦截json函数
+                        if (hfu) response.json = () => response.clone().json().then((data) => {
+                            const results = hfu(data), hdf = this.#configs.handle_data_func;
+                            results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.main('url no match rule: ' + url, 'debug');
+                            return data;
+                        });
                         return response;
                     };
                     return func;
@@ -1286,8 +1328,8 @@
                 });
             },
             /**
-             *
-             * @param {number} id
+             * 
+             * @param {number} id 
              * @returns {Array}
              */
             get_funcs(id) {
@@ -1436,7 +1478,7 @@
                     u = 宽屏
                     +, 声音 +
                     -, 声音 -
-
+    
                     f = fullscreen // 原生
                     m = mute // 原生
                 */
@@ -1477,6 +1519,33 @@
                     '-': () => this.#video_instance.voice_control(false),
                     main(key) { this[key]?.(); }
                 };
+                const manage_black_key = {
+                    _func: (data) => {
+                        const nodes = document.getElementsByClassName(this.#configs.target_class);
+                        for (const node of nodes) {
+                            const info = this.#utilities_module.get_up_video_info(node);
+                            if (info) {
+                                const { video_title, up_name } = info;
+                                data.some(e => video_title.includes(e) || up_name.includes(e)) && this.#configs.hide_node(node);
+                            }
+                        }
+                    },
+                    a: { title: 'add', mode: true },
+                    r: { title: 'remove', mode: false },
+                    main(key) {
+                        const c = this[key];
+                        if (c) {
+                            const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
+                            const s = prompt(title).trim();
+                            if (s) {
+                                const a = s.split(' ').map(e => e.trim()).filter(e => e);
+                                c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a);
+                            }
+                            return true;
+                        }
+                        return false;
+                    }
+                };
                 const text_tags = ["textarea", "input"];
                 document.addEventListener('keydown', (event) => {
                     if (event.shiftKey || event.ctrlKey) return;
@@ -1486,7 +1555,8 @@
                     const className = target.className || '';
                     if (className && className.includes("editor")) return;
                     const key = event.key;
-                    !search.main(key) && this.#video_module_init_flag && video_control.main(key);
+                    const id = this.#configs.id;
+                    search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && manage_black_key.main(key);
                 });
             },
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
@@ -1694,9 +1764,9 @@
                 }, 300);
             },
             /**
-             *
-             * @param {number} id
-             * @param {string} href
+             * 
+             * @param {number} id 
+             * @param {string} href 
              * @returns {Array}
              */
             get_funcs(id, href) {
