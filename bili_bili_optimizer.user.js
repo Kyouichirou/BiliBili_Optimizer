@@ -1,14 +1,18 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.0
+// @version      1.1
 // @description  control bilibili!
-// @author       HLA
+// @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico?v=1
+// @homepage     https://github.com/Kyouichirou/BiliBili_Optimizer
+// @updateURL
+// @downloadURL  https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
 // @match        https://t.bilibili.com/
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
+// @grant        GM_info
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -111,6 +115,7 @@
                 target.visited_times += 1;
                 Dynamic_Variants_Manager.rate_up_status_sync(id_name, id, now, target.visited_times);
                 id_name === 'up_id' && Dynamic_Variants_Manager.accumulative_func();
+                Colorful_Console.main(`block ${this.#id_name}: ${id}`);
             }
             return mode ? target : f;
         }
@@ -175,10 +180,17 @@
         }
     }
 
-    function includes_r(val) {
+    function includes_r(mode, id_name = 'video_id') {
         // 额外增加的数组函数, 用于在执行数据是否存在的时候, 同时记录下这次的操作
         // 不能使用箭头函数这里, 在为对象增加一个新的函数, 而需要this指向这个对象自身
-        return val && this.some(e => val.includes(e)) ? (Dynamic_Variants_Manager.accumulative_func(), true) : false;
+        const f = mode ? (val) => this.includes(val) && `block ${id_name}: ${val}` : (val) => {
+            const r = this.find(e => val.includes(e));
+            return r ? `block ${val}, target: ${r}` : false;
+        };
+        return (val) => {
+            const r = val && f(val);
+            return r ? (Colorful_Console.main(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
+        };
     }
     // 数据结构 ------------
 
@@ -462,7 +474,7 @@
                 } else this._write_data(data);
                 this.a = [...new Set([...this.a, ...data])];
                 // 注意这里, 需要重新添加函数
-                this.a.includes_r = includes_r;
+                this.a.includes_r = includes_r.call(this.a, false);
             },
             /**
              *
@@ -518,8 +530,7 @@
                 return true;
                 // 最后检查拦截视频
             } else if (this.block_videos.includes_r(video_id)) return true;
-            else if (this.cache_block_videos.includes_r(video_id)) return true;
-            return false;
+            return this.cache_block_videos.includes_r(video_id);
         },
         unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_setValue('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
         block_video(video_id) { this.block_videos.push(video_id), GM_setValue('block_videos', this.block_videos), this.up_video_sync('block', 'video', video_id), Colorful_Console.main('update block video info'); },
@@ -586,6 +597,7 @@
             setInterval(() => write_data(true), 5000);
         },
         up_video_data_sync_info: null,
+        // 数据同步监听
         _data_sync_monitor(site_id) {
             const configs = {
                 ccumulative_total: {
@@ -633,25 +645,48 @@
                 item.run_in.includes(site_id) && GM_addValueChangeListener(k, item.f.bind(this));
             }
         },
+        // 数据初始化
+        show_status: () => null,
         data_init(site_id) {
             // 全局启用, 关键词过滤
             this.black_keys._main();
-            this.black_keys.a.includes_r = includes_r, this.black_keys.b.includes_r = includes_r;
+            this.black_keys.a.includes_r = includes_r.call(this.black_keys.a, false), this.black_keys.b.includes_r = includes_r.call(this.black_keys.b, false);
             if (site_id > 2) return;
-            // 这个除了space页面全部启用
-            this.cache_block_ups = [], this.cache_block_ups.includes_r = includes_r;
-            this.cache_block_videos = [], this.cache_block_videos.includes_r = includes_r;
-            // 这个除了space页面全部启用
+            this.cache_block_ups = [], this.cache_block_ups.includes_r = includes_r.call(this.cache_block_ups, true, 'up_id');
+            this.cache_block_videos = [], this.cache_block_videos.includes_r = includes_r.call(this.cache_block_videos, true);
             this.block_ups = this.init_block_ups();
-            // 这个除了space页面全部启用
             this.block_videos = new Block_Video_Array(GM_getValue('block_videos') || [], 0);
             // 仅在搜索的页面启用, 播放页不需要
-            if (site_id === 2) {
-                this.rate_videos = this.init_rate_videos();
-                this.visited_videos = this.init_visited_videos();
-            }
+            if (site_id === 2) this.rate_videos = this.init_rate_videos(), this.visited_videos = this.init_visited_videos();
             this._data_sync_monitor(site_id);
             this._rate_up_status_write_monitor();
+            this.show_status = this._show_data_status;
+        },
+        _show_data_status() {
+            const s = 'bilibili_optimizer_detail:';
+            Colorful_Console.main(s);
+            const details = [];
+            details.push('-'.repeat((s.length + 4) * 2));
+            details.push('blocked: ' + this.accumulative_total + ';');
+            [
+                [this.block_ups, 'block_ups'],
+                [this.block_videos, 'block_videos'],
+                [this.black_keys.a, 'a_black_keys'],
+                [this.black_keys.b, 'b_black_keys']
+            ].forEach(e => details.push(e[1] + ': ' + e[0].length + ";"));
+            const i = GM_getValue('install_date') || 0;
+            i === 0 ? GM_setValue('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
+            const script = GM_info.script;
+            ['version', 'author', 'lastModified', 'homepage'].forEach(e => details.push(e + ': ' + script[e] + ';'));
+            details.push('-'.repeat((s.length + 4) * 2));
+            console.log(details.join('\n'));
+            const title = 'make thing better and simpler.';
+            const params = [
+                `%c ${title}`,
+                "padding: 1px; border-radius: 3px 0 0 3px; color: #00a1d6; font-family: Monotype Corsiva; font-size: 12px;",
+            ];
+            console.log(...params);
+            return true;
         }
     };
     // 动态数据管理 ---------
@@ -719,7 +754,7 @@
             arr.push(video_id);
             GM_setValue('visited_videos', arr);
             Dynamic_Variants_Manager.rate_visited_data_sync(video_id);
-            Colorful_Console.main('play record has been writed', 'debug');
+            Colorful_Console.main('play record has been writed');
         },
     };
     // 静态数据管理 ---------
@@ -1095,9 +1130,10 @@
                         up_id: data.owner?.mid || '',
                         up_name: data.owner?.name || '',
                         title: data.title
-                    };
+                    }; //
                     // 确保数据都是字符串类型
                     for (const k in info) info[k] = info[k] + '';
+                    if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
                 // 读取目标元素的视频标题和up的名称
@@ -1123,6 +1159,7 @@
                         title: data.title
                     };
                     for (const k in info) info[k] = info[k] + '';
+                    if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
                 get_title_up_name(node, info) { [['video_title', 'title'], ['up_name', 'name']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.innerText.trim() || '')); },
@@ -1144,6 +1181,7 @@
                         title: data.title
                     };
                     for (const k in info) info[k] = info[k] + '';
+                    if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     const r = Dynamic_Variants_Manager.completed_check(info);
                     if (r) this.#search_page_results.push(null);
                     else {
@@ -1168,7 +1206,11 @@
                     };
                     const b = (data) => (this.#search_page_results = [], data.data?.result);
                     const pref = this.#configs.api_prefix;
-                    const index = [['all/v2?__refresh__=true'], ['type?__refresh__=true', 'search_type=video']].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
+                    const index = [
+                        ['all/v2?__refresh__=true'],
+                        ['type?category_id=&search_type=video'],
+                        ['type?__refresh__=true', 'search_type=video']
+                    ].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
                     return index < 0 ? null : index === 0 ? a : b;
                 }
             },
@@ -1189,11 +1231,19 @@
                     'up_id': '',
                     'up_name': '',
                     'video_id': '',
-                    'video_title': ''
+                    'video_title': '',
+                    'is_video': true // 清除掉课堂的内容
                 };
                 for (const a of links) {
                     const href = a.href;
-                    if (!info.video_id) info.video_id = Base_Info_Match.get_video_id(href);
+                    if (!info.video_id) {
+                        if (href.includes('/cheese')) {
+                            Colorful_Console.main(`cheese clear: ${href}`);
+                            info.is_video = false;
+                            return info;
+                        }
+                        info.video_id = Base_Info_Match.get_video_id(href);
+                    }
                     else if (!info.up_id) info.up_id = Base_Info_Match.get_up_id(href);
                     else break;
                 }
@@ -1385,6 +1435,10 @@
                     display: none !important;
                 }`
             },
+            _search: {
+                run_in: [2],
+                css: '.activity-game-list.i_wrapper.search-all-list {display: none !important;}'
+            },
             inject_css(id) {
                 const arr = [];
                 for (const k in this) {
@@ -1412,6 +1466,7 @@
                             if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
                                 this.#configs.hide_node(p);
                                 const info = this.#utilities_module.get_up_video_info(p);
+                                if (!info.is_video) break;
                                 info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : Dynamic_Variants_Manager.cache_block_videos.push(info.video_id));
                             }
                             break;
@@ -1507,7 +1562,7 @@
                             const info = this.#utilities_module.get_up_video_info(node);
                             if (info) {
                                 const { video_title, up_name } = info;
-                                data.some(e => video_title.includes(e) || up_name.includes(e)) && this.#configs.hide_node(node);
+                                (!info.is_video || data.some(e => video_title.includes(e) || up_name.includes(e))) && this.#configs.hide_node(node);
                             }
                         }
                     },
@@ -1597,33 +1652,35 @@
             // 搜索页面
             _search_module: {
                 init: (href) => {
-                    // 搜索的初始化数据, 不管是哪个页面, 都加载这个数据, 这个数据来自于all
-                    // 只需要执行一次, 当重新访问第一页时, 会从api中获取数据, 而不是使用这个数据
-                    // 当访问all, 页面的数据是完整存储于html中
-                    if (!href.includes('com/all')) return;
+                    // B站页面改变, 非all首次访问的数据也被整合到html
+                    if (!['com/video', 'com/all'].some(e => href.includes(e))) return;
                     let init_data = null;
                     Object.defineProperty(unsafeWindow, '__pinia', {
                         set: (val) => {
                             // 记录, => 标签也写
                             this.#init_data = [];
-                            val?.index?.searchAllResponse?.result[11]?.data.forEach(e => {
-                                const info = {
-                                    up_id: e.mid,
-                                    up_name: e.author,
-                                    title: e.title,
-                                    video_id: e.bvid
-                                };
-                                for (const k in info) info[k] = info[k] + ''; // 确保所有的数据都是字符串
-                                if (Dynamic_Variants_Manager.completed_check(info)) {
-                                    this.#utilities_module.clear_data(e);
-                                    this.#init_data.push('hide');
-                                } else {
-                                    const v_r = { v: 0, r: 0 };
-                                    if (Dynamic_Variants_Manager.visited_videos.includes(info.video_id)) v_r.v = 1;
-                                    v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(info.video_id);
-                                    this.#init_data.push(((v_r.r !== 0 || v_r.v !== 0) ? v_r : null));
-                                }
-                            });
+                            if (val) {
+                                const { searchResponse, searchAllResponse } = val.index ? val.index : val;
+                                const data = (searchResponse || searchAllResponse)?.searchAllResponse?.result[11]?.data;
+                                data ? data.forEach(e => {
+                                    const info = {
+                                        up_id: e.mid,
+                                        up_name: e.author,
+                                        title: e.title,
+                                        video_id: e.bvid
+                                    };
+                                    for (const k in info) info[k] = info[k] + ''; // 确保所有的数据都是字符串
+                                    if ((!info.video_id && e.arcurl.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info)) {
+                                        this.#utilities_module.clear_data(e);
+                                        this.#init_data.push('hide');
+                                    } else {
+                                        const v_r = { v: 0, r: 0 };
+                                        if (Dynamic_Variants_Manager.visited_videos.includes(info.video_id)) v_r.v = 1;
+                                        v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(info.video_id);
+                                        this.#init_data.push(((v_r.r !== 0 || v_r.v !== 0) ? v_r : null));
+                                    }
+                                }) : Colorful_Console.main('init data info object api has changed', 'warning', true);
+                            }
                             if (this.#init_data.length === 0) this.#init_data = null;
                             init_data = val;
                         },
@@ -1631,8 +1688,8 @@
                     });
                 },
                 main: () => {
+                    // 插入视频播放, 评分信息
                     const insert_video_stat = (node, v_r) => {
-                        // 插入视频播放, 评分信息
                         const html = `
                         <span class="bili-video-card__stats--item" data-v-62f526a6="">
                             <span data-v-62f526a6="">r: ${v_r.r} | v: ${v_r.v}</span>
@@ -1640,6 +1697,7 @@
                         const ele = node.getElementsByClassName('bili-video-card__stats--left');
                         ele.length > 0 ? ele[0].insertAdjacentHTML('beforeend', html) : Colorful_Console.main('fail to insert element to video card', 'debug');
                     };
+                    // 执行遍历html元素
                     const clear_all_card = (target, data) => {
                         if (!data || data.length === 0) {
                             Colorful_Console.main('search clear card no data', 'debug');
@@ -1658,6 +1716,7 @@
                             v_r && (v_r === 'hide' ? hd(node) : insert_video_stat(node, v_r));
                         }
                     };
+                    // 节点变化监, 用于精确执行操作html元素操作
                     const node_monitor = () => {
                         const wrapper = document.getElementsByClassName('search-page-wrapper');
                         wrapper.length > 0 ? new MutationObserver((records) => {
@@ -1678,6 +1737,7 @@
                     this.#init_data ? setTimeout(() => (clear_all_card(document, this.#init_data), this.#init_data = null, node_monitor()), 3000) : node_monitor();
                     const configs = this.#configs;
                     let tmp = null;
+                    // 由于首页插入的节点的操作在请求数据之前, 需要额外监听等待数据请求后才执行操作.
                     Object.defineProperty(configs, 'fetch_flag', {
                         set: (v) => { tmp = v, v && setTimeout(() => clear_all_card(document, this.#search_page_results), 300); },
                         get: () => tmp
@@ -1687,6 +1747,7 @@
             // 视频播放页面
             _video_module: {
                 main: () => {
+                    // 遍历html元素, 同时清除url的追踪参数
                     const clear_all_card = () => {
                         const nodes = document.getElementsByClassName(this.#configs.target_class);
                         for (const node of nodes) {
@@ -1721,9 +1782,11 @@
                     const nodes = document.getElementsByClassName(this.#configs.target_class);
                     for (const node of nodes) {
                         const info = this.#utilities_module.get_up_video_info(node);
-                        if (info && info[name] === id) {
-                            func(node);
-                            if (name === 'video_id') break;
+                        if (info) {
+                            if (info[name] === id) {
+                                func(node);
+                                if (name === 'video_id') break;
+                            } else if (!info.is_video) func(node);
                         }
                     }
                 };
@@ -1740,7 +1803,7 @@
                     const hd = this.#configs.hide_node, guvi = this.#utilities_module.get_up_video_info;
                     for (const node of nodes) {
                         const info = guvi(node);
-                        info && Dynamic_Variants_Manager.completed_check(info) && hd(node);
+                        info && (!info.is_video || Dynamic_Variants_Manager.completed_check(info)) && hd(node);
                     }
                 }, 300);
             },
@@ -1782,7 +1845,7 @@
          */
         constructor(href) {
             // 确定配置参数
-            const site = ['search', 'space', 'video', 'play'].find(e => href.includes(e)) || (href.endsWith('.com/') ? 'home' : 'other');
+            const site = ['search', 'space', 'video', 'play'].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
             this.#configs = this.#site_configs[site];
             this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
             // 载入配置
@@ -1791,11 +1854,11 @@
             Dynamic_Variants_Manager.data_init(id);
             // 配置启动函数
             [[this.#proxy_module], [this.#page_modules, href], [this.#event_module]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
-            // 注入css
+            // 注入css, 尽快执行
             this.#css_module.inject_css(id);
         }
         // 启动整个程序
-        start() { this.#start_load_funcs.forEach(e => e.type ? e() : e.call(this)), unsafeWindow.onload = () => (this.#end_load_funcs.forEach(e => e.type ? e() : e.call(this)), Colorful_Console.main('bili_optimizer has started')); }
+        start() { this.#start_load_funcs.forEach(e => e.type ? e() : e.call(this)), unsafeWindow.onload = () => (this.#end_load_funcs.forEach(e => e.type ? e() : e.call(this)), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started')); }
     }
     // 优化器主体 -----------
 
