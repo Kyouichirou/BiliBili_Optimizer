@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.1
+// @version      1.1.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico?v=1
@@ -1460,18 +1460,23 @@
                     event.stopPropagation();
                     const target_name = this.#configs.target_class;
                     let i = 0;
-                    for (const p of event.composedPath()) {
-                        const clname = p.className;
-                        if (clname === target_name) {
-                            if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
-                                this.#configs.hide_node(p);
-                                const info = this.#utilities_module.get_up_video_info(p);
-                                if (!info.is_video) break;
-                                info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : Dynamic_Variants_Manager.cache_block_videos.push(info.video_id));
+                    try {
+                        for (const p of event.composedPath()) {
+                            const clname = p.className;
+                            if (clname === target_name) {
+                                if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
+                                    this.#configs.hide_node(p);
+                                    const info = this.#utilities_module.get_up_video_info(p);
+                                    if (!info.is_video) break;
+                                    info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : Dynamic_Variants_Manager.cache_block_videos.push(info.video_id));
+                                }
+                                break;
                             }
-                            break;
+                            if (++i > 6) break;
                         }
-                        if (++i > 4) break;
+                    } catch (error) {
+                        console.log(error);
+                        Notification('some error cause on menus event', 'warning');
                     }
                 }, true);
             },
