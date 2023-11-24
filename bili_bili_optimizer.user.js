@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.1.1
+// @version      1.1.3
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
-// @icon         https://www.bilibili.com/favicon.ico?v=1
+// @icon         https://www.bilibili.com/favicon.ico
 // @homepage     https://github.com/Kyouichirou/BiliBili_Optimizer
 // @updateURL
 // @downloadURL  https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
@@ -389,7 +389,6 @@
                 '\u6708\u5165',
                 '\u611f\u60c5',
                 '\u9752\u4e91',
-                '\u9b3c\u5439\u706f',
                 '\u5355\u8eab\u72d7',
                 '\u9a6c\u4e91',
                 '\u5218\u5f3a\u4e1c',
@@ -455,7 +454,6 @@
                 '\u4e0a\u6d77\u5821\u5792',
                 '\u90ed\u656c\u660e',
                 '\u6bd5\u4e1a\u5b63',
-                'cctv',
                 '\u9ec4\u6653\u660e'
             ],
             /**
@@ -950,9 +948,6 @@
             <div class="select_wrap" id="selectWrap">
                 <style>
                     div#selectWrap {
-                        position: absolute;
-                        bottom: 10%;
-                        left: 3%;
                         width: 139px;
                         border: 2px solid gray;
                     }
@@ -1014,9 +1009,12 @@
                     </dd>
                 </dl>
             </div>`;
-            // 这个函数不会返回插入生成的节点, 返回空值
-            document.body.insertAdjacentHTML('beforeend', html);
-            this.#video_rate_event();
+            const toolbar = document.getElementsByClassName('video-toolbar-left');
+            if (toolbar.length > 0) {
+                // 这个函数不会返回插入生成的节点, 返回空值
+                toolbar[0].insertAdjacentHTML('beforeend', html);
+                this.#video_rate_event();
+            } else Colorful_Console.main('fail to insert rate element', 'warning', true);
         }
         video_change_id = null;
         // 监听视频播放发生变化
@@ -1534,8 +1532,15 @@
                      */
                     _get_content() {
                         const select = window.getSelection();
-                        const data = select.toString().trim() || document.getElementsByClassName('nav-search-input')[0]?.value.trim() || '';
+                        const data = select.toString().trim() || this._get_input_box() || '';
                         return data.length > 25 ? data.slice(0, 25) : data;
+                    },
+                    _box_class_names: ['search-input-el', 'nav-search-input'],
+                    _get_input_box() {
+                        for (const c of this._box_class_names) {
+                            const node = document.getElementsByClassName(c);
+                            if (node.length > 0) return node[0].value?.trim();
+                        }
                     },
                     _protocols: "https://",
                     s: `search.bilibili.com/all?keyword=`,
