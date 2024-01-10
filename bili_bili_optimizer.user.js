@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.1.3
+// @version      1.1.4
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -81,6 +81,7 @@
     // 通用函数 -------------
 
     // ------------- 数据结构
+    // 统一使用数组作为数据的载体
     class Dic_Array extends Array {
         #id_name;
         /**
@@ -113,6 +114,7 @@
                 const now = Date.now();
                 target.last_active_date = now;
                 target.visited_times += 1;
+                // 更新访问状态, 以便后面清理数据时作为指标
                 Dynamic_Variants_Manager.rate_up_status_sync(id_name, id, now, target.visited_times);
                 id_name === 'up_id' && Dynamic_Variants_Manager.accumulative_func();
                 Colorful_Console.main(`block ${this.#id_name}: ${id}`);
@@ -145,7 +147,7 @@
     class Visited_Array extends Array {
         #limit = 999;
         /**
-         *
+         * 限制存储的数据的上限, 假如不指定就默认999
          * @param {Array} data
          * @param {number} limit
          */
@@ -171,7 +173,7 @@
             (index < 0 ? super.unshift(id) : index > 0 ? super.unshift(super.splice(index, 1)[0]) : super.length) > this.#limit && super.pop();
         }
     }
-
+    // 由于基本结构基本类似, 直接继承上述的数组结构
     class Block_Video_Array extends Visited_Array {
         includes_r(id) { return (id && super.includes(id)) ? (Dynamic_Variants_Manager.accumulative_func(), true) : false; }
         remove(id) {
@@ -1128,9 +1130,9 @@
                         up_id: data.owner?.mid || '',
                         up_name: data.owner?.name || '',
                         title: data.title
-                    }; //
+                    };
                     // 确保数据都是字符串类型
-                    for (const k in info) info[k] = info[k] + '';
+                    for (const k in info) info[k] += '';
                     if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
@@ -1141,13 +1143,14 @@
                 },
                 // 如何处理节点的方式
                 hide_node: (node) => (node.style.visibility = 'hidden'),
-                // 判断发起请求数据api是否需要拦截
+                // 判断发起请求数据api url是否需要进行拦截操作
                 handle_fetch_url: (url) => url.startsWith(this.#configs.api_prefix) ? (data) => data.data?.item : null,
             },
             video: {
                 id: 1,
-                init_class: 'video-page-card-small',
-                target_class: 'video-page-card-small',
+                // 视频部分的内容, 上层的classname无法覆盖全部的视频, 需要使用下一层的classname
+                init_class: 'card-box',
+                target_class: 'card-box',
                 api_suffix: 'archive/related',
                 handle_data_func(data) {
                     const info = {
@@ -1156,7 +1159,7 @@
                         up_name: data.owner?.name || data.author || '',
                         title: data.title
                     };
-                    for (const k in info) info[k] = info[k] + '';
+                    for (const k in info) info[k] += '';
                     if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
@@ -1178,7 +1181,7 @@
                         up_name: data.author || data.owner?.name || '',
                         title: data.title
                     };
-                    for (const k in info) info[k] = info[k] + '';
+                    for (const k in info) info[k] += '';
                     if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     const r = Dynamic_Variants_Manager.completed_check(info);
                     if (r) this.#search_page_results.push(null);
@@ -1235,6 +1238,7 @@
                 for (const a of links) {
                     const href = a.href;
                     if (!info.video_id) {
+                        // 小课堂的内容清除掉
                         if (href.includes('/cheese')) {
                             Colorful_Console.main(`cheese clear: ${href}`);
                             info.is_video = false;
@@ -1260,6 +1264,7 @@
              * @param {object} data
              */
             clear_data(data) {
+                // 递归调用, 遍历各层级的内容
                 for (const key in data) {
                     const tmp = data[key];
                     const vtype = typeof tmp;
@@ -1280,30 +1285,32 @@
                 _history_replacestate: { run_at: 0, run_in: [1, 5], type: 1 },
                 _history_pushstate: { run_at: 1, run_in: [1, 5], type: 1 }
             },
+            // 代理
             __proxy(target, name, handle) { target[name] = new Proxy(target[name], handle); },
-            // 当视频被加载完成, 会载入url追踪参数
+            // 在视频播放页面, 当视频被加载完成, 会载入url追踪参数
             _history_replacestate() {
                 this.__proxy(unsafeWindow.history, 'replaceState', {
                     apply(...args) {
-                        if (args.length === 3) {
-                            const b = args[2][2];
-                            if (b && ['vd_source=', 'spm_id_from'].some(e => b.includes(e))) return;
-                        }
-                        Reflect.apply(...args);
+                        const a = args[2]?.[2];
+                        !(a && ['vd_source=', 'spm_id_from'].some(e => a.includes(e))) && Reflect.apply(...args);
                     }
                 });
             },
-            // 点击右侧的视频, 更新历史url添加追踪参数, from_spmid
+            // 当点击右侧的视频, 更新历史url会添加追踪参数, from_spmid
             _history_pushstate() {
                 this.__proxy(unsafeWindow.history, 'pushState', {
                     apply(...args) {
                         if (args.length === 3) {
                             const a = args[2];
-                            const i = a.length - 1;
-                            const b = a[i];
-                            if (b) {
-                                const t = b.split('spm_id_from')[0];
-                                a[i] = t.endsWith('&') || t.endsWith('?') ? t.slice(0, -1) : t;
+                            if (a instanceof Array) {
+                                const i = a.length - 1;
+                                if (i >= 0) {
+                                    const b = a[i];
+                                    if (b) {
+                                        const t = b.split('spm_id_from')[0];
+                                        a[i] = t.endsWith('&') || t.endsWith('?') ? t.slice(0, -1) : t;
+                                    }
+                                }
                             }
                         }
                         Reflect.apply(...args);
@@ -1317,9 +1324,10 @@
             _setattribute() { this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } }); },
             // 拦截document.body的菜单事件
             // 由于事件是由于document.body所创建, 通过window/document无法直接拦截到
-            // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦
+            // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦(无法准确及时进行)
+            // 通过原型链就可以精确执行拦截的操作
             _disable_body_contextmenu_event() { this.__proxy(HTMLBodyElement.prototype, 'addEventListener', { apply(...args) { (args.length !== 3 || args[2]?.[0] !== 'contextmenu') && Reflect.apply(...args); } }); },
-            // 检索框点击, 回车等执行的搜索行为搜索 www / space开头的都要启用
+            // 顶部检索框点击, 回车, 操作方式均为window.open(url), 只需要拦截这个函数就可以拦截所有的这些操作
             _search_box_clear() {
                 this.__proxy(unsafeWindow, 'open', {
                     apply(...args) {
@@ -1334,14 +1342,18 @@
                     }
                 });
             },
+            // 拦截fetch的返回结果
             _fetch: () => {
+                // 填充拦截之后的空白图片
                 const lost_pic = '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg';
                 const trap = (func) => {
                     func = async (...args) => {
                         const [url, config] = args;
                         const response = await fetch(url, config);
+                        // 根据配置的函数, 决定是否需要干预返回的结果
                         const hfu = this.#configs.handle_fetch_url(url);
-                        // response, 只允许访问一次, clone一份, 在复制上进行操作, 拦截json函数
+                        // response, 只允许访问一次, clone一份, 在复制上进行操作
+                        // 然后拦截json函数的返回内容, 从而实现对返回结果的拦截
                         if (hfu) response.json = () => response.clone().json().then((data) => {
                             const results = hfu(data), hdf = this.#configs.handle_data_func;
                             results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.main('url no match rule: ' + url, 'debug');
@@ -1351,6 +1363,7 @@
                     };
                     return func;
                 };
+                // B站的fetch进行了bind(window)的操作, 需要设置陷阱函数拦截这个操作
                 Function.prototype.bind = new Proxy(Function.prototype.bind, {
                     apply: (...args) => {
                         if (args.length > 1) {
@@ -1381,6 +1394,7 @@
         };
         // css注入模块
         #css_module = {
+            // 顶部位置广告, 搜索框广告
             _all: {
                 run_in: Array.from({ length: 6 }, (_val, index) => index),
                 css: `
@@ -1388,6 +1402,7 @@
                 a.download-entry.download-client-trigger,
                 .bili-header .loc-mc-box,
                 .bili-header .bili-header__banner .banner-img,
+                .bili-header .bili-header__banner .header-banner__inner,
                 .animated-banner,
                 li.v-popover-wrap.left-loc-entry{
                     visibility: hidden !important;
@@ -1605,6 +1620,11 @@
                     search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && manage_black_key.main(key);
                 });
             },
+            /**
+             * 配置执行函数
+             * @param {number} id
+             * @returns Array
+             */
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
         };
         // 特定页面执行函数
@@ -1778,6 +1798,27 @@
                     }, 3000);
                 }
             },
+            _home_module: {
+                _maintain() {
+                    Colorful_Console.main('data maintenance has started', 'info', true), GM_setValue('maintain', true);
+                    const data = GM_getValue('block_ups') || [];
+                    if (data.length > 1500) {
+                        const now = Date.now();
+                        const tmp = data.filter(e => {
+                            const gap = (now - e.last_active_date) / 1000 / 60 / 60 / 24;
+                            if (gap > 180) return false;
+                            else if (gap > 120) {
+                                const vtimes = e.visited_times;
+                                return !(vtimes < 2 || (vtimes < 3 && gap > 150));
+                            }
+                            return true;
+                        });
+                        tmp.length < data.length && GM_setValue('block_ups', tmp);
+                    }
+                    GM_setValue('maintain', false), Colorful_Console.main('data maintenance has been completed', 'info', true);
+                },
+                main() { GM_registerMenuCommand('maintain', this._maintain.bind(this)); }
+            },
             // 监听拦截up或者视频的变化, 对整个页面遍历, 检查是否是否被拦截
             _block_video_up_data_sync_monitor: () => {
                 // 监听同步数据的改变
@@ -1818,7 +1859,7 @@
                 }, 300);
             },
             /**
-             *
+             * 配置执行函数
              * @param {number} id
              * @param {string} href
              * @returns {Array}
@@ -1833,6 +1874,9 @@
                 }
                 let a = null;
                 switch (id) {
+                    case 0:
+                        a = this._home_module.main.bind(this._home_module), a.type = 1, a.start = 1, data.push(a);
+                        break;
                     case 1:
                         this._video_module.main.start = 1, data.push(this._video_module.main);
                         break;
@@ -1860,7 +1904,7 @@
             this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
             // 载入配置
             const id = this.#configs.id;
-            // 初始化数据管理模块
+            // 初始化动态数据管理模块
             Dynamic_Variants_Manager.data_init(id);
             // 配置启动函数
             [[this.#proxy_module], [this.#page_modules, href], [this.#event_module]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
@@ -1874,9 +1918,13 @@
 
     // ----------------- 启动
     {
-        const { href, search, origin, pathname } = location;
-        // 清除直接访问的链接追踪参数
-        search.startsWith('?spm_id_from') ? (window.location.href = origin + pathname) : (new Bili_Optimizer(href)).start();
+        // 假如数据处于维护中, 就不执行脚本
+        if (GM_getValue('maintain')) Colorful_Console.main('data under maintenance, wait a moment', 'warning', true);
+        else {
+            const { href, search, origin, pathname } = location;
+            // 清除直接访问链接的追踪参数
+            search.startsWith('?spm_id_from') ? (window.location.href = origin + pathname) : (new Bili_Optimizer(href)).start();
+        }
     }
     // 启动 -----------------
 })();
