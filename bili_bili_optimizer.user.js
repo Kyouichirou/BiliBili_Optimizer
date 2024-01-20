@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.1.4
+// @version      1.1.5
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -190,7 +190,7 @@
             return r ? `block ${val}, target: ${r}` : false;
         };
         return (val) => {
-            const r = val && f(val);
+            const r = val && f(val.replaceAll(' ', ''));
             return r ? (Colorful_Console.main(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
         };
     }
@@ -283,7 +283,6 @@
                 '\u817e\u8baf',
                 '\u8fea\u4e3d\u70ed\u5df4',
                 '\u4e09\u5341\u800c\u5df2',
-                '\u7687\u540e',
                 '\u7231\u60c5\u516c\u5bd3',
                 '\u603b\u88c1',
                 '\u739b\u4e3d\u82cf',
@@ -1806,10 +1805,10 @@
                         const now = Date.now();
                         const tmp = data.filter(e => {
                             const gap = (now - e.last_active_date) / 1000 / 60 / 60 / 24;
-                            if (gap > 180) return false;
-                            else if (gap > 120) {
+                            if (gap > 210) return false;
+                            else if (gap > 150) {
                                 const vtimes = e.visited_times;
-                                return !(vtimes < 2 || (vtimes < 3 && gap > 150));
+                                return !(vtimes < 2 || (vtimes < 3 && gap > 180));
                             }
                             return true;
                         });
@@ -1851,6 +1850,10 @@
             _init_filter: () => {
                 setTimeout(() => {
                     const nodes = document.getElementsByClassName(this.#configs.init_class);
+                    if (nodes.length === 0) {
+                        Colorful_Console.main('no initial elements', 'debug', true);
+                        return;
+                    }
                     const hd = this.#configs.hide_node, guvi = this.#utilities_module.get_up_video_info;
                     for (const node of nodes) {
                         const info = guvi(node);
