@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.1.5
+// @version      1.1.6
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -190,7 +190,7 @@
             return r ? `block ${val}, target: ${r}` : false;
         };
         return (val) => {
-            const r = val && f(val.replaceAll(' ', ''));
+            const r = val && f(val.replaceAll(' ', '').toLowerCase());
             return r ? (Colorful_Console.main(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
         };
     }
@@ -515,21 +515,18 @@
          * @returns {boolean}
          */
         completed_check(info) {
-            // 完整检查, 是否包含拦截内容
-            const { title, up_id, video_id, up_name } = info;
             // 1. 优先拦截up
-            if (this.block_ups.includes_r(up_id)) return true;
             // 2. 缓存up
-            else if (this.cache_block_ups.includes_r(up_id)) return true;
-            // 拦截关键词
-            const r = this.key_check(title) || this.key_check(up_name);
+            // 3. 拦截关键词, 如果包含a类关键词, 拉黑up在缓存
+            // 4. 最后检查拦截视频
+            const { title, up_id, video_id, up_name } = info;
+            if (this.block_ups.includes_r(up_id) || this.cache_block_ups.includes_r(up_id) || this.block_videos.includes_r(video_id) || this.cache_block_videos.includes_r(video_id)) return true;
+            const r = this.key_check(title + "_" + up_name);
             if (r > 0) {
-                // 如果包含a类关键词, 拉黑up在缓存
-                r === 2 && this.cache_block_ups.push(up_id);
+                this.cache_block_ups.push(up_id);
                 return true;
-                // 最后检查拦截视频
-            } else if (this.block_videos.includes_r(video_id)) return true;
-            return this.cache_block_videos.includes_r(video_id);
+            }
+            return false;
         },
         unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_setValue('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
         block_video(video_id) { this.block_videos.push(video_id), GM_setValue('block_videos', this.block_videos), this.up_video_sync('block', 'video', video_id), Colorful_Console.main('update block video info'); },
@@ -1256,7 +1253,7 @@
                         i++;
                     } else j++;
                 }
-                return i > 1 ? null : info;
+                return i > 1 ? null : (['up_name', 'video_title'].forEach(e => (info[e] = info[e].toLowerCase())), info);
             },
             /**
              * 将拦截对象的数据设置为空
@@ -1451,11 +1448,97 @@
                 run_in: [2],
                 css: '.activity-game-list.i_wrapper.search-all-list {display: none !important;}'
             },
+            shade: {
+                run_in: Array.from({ length: 6 }, (_val, index) => index).filter(e => e !== 1),
+                colors: {
+                    yellow: "rgb(247, 232, 176)",
+                    green: "rgb(202 ,232, 207)",
+                    grey: "rgb(182, 182, 182)",
+                    olive: "rgb(207, 230, 161)",
+                },
+                current_color: '',
+                current_opacity: 0,
+                shade_id: 'screen_shade_cover',
+                get opacity() {
+                    const h = new Date().getHours();
+                    return h > 20
+                        ? 0.55
+                        : h < 7
+                            ? 0.65
+                            : h > 15
+                                ? h === 18
+                                    ? 0.35
+                                    : h === 19
+                                        ? 0.45
+                                        : h === 20
+                                            ? 0.5
+                                            : 0.3
+                                : 0.15;
+                },
+                get shade_node() { return document.getElementById(this.shade_id); },
+                /**
+                 * 创建遮罩
+                 * @param {string} color
+                 * @param {number} opacity
+                 */
+                create_cover(color, opacity = 0.5) {
+                    const html = `
+                        <div
+                            id="${this.shade_id}"
+                            style="
+                                transition: opacity 0.1s ease 0s;
+                                z-index: 10000000;
+                                margin: 0;
+                                border-radius: 0;
+                                padding: 0;
+                                background: ${color};
+                                pointer-events: none;
+                                position: fixed;
+                                top: -10%;
+                                right: -10%;
+                                width: 120%;
+                                height: 120%;
+                                opacity: ${opacity};
+                                mix-blend-mode: multiply;
+                                display: block;
+                            "
+                        ></div>`;
+                    document.documentElement.insertAdjacentHTML("afterbegin", html);
+                },
+                set_color(color, mode = true) {
+                    if (this.current_color === color) return;
+                    this.change_color(color);
+                    this.current_color = color;
+                    mode && GM_setValue('shade_color', color);
+                },
+                change_color(color) { this.shade_node.style.background = color; },
+                change_opacity(opacity) {
+                    if (this.current_opacity !== opacity) return;
+                    this.current_opacity = opacity;
+                    this.shade_node.style.opacity = opacity;
+                },
+                main() {
+                    this.current_color = GM_getValue('shade_color') || this.colors.yellow;
+                    this.current_opacity = this.opacity;
+                    GM_setValue('shade_opacity', this.current_opacity);
+                    this.create_cover(this.current_color, this.current_opacity);
+                    const uppercase = (e) => e.slice(0, 1).toUpperCase() + e.slice(1);
+                    Object.keys(this.colors).forEach((e, index) =>
+                        GM_registerMenuCommand(
+                            uppercase(e),
+                            this.set_color.bind(this, e),
+                            e.slice(0, 1) + index
+                        )
+                    );
+                    GM_addValueChangeListener('shade_color', (...args) => args[3] && this.set_color(args[2], false));
+                    GM_addValueChangeListener('shade_opacity', (...args) => args[3] && this.change_opacity(args[2]));
+                }
+            },
             inject_css(id) {
                 const arr = [];
                 for (const k in this) {
                     const c = this[k];
-                    c.run_in?.includes(id) && arr.push(c.css);
+                    c.run_in?.includes(id) ? k.startsWith('_') ? arr.push(c.css) : c.main() : null;
                 }
                 arr.length > 0 && GM_addStyle(arr.join(''));
             }
@@ -1570,6 +1653,7 @@
                         return false;
                     }
                 };
+                // 视频控制
                 const video_control = {
                     p: () => this.#video_instance.play_control(),
                     l: () => this.#video_instance.light_control(),
@@ -1579,6 +1663,7 @@
                     '-': () => this.#video_instance.voice_control(false),
                     main(key) { this[key]?.(); }
                 };
+                // 关键词黑名单管理
                 const manage_black_key = {
                     _func: (data) => {
                         const nodes = document.getElementsByClassName(this.#configs.target_class);
@@ -1598,7 +1683,7 @@
                             const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
                             const s = prompt(title).trim();
                             if (s) {
-                                const a = s.split(' ').map(e => e.trim()).filter(e => e);
+                                const a = s.split(' ').map(e => e.trim()).filter(e => e && !e.includes("_")).map(e => e.toLowerCase());
                                 c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a);
                             }
                             return true;
@@ -1606,6 +1691,7 @@
                         return false;
                     }
                 };
+                // 文本标签, 需要排除输入
                 const text_tags = ["textarea", "input"];
                 document.addEventListener('keydown', (event) => {
                     if (event.shiftKey || event.ctrlKey) return;
@@ -1835,16 +1921,14 @@
                         if (info) {
                             if (info[name] === id) {
                                 func(node);
+                                // 如果拦截的是视频, 则跳出, 如果是up, 继续遍历
                                 if (name === 'video_id') break;
                             } else if (!info.is_video) func(node);
                         }
                     }
                 };
                 let tmp = null;
-                Object.defineProperty(Dynamic_Variants_Manager, 'up_video_data_sync_info', {
-                    set: (v) => { clear_all_card(v), tmp = v; },
-                    get: () => tmp
-                });
+                Object.defineProperty(Dynamic_Variants_Manager, 'up_video_data_sync_info', { set: (v) => { clear_all_card(v), tmp = v; }, get: () => tmp });
             },
             // 主页, 视频播放的初始化过滤
             _init_filter: () => {
@@ -1907,15 +1991,20 @@
             this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
             // 载入配置
             const id = this.#configs.id;
+            // 注入css, 尽快执行
+            this.#css_module.inject_css(id);
             // 初始化动态数据管理模块
             Dynamic_Variants_Manager.data_init(id);
             // 配置启动函数
             [[this.#proxy_module], [this.#page_modules, href], [this.#event_module]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
-            // 注入css, 尽快执行
-            this.#css_module.inject_css(id);
         }
+        /**
+         * 执行函数
+         * @param {Array} funcs
+         */
+        #load_func(funcs) { funcs.forEach(e => e.type ? e() : e.call(this)); }
         // 启动整个程序
-        start() { this.#start_load_funcs.forEach(e => e.type ? e() : e.call(this)), unsafeWindow.onload = () => (this.#end_load_funcs.forEach(e => e.type ? e() : e.call(this)), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started')); }
+        start() { this.#load_func(this.#start_load_funcs), unsafeWindow.onload = () => (this.#load_func(this.#end_load_funcs), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started')); }
     }
     // 优化器主体 -----------
 
