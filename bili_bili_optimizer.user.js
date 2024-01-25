@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.1.6
+// @version      1.2.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -17,6 +17,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_openInTab
+// @grant        window.close
 // @grant        unsafeWindow
 // @grant        GM_notification
 // @grant        window.onurlchange
@@ -30,8 +31,81 @@
 (() => {
     'use strict';
     // --------------- 通用函数
-    const Notification = (content = "", title = "info", duration = 3500, cfunc, ofunc) => GM_notification({ text: content, title: title, timeout: duration, onclick: cfunc, ondone: ofunc, });
-
+    // GM内置函数/对象
+    const GM_Objects = {
+        /**
+         * 提示信息
+         * @param {string} content
+         * @param {string} title
+         * @param {number} duration
+         * @param {Function} cfunc
+         * @param {Function} ofunc
+         * @returns {null}
+         */
+        notification: (content = "", title = "info", duration = 3500, cfunc, ofunc) => GM_notification({ text: content, title: title, timeout: duration, onclick: cfunc, ondone: ofunc }),
+        /**
+         * 读取值
+         * @param {string} key_name
+         * @param {any} default_value
+         * @returns {null}
+         */
+        get_value: (key_name, default_value = null) => GM_getValue(key_name, default_value),
+        /**
+         * 设置值
+         * @param {string} key_name
+         * @param {any} value
+         * @returns {any}
+         */
+        set_value: (key_name, value) => GM_setValue(key_name, value),
+        /**
+         * 注入css, 返回注入的css节点
+         * @param {string} css
+         * @returns {HTMLElement}
+         */
+        addstyle: (css) => GM_addStyle(css),
+        /**
+         * 注册菜单事件, 返回注册id
+         * @param {string} name
+         * @param {Function} callback_func
+         * @returns {HTMLElement}
+         */
+        registermenucommand: (name, callback_func) => GM_registerMenuCommand(name, callback_func),
+        /**
+         * 解除菜单注册, 接受参数, 注册的id
+         * @param {number} cid
+         * @returns {null}
+         */
+        unregistermenucommand: (cid) => GM_unregisterMenuCommand(cid),
+        /**
+         * 判断监听值的修改是否来自非当前页面
+         * @param {Function} func
+         * @returns {Function}
+         */
+        _check_from_remote: (func) => (...args) => args[3] && func(...args),
+        /**
+         * 监听键值的变化, 返回监听id
+         * @param {string} key_name
+         * @param {Function} func
+         * @returns {number}
+         */
+        addvaluechangeistener(key_name, callback_func) { return GM_addValueChangeListener(key_name, this._check_from_remote(callback_func)); },
+        /**
+         * 打开链接
+         * @param {string} url
+         * @param {object} configs
+         * @returns {null}
+         */
+        openintab: (url, configs) => GM_openInTab(url, configs),
+        // 关闭标签页
+        window_close: () => window.close(),
+        // 脚本信息
+        info: GM_info,
+        // 宿主页面window
+        window: unsafeWindow,
+        // 判断是否支持监听url的改变
+        supportonurlchange: window.onurlchange,
+    };
+    // 自定义打印内容
     const Colorful_Console = {
         _colors: {
             warning: "#F73E3E",
@@ -46,33 +120,30 @@
                 "padding: 1px; border-radius: 3px 0 0 3px; color: #fff; font-size: 12px; background: #606060;",
                 `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
             ];
-            console.log(...params), mode && Notification(content, type);
+            console.log(...params), mode && GM_Objects.notification(content, type);
         }
     };
-
+    // 基本信息匹配
     const Base_Info_Match = {
         // video id
         _video_id_reg: /[a-z\d]{10,}/i,
         // up uid, up的长度范围很广从1位数到16位数
         _up_id_reg: /(?<=com\/)\d+/,
         /**
-         *
+         * 匹配执行
          * @param {RegExp} reg
          * @param {string} href
          * @returns {string}
          */
-        _match(reg, href) {
-            const ms = href.match(reg);
-            return ms ? ms[0] : '';
-        },
+        _match(reg, href) { return href.match(reg)?.[0] || ''; },
         /**
-         *
+         * 匹配视频id
          * @param {string} href
          * @returns {string}
          */
         get_video_id(href) { return this._match(this._video_id_reg, href); },
         /**
-         *
+         * 匹配up id
          * @param {string} href
          * @returns {string}
          */
@@ -85,21 +156,21 @@
     class Dic_Array extends Array {
         #id_name;
         /**
-         *
+         * 数组 - 字典结构
          * @param {Array} data
          * @param {string} id_name
          */
         constructor(data, id_name) {
-            // 继承, 必须先调用父类, 才能使用this
             if (typeof data !== 'object') {
                 super();
                 return;
             }
+            // 继承, 必须先调用父类, 才能使用this
             super(...data);
             this.#id_name = id_name;
         }
         /**
-         *
+         * 检查是否存在和记录
          * @param {string} id
          * @returns {boolean}
          */
@@ -122,7 +193,7 @@
             return mode ? target : f;
         }
         /**
-         *
+         * 移除id
          * @param {string} id
          * @returns {boolean}
          */
@@ -133,7 +204,7 @@
             return index > -1 && (super.splice(index, 1), true);
         }
         /**
-         *
+         * 更新活动的状态
          * @param {object} info
          */
         update_active_status(info) {
@@ -143,7 +214,7 @@
             if (target) target.last_active_date = info.date, target.visited_times = info.visited_times;
         }
     }
-
+    // 历史访问记录
     class Visited_Array extends Array {
         #limit = 999;
         /**
@@ -173,7 +244,7 @@
             (index < 0 ? super.unshift(id) : index > 0 ? super.unshift(super.splice(index, 1)[0]) : super.length) > this.#limit && super.pop();
         }
     }
-    // 由于基本结构基本类似, 直接继承上述的数组结构
+    // 拦截视频, 由于基本结构基本类似, 直接继承历史记录的数组结构
     class Block_Video_Array extends Visited_Array {
         includes_r(id) { return (id && super.includes(id)) ? (Dynamic_Variants_Manager.accumulative_func(), true) : false; }
         remove(id) {
@@ -181,7 +252,12 @@
             return index > -1 && (super.splice(index, 1), true);
         }
     }
-
+    /**
+     * 自定义的includes函数
+     * @param {boolean} mode
+     * @param {string} id_name
+     * @returns {Function}
+     */
     function includes_r(mode, id_name = 'video_id') {
         // 额外增加的数组函数, 用于在执行数据是否存在的时候, 同时记录下这次的操作
         // 不能使用箭头函数这里, 在为对象增加一个新的函数, 而需要this指向这个对象自身
@@ -487,8 +563,8 @@
                     t.length !== arr.length && this._write_data(t);
                 }
             },
-            _write_data(data) { GM_setValue('black_keys', data), Colorful_Console.main('update black keys'); },
-            _get_data() { return GM_getValue('black_keys'); },
+            _write_data(data) { GM_Objects.set_value('black_keys', data), Colorful_Console.main('update black keys', 'info', true); },
+            _get_data() { return GM_Objects.get_value('black_keys'); },
             _main() {
                 const c = this._get_data();
                 c && c.forEach(e => this.a.push(e));
@@ -507,7 +583,7 @@
         // 自动, 历史访问视频, 动态, 限制数量[]
         visited_videos: null,
         // 自动, 累积拦截次数, 跨标签通信
-        accumulative_total: GM_getValue('accumulative_total') || 0,
+        accumulative_total: GM_Objects.get_value('accumulative_total', 0),
         key_check(content) { return this.black_keys.a.includes_r(content) ? 2 : this.black_keys.b.includes_r(content) ? 1 : 0; },
         /**
          * 检查数据是否被拦截
@@ -523,41 +599,33 @@
             if (this.block_ups.includes_r(up_id) || this.cache_block_ups.includes_r(up_id) || this.block_videos.includes_r(video_id) || this.cache_block_videos.includes_r(video_id)) return true;
             const r = this.key_check(title + "_" + up_name);
             if (r > 0) {
-                this.cache_block_ups.push(up_id);
+                r == 2 && this.cache_block_ups.push(up_id);
                 return true;
             }
             return false;
         },
-        unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_setValue('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
-        block_video(video_id) { this.block_videos.push(video_id), GM_setValue('block_videos', this.block_videos), this.up_video_sync('block', 'video', video_id), Colorful_Console.main('update block video info'); },
+        /**
+         * 取消拦截视频
+         * @param {string} video_id
+         */
+        unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
+        /**
+         * 拦截视频
+         * @param {string} video_id
+         */
+        block_video(video_id) { this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('block', 'video', video_id), Colorful_Console.main('update block video info'); },
+        // 计数记录
+        accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
+
         // 视频和up, 拦截或者取消数据同步
-        up_video_sync(s_type, s_name, s_value) { GM_setValue('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
+        up_video_sync(s_type, s_name, s_value) { GM_Objects.set_value('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
         // 评分, 拦截up的数据部分更新同步
         _status_info: null,
-        rate_up_status_sync(s_type, id, date, times) { GM_setValue('up_rate_status_sync', { type: s_type, value: { id: id, date: date, times: times } }), this._status_info = s_type; },
+        rate_up_status_sync(s_type, id, date, times) { GM_Objects.set_value('up_rate_status_sync', { type: s_type, value: { id: id, date: date, times: times } }), this._status_info = s_type; },
         // 评分和访问数据同步
-        rate_visited_data_sync(data) { GM_setValue(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
-        accumulative_func() { GM_setValue('accumulative_total', ++this.accumulative_total); },
         // 初始化视频评分数据
-        init_rate_videos() {
-            const o = new Dic_Array(GM_getValue('rate_videos') || [], 'video_id');
-            o.check_rate = function (id) { return this.includes_r(id, true)?.rate || 0; };
-            o.add = function (info) {
-                const video_id = info.video_id;
-                const data = this.find(e => e.video_id === video_id);
-                if (data && data.rate !== info.rate) {
-                    data.rate = info.rate;
-                    this.push(data);
-                } else if (!data) this.push(info);
-                else return false;
-                return true;
-            };
-            return o;
-        },
-        // 初始化拦截up数据
-        init_block_ups: () => new Dic_Array(GM_getValue('block_ups') || [], 'up_id'),
-        // 初始化历史访问数据
-        init_visited_videos: () => new Visited_Array(GM_getValue('visited_videos') || [], 2000),
+        rate_visited_data_sync(data) { GM_Objects.set_value(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
+
         // up, 评分, 状态更新写入, 这部分是相对影响性能的, 当数据累积到一定数量才写入, 或者定时写入
         _rate_up_status_write_monitor() {
             let up_times = 0, rate_times = 0, tmp = null;
@@ -566,16 +634,16 @@
                 const x = up_times > i ? rate_times > i ? 3 : 1 : rate_times > i ? 2 : 0;
                 switch (x) {
                     case 3:
-                        GM_setValue('block_ups', this.block_ups);
-                        GM_setValue('rate_videos', this.rate_videos);
+                        GM_Objects.set_value('block_ups', this.block_ups);
+                        GM_Objects.set_value('rate_videos', this.rate_videos);
                         up_times = 0, rate_times = 0;
                         break;
                     case 2:
-                        GM_setValue('rate_videos', this.rate_videos);
+                        GM_Objects.set_value('rate_videos', this.rate_videos);
                         rate_times = 0;
                         break;
                     case 1:
-                        GM_setValue('block_ups', this.block_ups);
+                        GM_Objects.set_value('block_ups', this.block_ups);
                         up_times = 0;
                         break;
                     default:
@@ -598,51 +666,63 @@
             const configs = {
                 ccumulative_total: {
                     run_in: Array.from({ length: 5 }, (_val, index) => index),
-                    f: (...args) => args[3] && this.accumulative_total++
+                    f: (..._args) => this.accumulative_total++
                 },
                 visited_video_sync: {
                     run_in: [2],
-                    f: (...args) => args[3] && this.visited_videos.push(args[2])
+                    f: (...args) => this.visited_videos.push(args[2])
                 },
                 rate_video_sync: {
                     run_in: [2],
                     f: (...args) => {
-                        if (args[3]) {
-                            const data = args[2];
-                            data.type === 'remove' ? this.rate_videos.remove(data.value.video_id) : this.rate_videos.add(data.value);
-                        }
+                        const data = args[2];
+                        data.type === 'remove' ? this.rate_videos.remove(data.value.video_id) : this.rate_videos.add(data.value);
                     }
                 },
                 up_video_sync: {
                     run_in: Array.from({ length: 3 }, (_val, index) => index),
                     f: (...args) => {
-                        if (args[3]) {
-                            // {type: "block", value: {up_id: 123}}
-                            const data = args[2];
-                            if (data.type === 'block') {
-                                data.name === 'video' ? this.block_videos.push(data.value.video_id) : this.block_ups.push(data.value);
-                                this.up_video_data_sync_info = data;
-                            } else data.name === 'video' ? this.block_videos.remove(data.value.video_id) : this.block_ups.remove(data.value.up_id);
-                        }
+                        // {type: "block", value: {up_id: 123}}
+                        const data = args[2];
+                        if (data.type === 'block') {
+                            data.name === 'video' ? this.block_videos.push(data.value.video_id) : this.block_ups.push(data.value);
+                            this.up_video_data_sync_info = data;
+                        } else data.name === 'video' ? this.block_videos.remove(data.value.video_id) : this.block_ups.remove(data.value.up_id);
                     }
                 },
                 up_rate_status_sync: {
                     run_in: Array.from({ length: 3 }, (_val, index) => index),
                     f: (...args) => {
-                        if (args[3]) {
-                            const data = args[2];
-                            (data.type === 'up' ? this.block_ups : this.rate_videos).update_active_status(data.value);
-                        }
+                        const data = args[2];
+                        (data.type === 'up' ? this.block_ups : this.rate_videos).update_active_status(data.value);
                     }
                 }
             };
             for (const k in configs) {
                 const item = configs[k];
-                item.run_in.includes(site_id) && GM_addValueChangeListener(k, item.f.bind(this));
+                item.run_in.includes(site_id) && GM_Objects.addvaluechangeistener(k, item.f.bind(this));
             }
         },
+        init_rate_videos() {
+            const o = new Dic_Array(GM_Objects.get_value('rate_videos', []), 'video_id');
+            o.check_rate = function (id) { return this.includes_r(id, true)?.rate || 0; };
+            o.add = function (info) {
+                const video_id = info.video_id;
+                const data = this.find(e => e.video_id === video_id);
+                if (data && data.rate !== info.rate) {
+                    data.rate = info.rate;
+                    this.push(data);
+                } else if (!data) this.push(info);
+                else return false;
+                return true;
+            };
+            return o;
+        },
+        // 初始化拦截up数据
+        init_block_ups: () => new Dic_Array(GM_Objects.get_value('block_ups', []), 'up_id'),
+        // 初始化历史访问数据
+        init_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
         // 数据初始化
-        show_status: () => null,
         data_init(site_id) {
             // 全局启用, 关键词过滤
             this.black_keys._main();
@@ -651,13 +731,15 @@
             this.cache_block_ups = [], this.cache_block_ups.includes_r = includes_r.call(this.cache_block_ups, true, 'up_id');
             this.cache_block_videos = [], this.cache_block_videos.includes_r = includes_r.call(this.cache_block_videos, true);
             this.block_ups = this.init_block_ups();
-            this.block_videos = new Block_Video_Array(GM_getValue('block_videos') || [], 0);
+            this.block_videos = new Block_Video_Array(GM_Objects.get_value('block_videos', []), 0);
             // 仅在搜索的页面启用, 播放页不需要
             if (site_id === 2) this.rate_videos = this.init_rate_videos(), this.visited_videos = this.init_visited_videos();
             this._data_sync_monitor(site_id);
             this._rate_up_status_write_monitor();
             this.show_status = this._show_data_status;
         },
+        // 展示数据状态
+        show_status: () => null,
         _show_data_status() {
             const s = 'bilibili_optimizer_detail:';
             Colorful_Console.main(s);
@@ -670,9 +752,9 @@
                 [this.black_keys.a, 'a_black_keys'],
                 [this.black_keys.b, 'b_black_keys']
             ].forEach(e => details.push(e[1] + ': ' + e[0].length + ";"));
-            const i = GM_getValue('install_date') || 0;
-            i === 0 ? GM_setValue('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
-            const script = GM_info.script;
+            const i = GM_Objects.get_value('install_date', 0);
+            i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
+            const script = GM_Objects.info.script;
             ['version', 'author', 'lastModified', 'homepage'].forEach(e => details.push(e + ': ' + script[e] + ';'));
             details.push('-'.repeat((s.length + 4) * 2));
             console.log(details.join('\n'));
@@ -700,9 +782,9 @@
              * @returns {boolean}
              */
             check(up_id) { return this._data.some(e => e.up_id === up_id); },
-            _info_write(data, mode = false) { GM_setValue('block_ups', data), Colorful_Console.main('update_up_info', 'info', mode); },
+            _info_write(data, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.main('update_up_info', 'info', mode); },
             /**
-             *
+             * 取消up拦截
              * @param {string} up_id
              * @returns {void}
              */
@@ -710,6 +792,11 @@
                 const data = this._data;
                 data.remove(up_id) && (this._info_write(data), Dynamic_Variants_Manager.up_video_sync('unblock', 'up', up_id));
             },
+            /**
+             * 拦截up
+             * @param {object} info
+             * @returns {null}
+             */
             block(info) {
                 const data = this._data;
                 const up_id = info.up_id;
@@ -723,7 +810,7 @@
              */
             get _data() { return Dynamic_Variants_Manager.init_rate_videos(); },
             /**
-             *
+             * 检查视频的评分
              * @param {string} video_id
              * @returns {number}
              */
@@ -739,7 +826,7 @@
                 const s_type = mode ? 'add' : 'remove';
                 arr[s_type](data) && (this._info_write(arr), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
-            _info_write(data) { GM_setValue('rate_videos', data), Colorful_Console.main('update_rate_video_info'); }
+            _info_write(data) { GM_Objects.set_value('rate_videos', data), Colorful_Console.main('update_rate_video_info'); }
         },
         /**
          * 历史访问, 只有添加, 没有删除
@@ -748,7 +835,7 @@
         add_visited_video(video_id) {
             const arr = Dynamic_Variants_Manager.init_visited_videos();
             arr.push(video_id);
-            GM_setValue('visited_videos', arr);
+            GM_Objects.set_value('visited_videos', arr);
             Dynamic_Variants_Manager.rate_visited_data_sync(video_id);
             Colorful_Console.main('play record has been writed');
         },
@@ -834,15 +921,15 @@
         }
         #auto_light = {
             _light_off: false,
-            _mode: GM_getValue('auto_light') || 0,
+            _mode: GM_Objects.get_value('auto_light', 0),
             _names: ['auto_light_off', 'always_light_off', 'disable_light_off'],
             _mid: null,
-            _create_menus() { this._mid = GM_registerMenuCommand(this._names[this._mode === 2 ? 0 : this._mode + 1], this._func.bind(this)); },
+            _create_menus() { this._mid = GM_Objects.registermenucommand(this._names[this._mode === 2 ? 0 : this._mode + 1], this._func.bind(this)); },
             _func() {
-                this._mid && GM_unregisterMenuCommand(this._mid);
+                this._mid && GM_Objects.unregistermenucommand(this._mid);
                 this._mode === 2 ? (this._mode = 0) : ++this._mode;
                 if (this._mode !== 0) this._light_off = this._mode === 1;
-                GM_setValue('auto_light', this._mode);
+                GM_Objects.set_value('auto_light', this._mode);
                 this._create_menus();
             },
             _monitor: () => {
@@ -869,7 +956,7 @@
             }
         };
         // 速度控制, 菜单函数
-        #regist_menus_command() { [['speedup', true], ['slow', false]].forEach(e => GM_registerMenuCommand(e[0], this.#speed_control.bind(this, e[1]))); }
+        #regist_menus_command() { [['speedup', true], ['slow', false]].forEach(e => GM_Objects.registermenucommand(e[0], this.#speed_control.bind(this, e[1]))); }
         // 访问视频记录
         #visited_record() {
             // 连续的内容不记录 ?
@@ -1031,17 +1118,15 @@
         }
         // 监听页面播放发生变化
         #url_change_monitor() {
-            // 判断浏览器是否支持这个feature
-            if (window.onurlchange === null) {
-                window.addEventListener('urlchange', (info) => {
-                    setTimeout(() => {
-                        const video_id = Base_Info_Match.get_video_id(info.url);
-                        if (video_id === this.#video_info.video_id) return;
-                        this.video_change_id = video_id;
-                        this.#load_video_info();
-                        this.#visited_record();
-                    }, 500);
-                });
+            // 判断浏览器是否支持url change
+            if (GM_Objects.supportonurlchange === null) {
+                window.addEventListener('urlchange', (info) => setTimeout(() => {
+                    const video_id = Base_Info_Match.get_video_id(info.url);
+                    if (video_id === this.#video_info.video_id) return;
+                    this.video_change_id = video_id;
+                    this.#load_video_info();
+                    this.#visited_record();
+                }, 600));
                 return true;
             } else Colorful_Console.main('browser does not support url_change event, please update browser', 'warning', true);
         }
@@ -1178,7 +1263,10 @@
                         title: data.title
                     };
                     for (const k in info) info[k] += '';
-                    if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
+                    if (!info.video_id && data.arcurl?.includes('/cheese')) {
+                        this.#search_page_results.push(null);
+                        return true;
+                    }
                     const r = Dynamic_Variants_Manager.completed_check(info);
                     if (r) this.#search_page_results.push(null);
                     else {
@@ -1272,20 +1360,16 @@
         };
         // 代理拦截函数
         #proxy_module = {
-            _run_configs: {
-                _disable_body_contextmenu_event: { run_at: 0, run_in: Array.from({ length: 5 }, (_val, index) => index), type: 1 },
-                _fetch: { run_at: 0, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
-                _search_box_clear: { run_at: 0, run_in: [0, 1, 3, 4, 5], type: 1 },
-                _addeventlistener: { run_at: 0, run_in: [2], type: 1 },
-                _setattribute: { run_at: 1, run_in: [1], type: 1 },
-                _history_replacestate: { run_at: 0, run_in: [1, 5], type: 1 },
-                _history_pushstate: { run_at: 1, run_in: [1, 5], type: 1 }
-            },
-            // 代理
+            /**
+             * 代理设置
+             * @param {object} target
+             * @param {string} name
+             * @param {object} handle
+             */
             __proxy(target, name, handle) { target[name] = new Proxy(target[name], handle); },
             // 在视频播放页面, 当视频被加载完成, 会载入url追踪参数
             _history_replacestate() {
-                this.__proxy(unsafeWindow.history, 'replaceState', {
+                this.__proxy(GM_Objects.window.history, 'replaceState', {
                     apply(...args) {
                         const a = args[2]?.[2];
                         !(a && ['vd_source=', 'spm_id_from'].some(e => a.includes(e))) && Reflect.apply(...args);
@@ -1294,7 +1378,7 @@
             },
             // 当点击右侧的视频, 更新历史url会添加追踪参数, from_spmid
             _history_pushstate() {
-                this.__proxy(unsafeWindow.history, 'pushState', {
+                this.__proxy(GM_Objects.window.history, 'pushState', {
                     apply(...args) {
                         if (args.length === 3) {
                             const a = args[2];
@@ -1313,26 +1397,29 @@
                     }
                 });
             },
-            // handleDocumentInitActive, 这个点击函数会导致url被添加追踪参数
+            // 页面中的handleDocumentInitActive, 这个点击函数会导致url被添加追踪参数
             _addeventlistener() { this.__proxy(document, 'addEventListener', { apply(...args) { !(args.length === 3 && args[2][0] === 'click' && args[2][1]?.name === 'handleDocumentInitActive') && Reflect.apply(...args); } }); },
             // 干预页面进行的href添加追踪参数的操作
             // 由于当前页面的元素已经添加了追踪参数, 所以拦截的操作可以在这里启动, 而不是在页面刚加载的时候启动
             _setattribute() { this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } }); },
-            // 拦截document.body的菜单事件
+            // 拦截document.body菜单事件
             // 由于事件是由于document.body所创建, 通过window/document无法直接拦截到
             // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦(无法准确及时进行)
             // 通过原型链就可以精确执行拦截的操作
             _disable_body_contextmenu_event() { this.__proxy(HTMLBodyElement.prototype, 'addEventListener', { apply(...args) { (args.length !== 3 || args[2]?.[0] !== 'contextmenu') && Reflect.apply(...args); } }); },
-            // 顶部检索框点击, 回车, 操作方式均为window.open(url), 只需要拦截这个函数就可以拦截所有的这些操作
+            // 顶部检索框点击/回车, 操作方式均为window.open(url), 只需要拦截这个函数就可以拦截所有的这些操作
             _search_box_clear() {
-                this.__proxy(unsafeWindow, 'open', {
+                this.__proxy(GM_Objects.window, 'open', {
                     apply(...args) {
+                        // 清除掉追踪参数
                         const url = args[2]?.[0]?.split('&')[0] || '';
                         if (url) {
+                            // 检查搜索的内容是否包含垃圾
                             if (Dynamic_Variants_Manager.key_check(decodeURIComponent(url))) {
                                 Colorful_Console.main('search content contain black key', 'warning', true);
                                 return;
-                            } else args[2][0] = url;
+                            }
+                            args[2][0] = url;
                         }
                         Reflect.apply(...args);
                     }
@@ -1340,45 +1427,51 @@
             },
             // 拦截fetch的返回结果
             _fetch: () => {
-                // 填充拦截之后的空白图片
-                const lost_pic = '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg';
-                const trap = (func) => {
-                    func = async (...args) => {
-                        const [url, config] = args;
-                        const response = await fetch(url, config);
-                        // 根据配置的函数, 决定是否需要干预返回的结果
-                        const hfu = this.#configs.handle_fetch_url(url);
-                        // response, 只允许访问一次, clone一份, 在复制上进行操作
-                        // 然后拦截json函数的返回内容, 从而实现对返回结果的拦截
-                        if (hfu) response.json = () => response.clone().json().then((data) => {
-                            const results = hfu(data), hdf = this.#configs.handle_data_func;
-                            results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.main('url no match rule: ' + url, 'debug');
-                            return data;
-                        });
-                        return response;
-                    };
-                    return func;
-                };
-                // B站的fetch进行了bind(window)的操作, 需要设置陷阱函数拦截这个操作
+                // B站的fetch进行了bind(window)的操作, 拦截这个操作, 不能直接拦截fetch
                 Function.prototype.bind = new Proxy(Function.prototype.bind, {
                     apply: (...args) => {
-                        if (args.length > 1) {
-                            const fn = args[1];
-                            if (fn.name === 'fetch') args[1] = trap(fn);
+                        if (args[1]?.name === 'fetch') {
+                            // 填充拦截之后的空白图片
+                            const lost_pic = '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg';
+                            // 返回自定义的fetch函数替换掉fetch.bind(window)生成的函数
+                            args[1] = async (...args) => {
+                                const [url, config] = args;
+                                const response = await fetch(url, config);
+                                // 根据配置的函数, 决定是否需要干预返回的结果
+                                const hfu = this.#configs.handle_fetch_url(url);
+                                // response, 只允许访问一次, clone一份, 在复制上进行操作
+                                // 然后拦截json函数的返回内容, 从而实现对返回结果的拦截
+                                if (hfu) response.json = () => response.clone().json().then((data) => {
+                                    const results = hfu(data), hdf = this.#configs.handle_data_func;
+                                    // 假如拦截内容, 则清空该组内容, 图片填充
+                                    results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.main('url no match rule: ' + url, 'debug');
+                                    return data;
+                                });
+                                return response;
+                            };
                         }
                         return Reflect.apply(...args);
                     }
                 });
             },
             /**
-             *
+             * 获得配置函数
              * @param {number} id
              * @returns {Array}
              */
             get_funcs(id) {
-                const arr = [];
-                for (const k in this._run_configs) {
-                    const c = this._run_configs[k];
+                // 运行参数配置
+                const run_configs = {
+                    _disable_body_contextmenu_event: { run_at: 0, run_in: Array.from({ length: 5 }, (_val, index) => index), type: 1 },
+                    _fetch: { run_at: 0, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
+                    _search_box_clear: { run_at: 0, run_in: [0, 1, 3, 4, 5], type: 1 },
+                    _addeventlistener: { run_at: 0, run_in: [2], type: 1 },
+                    _setattribute: { run_at: 1, run_in: [1], type: 1 },
+                    _history_replacestate: { run_at: 0, run_in: [1, 5], type: 1 },
+                    _history_pushstate: { run_at: 1, run_in: [1, 5], type: 1 }
+                }, arr = [];
+                for (const k in run_configs) {
+                    const c = run_configs[k];
                     if (c.run_in.includes(id)) {
                         const a = c.type === 1 ? this[k].bind(this) : this[k];
                         a.start = c.run_at, a.type = c.type;
@@ -1448,99 +1541,13 @@
                 run_in: [2],
                 css: '.activity-game-list.i_wrapper.search-all-list {display: none !important;}'
             },
-            shade: {
-                run_in: Array.from({ length: 6 }, (_val, index) => index).filter(e => e !== 1),
-                colors: {
-                    yellow: "rgb(247, 232, 176)",
-                    green: "rgb(202 ,232, 207)",
-                    grey: "rgb(182, 182, 182)",
-                    olive: "rgb(207, 230, 161)",
-                },
-                current_color: '',
-                current_opacity: 0,
-                shade_id: 'screen_shade_cover',
-                get opacity() {
-                    const h = new Date().getHours();
-                    return h > 20
-                        ? 0.55
-                        : h < 7
-                            ? 0.65
-                            : h > 15
-                                ? h === 18
-                                    ? 0.35
-                                    : h === 19
-                                        ? 0.45
-                                        : h === 20
-                                            ? 0.5
-                                            : 0.3
-                                : 0.15;
-                },
-                get shade_node() { return document.getElementById(this.shade_id); },
-                /**
-                 * 创建遮罩
-                 * @param {string} color
-                 * @param {number} opacity
-                 */
-                create_cover(color, opacity = 0.5) {
-                    const html = `
-                        <div
-                            id="${this.shade_id}"
-                            style="
-                                transition: opacity 0.1s ease 0s;
-                                z-index: 10000000;
-                                margin: 0;
-                                border-radius: 0;
-                                padding: 0;
-                                background: ${color};
-                                pointer-events: none;
-                                position: fixed;
-                                top: -10%;
-                                right: -10%;
-                                width: 120%;
-                                height: 120%;
-                                opacity: ${opacity};
-                                mix-blend-mode: multiply;
-                                display: block;
-                            "
-                        ></div>`;
-                    document.documentElement.insertAdjacentHTML("afterbegin", html);
-                },
-                set_color(color, mode = true) {
-                    if (this.current_color === color) return;
-                    this.change_color(color);
-                    this.current_color = color;
-                    mode && GM_setValue('shade_color', color);
-                },
-                change_color(color) { this.shade_node.style.background = color; },
-                change_opacity(opacity) {
-                    if (this.current_opacity !== opacity) return;
-                    this.current_opacity = opacity;
-                    this.shade_node.style.opacity = opacity;
-                },
-                main() {
-                    this.current_color = GM_getValue('shade_color') || this.colors.yellow;
-                    this.current_opacity = this.opacity;
-                    GM_setValue('shade_opacity', this.current_opacity);
-                    this.create_cover(this.current_color, this.current_opacity);
-                    const uppercase = (e) => e.slice(0, 1).toUpperCase() + e.slice(1);
-                    Object.keys(this.colors).forEach((e, index) =>
-                        GM_registerMenuCommand(
-                            uppercase(e),
-                            this.set_color.bind(this, e),
-                            e.slice(0, 1) + index
-                        )
-                    );
-                    GM_addValueChangeListener('shade_color', (...args) => args[3] && this.set_color(args[2], false));
-                    GM_addValueChangeListener('shade_opacity', (...args) => args[3] && this.change_opacity(args[2]));
-                }
-            },
             inject_css(id) {
                 const arr = [];
                 for (const k in this) {
                     const c = this[k];
-                    c.run_in?.includes(id) ? k.startsWith('_') ? arr.push(c.css) : c.main() : null;
+                    c.run_in?.includes(id) && arr.push(c.css);
                 }
-                arr.length > 0 && GM_addStyle(arr.join(''));
+                arr.length > 0 && GM_Objects.addstyle(arr.join(''));
             }
         };
         // 事件函数
@@ -1571,7 +1578,7 @@
                         }
                     } catch (error) {
                         console.log(error);
-                        Notification('some error cause on menus event', 'warning');
+                        GM_Objects.notification('some error cause on menus event', 'warning');
                     }
                 }, true);
             },
@@ -1593,7 +1600,7 @@
                                 if (href.endsWith('video//')) p.href = 'javascript:void(0)';
                                 else {
                                     href = get_cure_href(href);
-                                    if (p.target === '_blank') GM_openInTab(href, { insert: 1, active: true });
+                                    if (p.target === '_blank') GM_Objects.openintab(href, { insert: 1, active: true });
                                     else window.location.href = href;
                                 }
                             }
@@ -1647,7 +1654,7 @@
                         const url = this[key];
                         if (url) {
                             const s = this._get_content();
-                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_openInTab(this._protocols + url + encodeURIComponent(s), { insert: true, activate: true }) : Colorful_Console.main('search content contain black key', 'warning', true));
+                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._protocols + url + encodeURIComponent(s), { insert: true, activate: true }) : Colorful_Console.main('search content contain black key', 'warning', true));
                             return true;
                         }
                         return false;
@@ -1770,7 +1777,7 @@
                     // B站页面改变, 非all首次访问的数据也被整合到html
                     if (!['com/video', 'com/all'].some(e => href.includes(e))) return;
                     let init_data = null;
-                    Object.defineProperty(unsafeWindow, '__pinia', {
+                    Object.defineProperty(GM_Objects.window, '__pinia', {
                         set: (val) => {
                             // 记录, => 标签也写
                             this.#init_data = [];
@@ -1885,8 +1892,9 @@
             },
             _home_module: {
                 _maintain() {
-                    Colorful_Console.main('data maintenance has started', 'info', true), GM_setValue('maintain', true);
-                    const data = GM_getValue('block_ups') || [];
+                    if (!confirm('data maintenance will take some time, start?')) return;
+                    Colorful_Console.main('data maintenance has started', 'info', true), GM_Objects.set_value('maintain', true);
+                    const data = GM_Objects.get_value('block_ups', []);
                     if (data.length > 1500) {
                         const now = Date.now();
                         const tmp = data.filter(e => {
@@ -1898,11 +1906,12 @@
                             }
                             return true;
                         });
-                        tmp.length < data.length && GM_setValue('block_ups', tmp);
+                        tmp.length < data.length && GM_Objects.set_value('block_ups', tmp);
                     }
-                    GM_setValue('maintain', false), Colorful_Console.main('data maintenance has been completed', 'info', true);
+                    GM_Objects.set_value('maintain', false), Colorful_Console.main('data maintenance has been completed, close all pages to restart', 'info', true);
+                    setTimeout(() => GM_Objects.window_close(), 5000);
                 },
-                main() { GM_registerMenuCommand('maintain', this._maintain.bind(this)); }
+                main() { GM_Objects.registermenucommand('maintain', this._maintain.bind(this)); }
             },
             // 监听拦截up或者视频的变化, 对整个页面遍历, 检查是否是否被拦截
             _block_video_up_data_sync_monitor: () => {
@@ -1980,6 +1989,111 @@
                 return data;
             }
         };
+        // 添加html元素
+        #html_modules = {
+            _shade: {
+                run_in: Array.from({ length: 6 }, (_val, index) => index).filter(e => e !== 1),
+                colors: {
+                    yellow: "rgb(247, 232, 176)",
+                    green: "rgb(202 ,232, 207)",
+                    grey: "rgb(182, 182, 182)",
+                    olive: "rgb(207, 230, 161)",
+                },
+                current_color: '',
+                current_opacity: 0,
+                shade_id: 'screen_shade_cover',
+                get opacity() {
+                    const h = new Date().getHours();
+                    return h > 20
+                        ? 0.55
+                        : h < 7
+                            ? 0.65
+                            : h > 15
+                                ? h === 18
+                                    ? 0.35
+                                    : h === 19
+                                        ? 0.45
+                                        : h === 20
+                                            ? 0.5
+                                            : 0.3
+                                : 0.15;
+                },
+                get shade_node() { return document.getElementById(this.shade_id); },
+                /**
+                 * 创建遮罩
+                 * @param {string} color
+                 * @param {number} opacity
+                 */
+                create_cover(color, opacity = 0.5) {
+                    const html = `
+                        <div
+                            id="${this.shade_id}"
+                            style="
+                                transition: opacity 0.1s ease 0s;
+                                z-index: 10000000;
+                                margin: 0;
+                                border-radius: 0;
+                                padding: 0;
+                                background: ${color};
+                                pointer-events: none;
+                                position: fixed;
+                                top: -10%;
+                                right: -10%;
+                                width: 120%;
+                                height: 120%;
+                                opacity: ${opacity};
+                                mix-blend-mode: multiply;
+                                display: block;
+                            "
+                        ></div>`;
+                    document.documentElement.insertAdjacentHTML("afterbegin", html);
+                },
+                set_color(color, mode = true) {
+                    if (this.current_color === color) return;
+                    this.change_color(color);
+                    this.current_color = color;
+                    mode && GM_Objects.set_value('shade_color', color);
+                },
+                change_color(color) {
+                    const node = this.shade_node;
+                    node && (node.style.background = color);
+                },
+                change_opacity(opacity) {
+                    if (this.current_opacity !== opacity) return;
+                    this.current_opacity = opacity;
+                    const node = this.shade_node;
+                    node && (node.style.opacity = opacity);
+                },
+                init() {
+                    this.current_color = GM_Objects.get_value('shade_color') || this.colors.yellow;
+                    this.current_opacity = this.opacity;
+                    this.create_cover(this.current_color, this.current_opacity);
+                },
+                main() {
+                    // 每次打开页面都写入透明度
+                    GM_Objects.set_value('shade_opacity', this.current_opacity);
+                    const uppercase = (e) => e.slice(0, 1).toUpperCase() + e.slice(1);
+                    Object.keys(this.colors).forEach((e, index) =>
+                        GM_Objects.registermenucommand(
+                            uppercase(e),
+                            this.set_color.bind(this, e),
+                            e.slice(0, 1) + index
+                        )
+                    );
+                    GM_Objects.addvaluechangeistener('shade_color', (...args) => args[3] && this.set_color(args[2], false));
+                    GM_Objects.addvaluechangeistener('shade_opacity', (...args) => args[3] && this.change_opacity(args[2]));
+                }
+            },
+            get_funcs(id) {
+                if (this._shade.run_in.includes(id)) {
+                    this._shade.init();
+                    const a = this._shade.main.bind(this._shade);
+                    a.start = 1;
+                    return [a];
+                }
+                return [];
+            }
+        };
         /**
          *
          * @param {string} href
@@ -1996,7 +2110,7 @@
             // 初始化动态数据管理模块
             Dynamic_Variants_Manager.data_init(id);
             // 配置启动函数
-            [[this.#proxy_module], [this.#page_modules, href], [this.#event_module]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
+            [[this.#proxy_module], [this.#page_modules, href], [this.#event_module], [this.#html_modules]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
         }
         /**
          * 执行函数
@@ -2004,14 +2118,14 @@
          */
         #load_func(funcs) { funcs.forEach(e => e.type ? e() : e.call(this)); }
         // 启动整个程序
-        start() { this.#load_func(this.#start_load_funcs), unsafeWindow.onload = () => (this.#load_func(this.#end_load_funcs), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started')); }
+        start() { this.#load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (this.#load_func(this.#end_load_funcs), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started')); }
     }
     // 优化器主体 -----------
 
     // ----------------- 启动
     {
         // 假如数据处于维护中, 就不执行脚本
-        if (GM_getValue('maintain')) Colorful_Console.main('data under maintenance, wait a moment', 'warning', true);
+        if (GM_Objects.get_value('maintain', false)) Colorful_Console.main('data under maintenance, wait a moment', 'warning', true);
         else {
             const { href, search, origin, pathname } = location;
             // 清除直接访问链接的追踪参数
