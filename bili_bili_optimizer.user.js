@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.2.0
+// @version      1.2.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -625,7 +625,6 @@
         // 评分和访问数据同步
         // 初始化视频评分数据
         rate_visited_data_sync(data) { GM_Objects.set_value(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
-
         // up, 评分, 状态更新写入, 这部分是相对影响性能的, 当数据累积到一定数量才写入, 或者定时写入
         _rate_up_status_write_monitor() {
             let up_times = 0, rate_times = 0, tmp = null;
@@ -851,6 +850,7 @@
         #video = null;
         // 历史访问settimeout id
         #record_id = null;
+        #auto_speed_mode = false;
         // 视频基本信息
         #video_info = {
             video_id: '',
@@ -907,6 +907,7 @@
                 // 只有当手动更改之后, 才会自动变速
                 if (this.#is_first) return;
                 const target = e.target;
+                this.#auto_speed_mode = false;
                 target.playbackRate !== this.#video_speed && setTimeout(() => { target.playbackRate = this.#video_speed; }, 1500);
             };
         }
@@ -917,6 +918,7 @@
         #speed_control(mode) {
             this.#is_first = false;
             this.#video_speed += (mode ? 0.5 : -0.5);
+            this.#auto_speed_mode = false;
             if (0 < this.#video_speed < 5) this.#video.playbackRate = this.#video_speed, this.#is_first = this.#video_speed < 2;
         }
         #auto_light = {
@@ -1131,6 +1133,19 @@
             } else Colorful_Console.main('browser does not support url_change event, please update browser', 'warning', true);
         }
         #click_target(classname) { document.getElementsByClassName(classname)[0]?.click(); }
+        // 自动速度控制, 用于快速观看视频
+        #auto_speed_up() {
+            this.#auto_speed_mode = true;
+            const ids = [[15000, 1.25], [75000, 1.5], [125000, 2], [155000, 2.5], [185000, 3]].map((e, i) => setTimeout(() => {
+                if (!this.#auto_speed_mode) {
+                    ids.forEach(id => id && clearTimeout(id));
+                    return;
+                }
+                this.#video.playbackRate = e[1];
+                ids[i] = null;
+            }, e[0]));
+            GM_Objects.set_value('speed_up_video', false);
+        }
         /**
          * 声音控制
          * @param {boolean} mode
@@ -1171,6 +1186,7 @@
                 this.#regist_menus_command();
                 this.#auto_light.main() && setTimeout(() => this.light_control(1), 300);
                 this.#visited_record();
+                GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
             }
         }
     }
@@ -1600,6 +1616,7 @@
                                 if (href.endsWith('video//')) p.href = 'javascript:void(0)';
                                 else {
                                     href = get_cure_href(href);
+                                    event.ctrlKey && GM_Objects.set_value('speed_up_video', true);
                                     if (p.target === '_blank') GM_Objects.openintab(href, { insert: 1, active: true });
                                     else window.location.href = href;
                                 }
