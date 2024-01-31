@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.2.1
+// @version      1.2.2
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -854,7 +854,7 @@
         // 视频基本信息
         #video_info = {
             video_id: '',
-            video_title: '',
+            title: '',
             up_id: '',
             duration: 0,
             is_collection: false
@@ -893,7 +893,7 @@
         // 读取视频的基本信息
         #load_video_info() {
             this.#video_info.is_collection = this.#check_is_collection;
-            this.#video_info.video_title = document.getElementsByTagName('h1')[0].title.trim();
+            this.#video_info.title = document.getElementsByTagName('h1')[0].title.trim();
             this.#video_info.video_id = Base_Info_Match.get_video_id(location.href);
             const node = document.getElementsByClassName('up-name');
             this.#video_info.up_id = node.length > 0 ? Base_Info_Match.get_up_id(node[0].href) : this.#get_up_id();
@@ -996,7 +996,7 @@
                     const info = {
                         // 视频评分
                         video_id: id,
-                        video_title: video_info.video_title,
+                        title: video_info.title,
                         up_id: video_info.up_id,
                         last_active_date: now,
                         visited_times: 1,
@@ -1235,7 +1235,7 @@
                 },
                 // 读取目标元素的视频标题和up的名称
                 get_title_up_name(node, info) {
-                    info.video_title = node.getElementsByTagName('h3')[0]?.title.trim() || '';
+                    info.title = node.getElementsByTagName('h3')[0]?.title.trim() || '';
                     info.up_name = node.getElementsByClassName('bili-video-card__info--author')[0]?.innerText.trim() || '';
                 },
                 // 如何处理节点的方式
@@ -1260,7 +1260,7 @@
                     if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
-                get_title_up_name(node, info) { [['video_title', 'title'], ['up_name', 'name']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.innerText.trim() || '')); },
+                get_title_up_name(node, info) { [['title', 'title'], ['up_name', 'name']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.innerText.trim() || '')); },
                 hide_node: (node) => (node.style.display = 'none'),
                 handle_fetch_url: (url) => url.startsWith(this.#configs.api_prefix) ? (data) => data.data : null,
             },
@@ -1332,7 +1332,7 @@
                     'up_id': '',
                     'up_name': '',
                     'video_id': '',
-                    'video_title': '',
+                    'title': '',
                     'is_video': true // 清除掉课堂的内容
                 };
                 for (const a of links) {
@@ -1357,7 +1357,7 @@
                         i++;
                     } else j++;
                 }
-                return i > 1 ? null : (['up_name', 'video_title'].forEach(e => (info[e] = info[e].toLowerCase())), info);
+                return i > 1 ? null : (['up_name', 'title'].forEach(e => (info[e] = info[e].toLowerCase())), info);
             },
             /**
              * 将拦截对象的数据设置为空
@@ -1694,8 +1694,8 @@
                         for (const node of nodes) {
                             const info = this.#utilities_module.get_up_video_info(node);
                             if (info) {
-                                const { video_title, up_name } = info;
-                                (!info.is_video || data.some(e => video_title.includes(e) || up_name.includes(e))) && this.#configs.hide_node(node);
+                                const { title, up_name } = info;
+                                (!info.is_video || data.some(e => title.includes(e) || up_name.includes(e))) && this.#configs.hide_node(node);
                             }
                         }
                     },
