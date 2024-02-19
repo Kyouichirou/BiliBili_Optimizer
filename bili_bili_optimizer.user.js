@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.2.2
+// @version      1.3.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -19,6 +19,7 @@
 // @grant        GM_openInTab
 // @grant        window.close
 // @grant        unsafeWindow
+// @grant        GM_setClipboard
 // @grant        GM_notification
 // @grant        window.onurlchange
 // @grant        GM_registerMenuCommand
@@ -30,8 +31,7 @@
 
 (() => {
     'use strict';
-    // --------------- 通用函数
-    // GM内置函数/对象
+    // --------------- GM内置函数/对象
     const GM_Objects = {
         /**
          * 提示信息
@@ -105,6 +105,9 @@
         // 判断是否支持监听url的改变
         supportonurlchange: window.onurlchange,
     };
+    // GM内置函数/对象 ---------------
+
+    // --------------- 通用函数
     // 自定义打印内容
     const Colorful_Console = {
         _colors: {
@@ -112,8 +115,14 @@
             debug: "#327662",
             info: "#1475b2",
         },
+        /**
+         * 执行打印
+         * @param {string} content
+         * @param {string} type
+         * @param {boolean} mode
+         */
         main(content, type = 'info', mode = false) {
-            let bc = this._colors[type];
+            const bc = this._colors[type];
             const title = bc ? type : (bc = this._colors.info, 'info');
             const params = [
                 `%c ${title} %c ${content} `,
@@ -149,7 +158,30 @@
          */
         get_up_id(href) { return this._match(this._up_id_reg, href); }
     };
-    // 通用函数 -------------
+    // 通用函数 ---------------
+
+    // Bayes_Module ----------
+    class Bayes {
+        #segmenter = null;
+        constructor() {
+            this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
+            // 预先载入数据
+        }
+        /**
+         * 分词
+         * @param {string} content
+         * @param {number} exclude_length
+         * @returns {Array}
+         */
+        #word_seg(content, exclude_length = 1) { return [...seg.segment(content)].filter(e => e.isWordLike).map(e => e.segment).filter(e => e.length > exclude_length); }
+        /**
+         * 统计词频
+         * @param {Array} words_list
+         * @returns {object}
+         */
+        #word_counter(words_list) { return words_list.reduce((counter, val) => (counter[val] ? ++counter[val] : (counter[val] = 1), counter), {}); }
+    }
+    // bayes module ------------
 
     // ------------- 数据结构
     // 统一使用数组作为数据的载体
@@ -161,18 +193,17 @@
          * @param {string} id_name
          */
         constructor(data, id_name) {
-            if (typeof data !== 'object') {
-                super();
-                return;
+            if (typeof data !== 'object') super();
+            else {
+                // 继承, 必须先调用父类, 才能使用this
+                super(...data);
+                this.#id_name = id_name;
             }
-            // 继承, 必须先调用父类, 才能使用this
-            super(...data);
-            this.#id_name = id_name;
         }
         /**
          * 检查是否存在和记录
          * @param {string} id
-         * @returns {boolean}
+         * @returns {boolean || object}
          */
         includes_r(id, mode = false) {
             if (!id) return null;
@@ -214,6 +245,7 @@
             if (target) target.last_active_date = info.date, target.visited_times = info.visited_times;
         }
     }
+
     // 历史访问记录
     class Visited_Array extends Array {
         #limit = 999;
@@ -223,19 +255,17 @@
          * @param {number} limit
          */
         constructor(data, limit) {
-            if (typeof data !== 'object') {
-                super();
-                return;
+            if (typeof data !== 'object') super();
+            else {
+                super(...data);
+                if (limit > 999) this.#limit = limit;
             }
-            super(...data);
-            limit > 999 ? this.#limit = limit : null;
         }
         /**
-         *
+         * 添加数据, 只允许存储限制范围内的数据长度, 默认长度1000
          * @param {string} id
          */
         push(id) {
-            // 只允许存储限制范围内的数据长度, 默认长度1000
             // 超出范围, 则弹出数据
             // 假如存在数据, 则移动到第一位
             if (!id) return;
@@ -244,6 +274,7 @@
             (index < 0 ? super.unshift(id) : index > 0 ? super.unshift(super.splice(index, 1)[0]) : super.length) > this.#limit && super.pop();
         }
     }
+
     // 拦截视频, 由于基本结构基本类似, 直接继承历史记录的数组结构
     class Block_Video_Array extends Visited_Array {
         includes_r(id) { return (id && super.includes(id)) ? (Dynamic_Variants_Manager.accumulative_func(), true) : false; }
@@ -252,6 +283,7 @@
             return index > -1 && (super.splice(index, 1), true);
         }
     }
+
     /**
      * 自定义的includes函数
      * @param {boolean} mode
@@ -266,11 +298,12 @@
             return r ? `block ${val}, target: ${r}` : false;
         };
         return (val) => {
+            // 移除掉空格, 转为小写
             const r = val && f(val.replaceAll(' ', '').toLowerCase());
             return r ? (Colorful_Console.main(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
         };
     }
-    // 数据结构 ------------
+    // 数据结构 --------------
 
     // -------- 动态数据管理
     const Dynamic_Variants_Manager = {
@@ -534,7 +567,7 @@
                 '\u9ec4\u6653\u660e'
             ],
             /**
-             *
+             * 添加拦截关键词
              * @param {Array} data
              */
             add(data) {
@@ -548,11 +581,11 @@
                     }
                 } else this._write_data(data);
                 this.a = [...new Set([...this.a, ...data])];
-                // 注意这里, 需要重新添加函数
+                // 重新赋值后, 需要重新添加函数
                 this.a.includes_r = includes_r.call(this.a, false);
             },
             /**
-             *
+             * 移除拦截关键词
              * @param {Array} data
              */
             remove(data) {
@@ -616,8 +649,7 @@
         block_video(video_id) { this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('block', 'video', video_id), Colorful_Console.main('update block video info'); },
         // 计数记录
         accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
-
-        // 视频和up, 拦截或者取消数据同步
+        // 视频和up, 拦截或者取消时, 数据同步
         up_video_sync(s_type, s_name, s_value) { GM_Objects.set_value('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
         // 评分, 拦截up的数据部分更新同步
         _status_info: null,
@@ -625,7 +657,7 @@
         // 评分和访问数据同步
         // 初始化视频评分数据
         rate_visited_data_sync(data) { GM_Objects.set_value(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
-        // up, 评分, 状态更新写入, 这部分是相对影响性能的, 当数据累积到一定数量才写入, 或者定时写入
+        // up, 评分, 状态更新写入, 假如频繁写入, 相对影响性能的, 当数据累积到一定数量才写入, 或者定时写入, 而不是一变化就写入
         _rate_up_status_write_monitor() {
             let up_times = 0, rate_times = 0, tmp = null;
             const write_data = (mode = false) => {
@@ -657,6 +689,7 @@
                 },
                 get: () => tmp
             });
+            // 每5秒检查数据的状态, 假如数据变化则写入
             setInterval(() => write_data(true), 5000);
         },
         up_video_data_sync_info: null,
@@ -702,9 +735,12 @@
                 item.run_in.includes(site_id) && GM_Objects.addvaluechangeistener(k, item.f.bind(this));
             }
         },
+        // 初始化视频评分数据
         init_rate_videos() {
             const o = new Dic_Array(GM_Objects.get_value('rate_videos', []), 'video_id');
+            // 检查评分函数
             o.check_rate = function (id) { return this.includes_r(id, true)?.rate || 0; };
+            // 添加函数
             o.add = function (info) {
                 const video_id = info.video_id;
                 const data = this.find(e => e.video_id === video_id);
@@ -739,6 +775,19 @@
         },
         // 展示数据状态
         show_status: () => null,
+        // 统计拦截的up的情况
+        _block_up_statistics() {
+            // 对拦截次数进行排序
+            this.block_ups.sort((a, b) => a.visited_times - b.visited_times);
+            const i = this.block_ups.length;
+            // 各个百分段的拦截次数
+            const data = [0.25, 0.5, 0.75].map(e => ' ' + e * 100 + '% block times less than: ' + this.block_ups[Math.floor(e * i)].visited_times + ';');
+            const a = this.block_ups[i - 1];
+            data.push(' up of most block: ' + a.up_name + ', ' + a.visited_times + ';');
+            data.push('-'.repeat(42));
+            return data;
+        },
+        // 展示数据的状态
         _show_data_status() {
             const s = 'bilibili_optimizer_detail:';
             Colorful_Console.main(s);
@@ -751,6 +800,9 @@
                 [this.black_keys.a, 'a_black_keys'],
                 [this.black_keys.b, 'b_black_keys']
             ].forEach(e => details.push(e[1] + ': ' + e[0].length + ";"));
+            // 被拦截up的访问状况
+            // splice(), 支持删除和插入指定位置的元素
+            details.splice(3, 0, ...this._block_up_statistics());
             const i = GM_Objects.get_value('install_date', 0);
             i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
             const script = GM_Objects.info.script;
@@ -828,7 +880,7 @@
             _info_write(data) { GM_Objects.set_value('rate_videos', data), Colorful_Console.main('update_rate_video_info'); }
         },
         /**
-         * 历史访问, 只有添加, 没有删除
+         * 历史访问记录, 只有添加, 没有删除
          * @param {string} video_id
          */
         add_visited_video(video_id) {
@@ -1007,15 +1059,20 @@
                     return true;
                 };
                 const node = document.getElementById('selectWrap');
-                const h = node.getElementsByTagName('h2')[0];
+                const h = node.getElementsByTagName('h3')[0];
                 const select = node.getElementsByTagName('select')[0];
                 select.onchange = (e) => {
+                    debugger;
                     let i = parseInt(e.target.value), title = '';
                     if (i > 0 && i < 4) {
                         // 添加评分信息后, 从拦截的视频将数据移除掉
-                        i = + 2;
+                        i += 2;
                         if (add_rate(i)) title = 'Rate: ' + i;
                         Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id);
+                        // 生成bbdown命令
+                        const cm = `BBDown -mt --work-dir "E:\\video" "${this.#video_info.video_id}"`;
+                        i === 5 && GM_setClipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
+                        // 下一步, 添加信息到nlp
                     } else if (i === 4) Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
                     else if (i === 5) {
                         title = 'Blocked';
@@ -1027,6 +1084,7 @@
                 this.#monitor_video_change(select, h);
             }, 300);
         }
+        // 添加评分菜单
         #add_video_rate_element() {
             const vid = this.#video_info.video_id;
             const rate = Statics_Variant_Manager.rate_video_part.check_video_rate(vid);
@@ -1041,13 +1099,13 @@
                     .select_wrap dt {
                         float: left;
                         width: 64px;
-                        line-height: 36px;
+                        line-height: 30px;
                         text-align: right;
                         font-size: 14px;
                     }
                     .select_wrap dd {
                         margin-left: 56px;
-                        line-height: 36px;
+                        line-height: 30px;
                     }
                     select#selectElem {
                         width: 62px;
@@ -1079,7 +1137,7 @@
                         background: #dbf0ff;
                     }
                 </style>
-                <h2 style="margin-left: 8%;">${status}</h2>
+                <h3 style="margin-left: 8%;">${status}</h2>
                 <hr>
                 <dl>
                     <dt>Menus：</dt>
@@ -1107,7 +1165,7 @@
         // 监听视频播放发生变化
         #monitor_video_change(select, h) {
             let tmp = null;
-            // 注意Object.defineProperty无法拦截私有属性的操作
+            // 注意, Object.defineProperty无法拦截私有属性的操作
             Object.defineProperty(this, 'video_change_id', {
                 set: (video_id) => {
                     tmp = video_id;
@@ -1187,7 +1245,7 @@
                 this.#auto_light.main() && setTimeout(() => this.light_control(1), 300);
                 this.#visited_record();
                 GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
-            }
+            } else Colorful_Console.main('video module will not function properly', 'debug');
         }
     }
     // 视频控制模块 ---------
@@ -1230,8 +1288,7 @@
                     };
                     // 确保数据都是字符串类型
                     for (const k in info) info[k] += '';
-                    if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
-                    return Dynamic_Variants_Manager.completed_check(info);
+                    return (!info.video_id && data.arcurl?.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info);
                 },
                 // 读取目标元素的视频标题和up的名称
                 get_title_up_name(node, info) {
@@ -1257,8 +1314,7 @@
                         title: data.title
                     };
                     for (const k in info) info[k] += '';
-                    if (!info.video_id && data.arcurl?.includes('/cheese')) return true;
-                    return Dynamic_Variants_Manager.completed_check(info);
+                    return (!info.video_id && data.arcurl?.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info);
                 },
                 get_title_up_name(node, info) { [['title', 'title'], ['up_name', 'name']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.innerText.trim() || '')); },
                 hide_node: (node) => (node.style.display = 'none'),
@@ -1364,7 +1420,7 @@
              * @param {object} data
              */
             clear_data(data) {
-                // 递归调用, 遍历各层级的内容
+                // 递归调用, 遍历清空各层级的内容, 不涉及数组
                 for (const key in data) {
                     const tmp = data[key];
                     const vtype = typeof tmp;
@@ -1732,7 +1788,7 @@
             /**
              * 配置执行函数
              * @param {number} id
-             * @returns Array
+             * @returns {Array}
              */
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
         };
@@ -1911,21 +1967,25 @@
                 _maintain() {
                     if (!confirm('data maintenance will take some time, start?')) return;
                     Colorful_Console.main('data maintenance has started', 'info', true), GM_Objects.set_value('maintain', true);
-                    const data = GM_Objects.get_value('block_ups', []);
-                    if (data.length > 1500) {
-                        const now = Date.now();
-                        const tmp = data.filter(e => {
-                            const gap = (now - e.last_active_date) / 1000 / 60 / 60 / 24;
-                            if (gap > 210) return false;
-                            else if (gap > 150) {
-                                const vtimes = e.visited_times;
-                                return !(vtimes < 2 || (vtimes < 3 && gap > 180));
-                            }
-                            return true;
-                        });
-                        tmp.length < data.length && GM_Objects.set_value('block_ups', tmp);
+                    try {
+                        const data = GM_Objects.get_value('block_ups', []);
+                        if (data.length > 1500) {
+                            const now = Date.now();
+                            const tmp = data.filter(e => {
+                                const gap = (now - e.last_active_date) / 1000 / 60 / 60 / 24;
+                                if (gap > 210) return false;
+                                else if (gap > 150) {
+                                    const vtimes = e.visited_times;
+                                    return !(vtimes < 2 || (vtimes < 3 && gap > 180));
+                                }
+                                return true;
+                            });
+                            tmp.length < data.length && GM_Objects.set_value('block_ups', tmp);
+                        }
+                    } catch (error) {
+                        console.error(error);
+                        GM_Objects.set_value('maintain', false), Colorful_Console.main('data maintenance has been completed, close all pages to restart', 'info', true);
                     }
-                    GM_Objects.set_value('maintain', false), Colorful_Console.main('data maintenance has been completed, close all pages to restart', 'info', true);
                     setTimeout(() => GM_Objects.window_close(), 5000);
                 },
                 main() { GM_Objects.registermenucommand('maintain', this._maintain.bind(this)); }
@@ -2018,7 +2078,7 @@
                 },
                 current_color: '',
                 current_opacity: 0,
-                shade_id: 'screen_shade_cover',
+                id_name: 'screen_shade_cover',
                 get opacity() {
                     const h = new Date().getHours();
                     return h > 20
@@ -2035,7 +2095,7 @@
                                             : 0.3
                                 : 0.15;
                 },
-                get shade_node() { return document.getElementById(this.shade_id); },
+                get shade_node() { return document.getElementById(this.id_name); },
                 /**
                  * 创建遮罩
                  * @param {string} color
@@ -2044,7 +2104,7 @@
                 create_cover(color, opacity = 0.5) {
                     const html = `
                         <div
-                            id="${this.shade_id}"
+                            id="${this.id_name}"
                             style="
                                 transition: opacity 0.1s ease 0s;
                                 z-index: 10000000;
@@ -2112,7 +2172,7 @@
             }
         };
         /**
-         *
+         * 构造函数
          * @param {string} href
          */
         constructor(href) {
@@ -2130,7 +2190,7 @@
             [[this.#proxy_module], [this.#page_modules, href], [this.#event_module], [this.#html_modules]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
         }
         /**
-         * 执行函数
+         * 执行函数, call(this), 即使用当前optimizer这整个对象的this, 其他的自定义this
          * @param {Array} funcs
          */
         #load_func(funcs) { funcs.forEach(e => e.type ? e() : e.call(this)); }
