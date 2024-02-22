@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.0
+// @version      1.3.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -47,7 +47,7 @@
          * 读取值
          * @param {string} key_name
          * @param {any} default_value
-         * @returns {null}
+         * @returns {any}
          */
         get_value: (key_name, default_value = null) => GM_getValue(key_name, default_value),
         /**
@@ -161,25 +161,377 @@
     // 通用函数 ---------------
 
     // Bayes_Module ----------
-    class Bayes {
+    class Bayes_Module {
+        // 分词器
         #segmenter = null;
-        constructor() {
-            this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
-            // 预先载入数据
-        }
+        // 提取内容正则
+        #abc_reg = /[a-z]+/ig;
+        #num_reg = /[0-9]+/g;
+        #year_reg = /20[0-2][0-9]|12306/g;
+        #clear_reg = /[a-z0-9\s]+/ig;
+        // 预置内容
+        #white_list = [
+            '开始是生成器，看完就变协程了',
+            '99%的教程都没讲明白的yieldfrom有那么难嘛？|PythonAsyncIO从入门到放弃06',
+            'Python迭代器深入讲解|【AsyncIO从入门到放弃#1】',
+            '回调未来|PythonAsyncIO从入门到放弃09',
+            '自制EventLoop|PythonAsyncIO从入门到放弃08',
+            '这也许是asyncio中最关键的一行代码|PythonAsyncIO从入门到放弃07',
+            '99%的教程都没讲明白的yieldfrom有那么难嘛？|PythonAsyncIO从入门到放弃06',
+            '原来yield要这样用才叫真正的协程|PythonAsyncIO从入门到放弃05',
+            '明明是生成器，却偏说是协程，你是不是在骗我？|PythonAsyncIO从入门到放弃04',
+            '开始是生成器，看完就变协程了',
+            'Python用yield关键字定义生成器【AsyncIO从入门到精通#2】',
+            'Python迭代器深入讲解|【AsyncIO从入门到放弃#1】',
+            'docker初印象|零基础快速入门',
+            'Python装饰器实战技巧|Python进阶',
+            '写Python装饰器的套路|Python进阶',
+            'Python函数参数|深入理解*args和**kwargs|Python进阶',
+            '使用minikube快速搭建Kubernetes集群|v1.7.3',
+            'GameofPODs-Kubernetes|看完这个，你想学K8s了么',
+            '初学python者最容易产生的误解|无废话5分钟快速解释',
+            'VirtualBox上的OpenStack如何调通外部网络|使用Kolla搭建',
+            '详解Python命名空间|全局变量和局部变量和自由变量|Python进阶',
+            '【秒懂】5分钟学会SSH端口转发，远程工作用得着|如何充分利用云服务器',
+            '10个例子，刷新你对Python变量的认知|使用Thonny解剖式讲解|Python入门到进阶',
+            '安装不算完事，只有理解了虚拟环境才算真正掌握Python环境',
+            '善用帮助和文档，Python自学不求人',
+            '尝试用Python写病毒仿真程序',
+            '比IDLE好用，这款Python初学者专属IDEThonny值得拥有',
+            '1分钟设置pip镜像源，不用费心去记配置文件放在哪',
+            'Python迭代器深入讲解|【AsyncIO从入门到放弃#1】',
+            'Python用yield关键字定义生成器【AsyncIO从入门到精通#2】',
+            '开始是生成器，看完就变协程了',
+            '明明是生成器，却偏说是协程，你是不是在骗我？|PythonAsyncIO从入门到放弃04',
+            '原来yield要这样用才叫真正的协程|PythonAsyncIO从入门到放弃05',
+            '全网最好的Python进阶课程-Python3：深入探讨（序列、迭代器、生成器、上下文管理器）中英字幕',
+            '【中英字幕】2023哈弗大学CS50Python&JavaScriptWeb开发课程-14个小时完整版',
+            '5个小时PySide6完全开发指南使用Qt进行PythonGUI桌面应用开发（中英字幕）',
+            '【YouTube热门+中文字幕】Python开发者学习Rust最佳路径-FromPythontoRust',
+            '2022Python教程：Simplilearn10小时Python完整入门课程（中英字幕）',
+            'Python区块链开发教程-Solidity，区块链和智能合约核心概念及全栈开发课程（中英文字幕）',
+            '【Udemy2022Python超级课程】通过构建10个基于现实世界的应用程序-学习Pytho核心技能（中英文字幕）下',
+            '【Udemy2022Python超级课程】通过构建10个基于现实世界的应用程序-学习Pytho核心技能（中英文字幕）上',
+            '【Udemy付费课程】PythonNLP自然语言处理（SpaCy、NLTK、Sklearn、CNN）和8实践个项目（中英文字幕）',
+            '【Udemy高分付费课程】2022Python数据科学和机器学习训练营-Tensorflow、深度学习、神经网络、回归分类、人工智能（中英文字幕）',
+            '【Udemy高分付费课程】Python数据结构与算法-终极Python编码面试和计算机科学训练营（中英文字幕）',
+            '【Udemy高分Python机器学习课程】2022完整训练营-使用Tensorflow、Pandas进行Python机器学习（中英文字幕）下',
+            '【Udemy高分Python机器学习课程】2022完整训练营-使用Tensorflow、Pandas进行Python机器学习（中英文字幕）上',
+            '【UdemyPython机器学习】在Python中学习机器学习、深度学习、贝叶斯学习和模型部署（中英文字幕）',
+            '【Udemy排名第一的Python课程】2022PythonPRO训练营-100天构建100个Python项目成为实战专家！（中英文字幕）P3',
+            '【Udemy排名第一的Python课程】2022PythonPRO训练营-100天构建100个Python项目成为实战专家！（中英文字幕）P2',
+            '【Udemy排名第一的Python课程】2022PythonPRO训练营-100天构建100个Python项目成为实战专家！（中英文字幕）P1',
+            '【Mosh1个小时入门Python】PythonforBeginners-LearnPythonin1Hour（中英文字幕）',
+            '【YouTube百万粉丝大神Mosh】Python系列完整教程（中英文字幕）',
+            '【Udemy付费课程】使用PyQt6和Qt设计器进行PythonGUI开发（中英文字幕）',
+            '【Udemy付费课程】Python机器学习和Python深度学习与数据分析、人工智能、OOP和Python项目（中英文字幕）',
+            '【油管BroCode】面向初学者的Python基础入门教程-->Pythontutorialforbeginners-->（中英文字幕）',
+            '【Udemy付费课程】RESTAPIswithFlaskandPython-->Flask基础课程（中英文字幕）',
+            '【Udemy付费课程】Django4andPythonFull-StackDeveloperMasterclass->Python全栈开发者大师课',
+            '【Udemy付费课程】AdvancedRESTAPIswithFlaskandPython-->PythonFlask进阶课程（中英文字幕）',
+            '【Udemy付费课程】PythonDjango2021-CompleteCourse-->PythonDjango开发指南（中英文字幕）',
+            '【Udemy付费课程】PythonforAbsoluteBeginners-->面向初学者的Python入门教程（中英文字幕）',
+            '强化学习遇上优化-SARSAfor最短路',
+            '强化学习遇上优化-Qlearningfor最短路',
+            '用Python从视频里面扒PPT？',
+            '2023年，我在用哪些VSCODE插件？',
+            '流畅的Python',
+            'CythoninPython',
+            '【Python进阶】Py-spy—最佳性能分析工具，你的程序到底慢在哪',
+            '【不能错过的VIM命令】（3）想改啥，就改啥',
+            '【不能错过的VIM命令】（2）想去哪，就去哪',
+            '【不能错过的VIM命令】（1）输入、保存',
+            '【简单算法】数学建模瘦身法进阶，1秒还不够快？！',
+            '【简单算法】关于我用数学规划秒秒钟做了一个月的瘦身计划这件事',
+            '【简单算法】线性规划——手把手实现交替方向乘子法ADMM',
+            '【简单算法】线性规划—手把手实现增广拉格朗日乘子法',
+            '【简单算法】最短路径—迪节斯特拉算法梳理及coding',
+            '【ChatGPT】还在傻傻敲Prompt？用这个工具就够了',
+            '【简单算法】最短路径—纯手动迪节斯特拉算法',
+            '【你真的会用ChatGPT吗】1.Prompt模板',
+            '「Python」VSCode如何搭建Python开发环境？VSCode如何运行Python代码',
+            '「Python」什么是变量？如何定义变量？如何为变量赋值',
+            '「Python」什么是数据类型？数字，字符串与布尔类型介绍',
+            '「Python」基础教程什么是列表和元组？列表和元组的书写格式以及区别',
+            '「Python」基础教程什么是字典？字典的书写格式',
+            '「Python」基础教程什么是集合？集合和列表的区别',
+            '「Python」基础教程什么是条件控制语句？if语句的书写格式',
+            '「Python」基础教程什么是循环语句？while语句的书写格式，如何跳出while循环',
+            '「Python」基础教程循环语句for的书写格式，for语句可以遍历的目标有哪些',
+            '「Python」基础教程函数有什么作用？如何定义函数',
+            '「Python」进阶教程什么是模块？如何创建导入和使用模块',
+            '「Python」进阶教程类有什么作用？如何定义和使用类',
+            '「Python」进阶教程什么是构造方法？构造方法__init__以及参数self的作用',
+            '「Python」进阶教程类的方法有什么作用？如何定义和调用类的方法',
+            '「Python」进阶教程什么是类的继承？继承的作用，如何实现类的继承',
+            '「Python」进阶教程方法重写有什么用？如何实现类的方法重写？使用super访问父类',
+            '「Python」进阶教程什么是文件？如何读取写入文件？文件读写相关函数介绍',
+            '「Python」进阶教程什么是异常？如何处理异常？tryexcept语句的书写格式',
+            '「Python」进阶教程随机数有什么用？如何生成随机数？random和randint的区别',
+            '「Python」进阶教程日期时间有什么用？如何获取当前日期时间',
+            '「Python」高级教程什么是内部函数？内部函数的作用，如何定义内部函数',
+            '「Python」高级教程什么是内部类？如何定义和使用内部类',
+            '「Python」高级教程什么是变量的作用域？变量的作用范围和检索顺序',
+            '「Python」高级教程函数和方法如何修改模块变量？关键字global的作用以及书写格式',
+            '「Python」高级教程如何修改上一级变量？关键字nonlocal的作用以及书写格式',
+            '「Python」高级教程类的私有成员的作用是什么？如何定义类的私有字段和方法',
+            '「Python」高级教程类的静态字段的作用是什么？如何定义和使用类的静态字段',
+            '「Python」高级教程类和实例访问静态字段的区别是什么？实例修改静态字段陷阱',
+            '「Python」高级教程如何定义和调用类的静态方法？staticmethod与classmethod的区别',
+            '「Python」高级教程什么是JSON？JSON的书写格式，JSON与Python对象之间的转换',
+            '【python】字节码和虚拟机？python代码竟然是这么执行的！',
+            '【python】B站没人讲过的CodeObject，python底层实现一点都不简单！',
+            '【python】python的骨架frame——你写的代码都是运行在它里面的？',
+            '【python】看似简单的加法，背后究竟有多少代码需要运行？看了才知道！',
+            '【python】天使还是魔鬼？GIL的前世今生。一期视频全面了解GIL！',
+            '【python】你知道描述器是多么重要的东西嘛？你写的所有程序都用到了！',
+            '【python】装饰器超详细教学，用尽毕生所学给你解释清楚，以后再也不迷茫了！',
+            '【python】一个公式解决所有复杂的装饰器，理解了它以后任何装饰器都易如反掌！',
+            '【python】如何在class内部定义一个装饰器？这里的坑你要么不知道，要么不会填！',
+            '【python】生成器是什么？怎么用？能干啥？一期视频解决你所有疑问！',
+            '【python】对迭代器一知半解？看完这个视频就会了。涉及的每个概念，都给你讲清楚！',
+            '【python】闭包的实现机制。嵌套函数怎么共享变量的？',
+            '【python】python中什么会被当真？你知道if判断背后的规则吗？',
+            '【python】你知道定义class背后的机制和原理嘛？当你定义class的时候，python实际运行了什么呢？',
+            '【python】你知道MRO是什么嘛？你知道多继承的顺序是怎么决定的嘛？你知道这个视频是B站最硬核的MRO教程嘛？',
+            '【python】class里定义的函数是怎么变成方法的？函数里的self有什么特殊意义么？',
+            '【python】metaclass理解加入门，看完就知道什么是元类了。',
+            '【python】__slots__是什么东西？什么？它还能提升性能？它是如何做到的！？',
+            '【python】B站最细致的super()详解，一定有你不知道的知识！',
+            '【python】staticmethod与classmethod深度机制解析——要知其所以然',
+            '【python】加俩下划线就私有了？聊聊python的私有变量机制。为什么说它不是真的私有变量？',
+            '【python】定义好的变量读不出来？详解全局变量和自由变量的使用！',
+            '【python】TypeHint入门与初探，好好的python写什么类型标注？',
+            '【python】TypeHint的进阶知识，这下总该有你没学过的内容了吧？',
+            '【python】Python的N种退出姿势，你都了解嘛？一期视频让你把每种方法都搞清楚！',
+            '【python】你听说过namedtuple嘛？会用嘛？知道它实现的原理嘛？',
+            '【python】mutable和immutable其实根本没区别？带你了解这个概念背后你没思考过的东西',
+            '【python】内存管理结构初探——我要的内存从哪儿来的？',
+            '【python】Unreachable的对象咋回收的？generation又是啥？',
+            '【python】和python开发人员用同一套命名系统，一期视频就学会！',
+        ];
+        #black_list = [
+            '【Python爬虫】用Python爬取各大平台VIP电影，不花钱也能享受付费一般的待遇，这不轻轻松松？',
+            'PyCharm安装激活教程，一键使用永久激活，新手宝宝可以直接入手！！！',
+            '【python自动化】用python代码写一个前端打地鼠游戏，精准自动打地鼠机器人，边学边玩！',
+            '【Python爬虫】教你用Python爬取漫画资源，Python批量下载付费漫画，实现免费阅读，永久白嫖！！',
+            '【Python爬虫】一分钟教你追剧看电影不求人！python爬虫代码一分钟教你爬取各平台电影视频，小白也能学会！',
+            '【Python爬虫】教你用Python爬取网易云音乐免费听音乐，实现听歌自由，批量下载付费音乐，源码可分享！',
+            '【Python自动化脚本】用Python实现办公自动化，一键生成PPT演示文稿（源码可分享）步骤简单，轻松上手！',
+            '【Python爬虫】毕业生学习项目教你用Python爬虫爬取百度文库vip资源，操作简单，有手就会（附源码）！！！',
+            '【Python自动化脚本】Python实现OCR识别提取图片文字，多语言支持，操作简单新手小白也能学会，附源码！！！',
+            '【Python爬虫】用Python爬取各大平台VIP电影，不花一分钱也能享受付费的待遇，妈妈再也不用但心乱花钱了',
+            '【提供源码】教你用Python爬取知网数据，批量下载论文摘要！步骤简单，小白也能学会！Python爬虫/中国知网',
+            '【Python游戏】用20行Python代码，制作不一样的超级玛丽游戏，手把手教学，制作简单，小白也能学会！！',
+            '【Python自动化】Python自动答题辅助脚本！python代码实现快速答题，在线考试，正确率100%',
+            'Python实现OCR识别提取图片文字，多语言支持，步骤简单小白也能学',
+            '【python自动化】用python代码写一个前端打地鼠游戏，精准自动打地鼠机器人，边学边玩！',
+            '【Python爬虫】两分钟教你用Python爬取漫画资源，Python批量下载付费漫画，实现免费阅读，永久白嫖！！',
+            '【Python爬虫】用Python爬取各大平台VIP电影，不花钱也能享受付费一般的待遇，这不轻轻松松？',
+            '【Python爬虫】教你用Python免费听音乐，实现听歌自由，批量下载付费音乐，源码可分享！',
+            'PyCharm安装激活教程，一键使用永久激活，新手宝宝可以直接入手！！！',
+            '【Python爬虫】2023最新Python安装视频，一键激活永久使用，小白必备，附安装包激活码分享！',
+            '【从0→1】3天搞定Python爬虫，即学即用！',
+            '【Python函数】Python基础打不打的劳，这50个函数必须掌握！！',
+            'Python太牛了，用代码就是实现电脑自动玩笨鸟先飞游戏',
+            '天呐！Python自动玩2048也太变态了吧',
+            '【附源码】Python实用小技巧-实现自动获取海量IP',
+            '【附源码】Python自动化办公之自动发工资条！！',
+            '【Python爬虫】Python一分钟白嫖超清vip壁纸，轻松实现壁纸自由！',
+            'Python实现12306自动抢票，100%成功，春节出行无忧！不用熬夜抢票啦！',
+            '【Python实战】Python还不熟练？多实战敲敲这个打地鼠游戏吧！',
+            '【附源码】过年了，不得给好朋友准备一个特别的礼物？',
+            '【Python爬虫】2024了，是谁还在尬聊啊？Python爬取百度表情包，分分钟成为表情包大户',
+            '【js逆向案例-超简单】百度翻译爬虫逆向',
+            '【附源码】Python爬虫实战，猫眼电影一闪一闪亮星星影评爬虫及可视化',
+            '【附源码】Python自动化脚本，实现微信自动回复',
+            'Python自动抢购，准点秒杀飞天茅台，过年送礼不愁啦！',
+            '【附源码】Python必练入门实战小项目，不会还有人不会吧～～',
+            '【附源码】手把手教你800行代码自制蔡徐坤打篮球小游戏！',
+            '【Python游戏】超级牛！几十行代码就做出了一个【水果忍者】游戏！',
+            '【Python爬虫】Python实现超清4k壁纸下载，附源码~',
+            '【附源码】手把手教你用Python开发俄罗斯方块小游戏_Python练手项目_巩固python基础_Python小游戏',
+            '【2024版】Python一分钟破解WiFi密码，随时随地上网，根本不缺流量！',
+            '【源码可分享】简单用500行Python代码，复刻游戏《我的世界》，无需插件，零基础也能轻松上手！',
+            '【大麦网抢票】最新攻略！Python自动购票脚本，各大演唱会门票轻松购~',
+            '【附源码】Python实现12306自动抢票！寒假不愁，出行无忧！',
+            '【附源码】小说党福音！一分钟暴力爬取各平台VIP小说，快码住',
+            '【python学习】给所有python人一个忠告，普通人学python玩的就是信息差！！！',
+            '国内新兴行业已经崛起,真心建议大家冲一冲新兴领域，工资高不内卷!!!',
+            '【python学习】张雪峰：给所有python人一个忠告，普通人学python玩的就是信息差！！！',
+            '【python大麦抢票】大麦网自动抢票脚本，原价秒杀门票，成功率100%！！！',
+            '真心的建议大家都冲一冲新兴领域！！！工资高不内卷，一定要试试哦不然可会后悔的！！！',
+            '【python资料】张雪峰：给所有python人一个忠告，普通人学python玩的就是信息差！！！',
+            '【python资料】python真的没有大家想的那么难，只要找对方法，那就会很简单啦！！！',
+            '闲着没事在家用python接单，日均入账300＋。如果你会python不去接单就真的太可惜了！！！',
+            '【附源码】教你10秒暴力破解WiFi密码，蹭WiFi神器，一键免费连接WiFi，附安装教程、源码！',
+            '【python资料】python学不懂？千万不要自暴自弃！学姐一招帮你解决所有难题！！！',
+            '前景好不内卷的新兴领域崛起，真心建议大家都冲一下，千万不要错过了再去后悔！！！',
+            '【python资料】听学姐一句劝！想学好Python，一定要找到正确的学习方法！！！',
+            '新兴领域崛起，真心建议大家都冲一下！！！',
+            '各位确定不冲一冲新兴职业吗？现在发展可太香了吧！！！',
+            '【python代码】2024年最新爱心代码分享，快@你的那个ta吧！！！',
+            '【python资料】python全套学习资料分享，是时候打开一条正确学习python的道路了！！！',
+            '【python代码】手把手教你使用python爬取全网音乐，附源码！！！',
+            '【python资料】适合python小白学习的python全套资料分享，别再盲目的学习python了',
+            '【python代码】2024年最新烟花代码分享！！！',
+            '【python代码】python暴力破解WiFi教程，附源码！！！',
+            '【python软件】一款免费python软件分享！！！',
+            '【python代码】python爱心代码分享!!!',
+            '【python代码】植物大战僵尸python代码分享，大家一起来制作游戏吧！！！',
+            '【python软件】分享一个python软件神器，帮助你解决所有python难题！！！',
+            '【python资料】python小白全套资料分享，再也不要盲目学习python了!!!',
+            '【2024清华版Python教程】目前B站最完整的python（数据分析）教程，包含所有干货内容！这还没人看，我不更了！',
+            '计算机专业上岸学姐推荐：编程小白的第一本python入门书，啃完你的python就牛了！',
+            'B站首推！字节大佬花一周讲完的Python，2024公认最通俗易懂的【Python教程】小白也能信手拈来！（爬虫|数据分析|Web开发|项目实战）等等随便白嫖！',
+            '【全268集】北京大学168小时讲完的Python（数据分析）教程，通俗易懂，2024最新版，全程干货无废话，这还学不会，我退出IT界！',
+            '拜托三连了！这绝对是全B站最详细的Python学习路线图（2024新版）让小白少走弯路！',
+            'python+pycharm安装配置教程（2024零基础学python教程必看)',
+            '吹爆！适合所有零基础人群的最全Python学习路线，我给做出来了！-基础语法/爬虫/全栈开发/数据分析/人工智能',
+            'Python70个练手项目，包含爬虫_web开发_数据分析_人工智能等，练完你的Python就牛了！',
+            '揭秘！学Python真的能兼职接单吗？零基础/价格参考/平台推荐/接单技巧/',
+            '拜托三连了！这绝对是全B站最用心（没有之一）的Python数据分析-数据挖掘课程，全程干货无废话，学完即可就业！',
+            '【Python初学者必定要看的入门神书！】下载量超5万，单细胞生物都能看懂！-基础语法/网络爬虫/Web编程/数据分析',
+            '拜托三连了！这绝对是全B站最用心（没有之一）的Python爬虫教程，零基础小白从入门到（不）入狱！',
+            'Python爬虫｜我宣布:这三本书就是学习Python爬虫的天花板！都给我磕到烂！',
+            'B站首推！自学Python一定要看的3本书籍！！！少走三年弯路！！！',
+            'Python学习｜学Python顺序真的很重要！千万不要搞反啦千万不要弄反了！！！能少走一年弯路！',
+            'B站首推！华为大佬168小时讲完的Python（数据分析）教程，全程干货无废话！学完变大佬！这还学不会我退出IT界！',
+            '冒死上传（已被开除）花八千块在某站买的Python课程，每天学习1小时，零基础从入门到精通！',
+            '盲目学习只会毁了你！这绝对是全B站最用心（没有之一）的Python爬虫教程，整整500集，从入门到（不）入狱，学完即可兼职接单！',
+            'B站首推！字节大佬一周讲完的Python【数据分析】教程，整整300集，全程干货无废话，学完即可就业!',
+            '【2023版】这绝对是B站最详细的Python+Pycharm安装配置教程，真正让小白少走弯路，激活码允许白嫖！',
+            '【整整300集】北京大学198小时讲完的人工智能课程（机器学习_深度学习_OpenCV_神经网络等）全程干货无废话，学完立马变大神！',
+            '【整整600集】北京大学198小时讲完的Python教程（数据分析）全程干货无废话！学完变大佬！这还学不会，我退出IT圈！',
+            'B站首推！华为团队花一周讲完的人工智能，2023公认最通俗易懂的【AI人工智能教程】小白也能信手拈来（|机器学习|深度学习|芯片）等等随便白嫖！',
+            '【整整300集】暑假60天如何逼自己学会Python，从入门到精通，每天坚持打卡练习，学不会我退出IT界！',
+            '【2023清华版Python教程】可能是B站最好的Python教程，全300集包含入门到实战所有干货，存下吧，很难找全的！',
+            '【全600集】我花3W买的Python系课统，让你少走99%的弯路！手把手教学，通俗易懂，零基础快速进阶Python大佬！学完即可就业！不会我退出IT教学圈！',
+            '【浙江大学亲授】B站最系统的Python数据分析教学，整整300集，包含数据获取、分析、处理、挖掘等，小白从入门到项目实战保姆级教程，学完即可就业，存下吧！',
+            '【全800集】少走99%的弯路！清华大佬耗费一周录制的Python教程，手把手教学，通俗易懂!0基础小白快速进阶大神，无私分享，拿走不谢！还不快来学起来！',
+            '【Python教程】华为大佬花一周讲完的Python教程，Python从入门到精通，包括基础教程、案例教学、进阶学习和全流程实战，整整400集，熟练掌握并运用！',
+            'Python教程｜100个Python新手小白必备的练习题，简单又实用，手把手教学，每日一练，轻松掌握，实践是检验真理的唯一标准！',
+            '【Python系统课程】268个小时讲完的付费Python系统教程，花了3W买的，无私分享，整整500集！包含基础、核心编程和爬虫、数据分析，学完即可就业！',
+            '【整整500集】B站最系统的Python爬虫教程，从入门到入狱！保姆级手把手教学，全程干货无废话，学完即可就业，别在盲目自学了！！！',
+            '【Python零基础教程】可能是B站最系统的Python教程，一周时间全面了解python从入门到精通，包含所有干货，少走99%的弯路，学完即可就业！',
+            '【全500集】清华大佬终于把Python教程做成了漫画书，结合漫画元素讲解，通俗易懂，全程干货无废话，学完即可就业，拿走不谢！这还学不会我退出IT圈！',
+            '【Python教程】这才是你需要学的！一套针对零基础的python教程，整整300集，全程干货无废话，python从入门到精通，存下吧，很难找全的！',
+        ];
+        // 先验概率
+        #black_p = 0;
+        #white_p = 0;
+        // 内容长度
+        #white_len = 0;
+        #black_len = 0;
+        #total_len = 0;
+        // 词频
+        #black_counter = null;
+        #white_counter = null;
         /**
          * 分词
          * @param {string} content
          * @param {number} exclude_length
          * @returns {Array}
          */
-        #word_seg(content, exclude_length = 1) { return [...seg.segment(content)].filter(e => e.isWordLike).map(e => e.segment).filter(e => e.length > exclude_length); }
+        #seg(content, exclude_length = 1) { return [...this.#segmenter.segment(content)].map(e => e.segment).filter(e => e.length > exclude_length); }
         /**
          * 统计词频
          * @param {Array} words_list
          * @returns {object}
          */
         #word_counter(words_list) { return words_list.reduce((counter, val) => (counter[val] ? ++counter[val] : (counter[val] = 1), counter), {}); }
+        /**
+         * 手动规则取词
+         * @param {string} content
+         */
+        #seg_word(content) {
+            const words = [];
+            // 匹配英文内容
+            const mabc = content.match(this.#abc_reg);
+            // 筛选出长度大于1的, 同时转为小写
+            mabc && words.push(...mabc.filter(e => e.length > 1).map(e => e.toLowerCase()));
+            // 匹配数字
+            const mnum = content.match(this.#num_reg);
+            // 筛选出满足特定的数字, 年份 & 12306
+            mnum && words.push(...mnum.filter(e => this.#year_reg.test(e)));
+            // 将数字, 空格, 英文清除掉
+            words.push(...this.#seg(content.replace(this.#clear_reg, ''), 0));
+            return words;
+        }
+        #get_word_counter() {
+            this.#black_counter = GM_Objects.get_value('black_counter');
+            this.#white_counter = GM_Objects.get_value('white_counter');
+        }
+        /**
+         * 计算先验概率
+         * @param {number} black_len
+         * @param {number} white_len
+         * @param {number} total_len
+         */
+        #get_prior_probability(black_len, white_len, total_len) {
+            this.#black_p = Math.log((black_len + 1) / total_len + 2);
+            this.#white_p = Math.log((white_len + 1) / total_len + 2);
+        }
+        // 初始化模型
+        #init_module() {
+            let total_len = GM_Objects.get_value('total_len'), white_len = 0, black_len = 0;
+            if (total_len) {
+                white_len = GM_Objects.get_value('white_len');
+                black_len = GM_Objects.get_value('black_len');
+                this.#get_word_counter();
+            } else {
+                white_len = this.#white_list.length;
+                black_len = this.#black_list.length;
+                total_len = white_len + black_len;
+                GM_Objects.set_value('white_len', white_len);
+                GM_Objects.set_value('black_len', black_len);
+                GM_Objects.set_value('total_len', total_len);
+                this.#black_counter = this.#word_counter(this.#black_list.map(e => this.#seg_word(e)).flat());
+                this.#white_counter = this.#word_counter(this.#white_list.map(e => this.#seg_word(e)).flat());
+                GM_Objects.set_value('black_counter', this.#black_counter);
+                GM_Objects.set_value('white_counter', this.#white_counter);
+            }
+            this.#white_len = white_len;
+            this.#black_len = black_len;
+            this.#total_len = total_len;
+            this.#get_prior_probability(black_len, white_len, total_len);
+        }
+        constructor() {
+            this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
+            this.#init_module();
+        }
+        /**
+         * 计算概率
+         * @param {string} content
+         * @returns {boolean}
+         */
+        bayes(content) {
+            const c = this.#seg_word(content);
+            let wp = this.#white_p, bp = this.#black_p;
+            c.forEach(e => {
+                const bc = this.#black_counter[e] || 0;
+                const wc = this.#white_counter[e] || 0;
+                // 拉普拉斯平滑处理, 避免 0 概率
+                wp += Math.log((wc + 1) / (this.#white_len + 2));
+                bp += Math.log((bc + 1) / (this.#black_len + 2));
+            });
+            return (bp - wp) / Math.abs(bp) > 0.5;
+        }
+        /**
+         * 添加新内容
+         * @param {string} content
+         * @param {boolean} mode
+         */
+        add_new_content(content, mode) {
+            const ws = this.#seg_word(content);
+            const [dic, dic_name, len_name, len_data] = mode ? [this.#white_counter, 'white_counter', 'white_len', ++this.#white_len] : [this.#black_counter, 'black_counter', 'black_len', ++this.#black_len];
+            ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
+            this.#total_len += 1;
+            this.#get_prior_probability(this.#black_len, this.#white_len, this.#total_len);
+            GM_Objects.set_value('total_len', this.#total_len);
+            GM_Objects.set_value(dic_name, dic);
+            GM_Objects.set_value(len_name, len_data);
+        }
     }
     // bayes module ------------
 
@@ -493,7 +845,6 @@
                 '\u7537\u56e2',
                 '\u4e00\u5e26\u4e00\u8def',
                 '\u6c99\u96d5',
-                '\u4e2d\u56fd\u4eba',
                 '\u5973\u5b9e\u4e60\u751f',
                 '\u7a0b\u5e8f\u5a9b',
                 '\u6708\u5165',
@@ -506,7 +857,6 @@
                 '\u63a5\u5355',
                 '\u4e3b\u64ad',
                 '\u50b2\u5a07',
-                '\u7409\u7483',
                 '\u4e13\u5347\u672c',
                 '\u7a7f\u8d8a\u706b\u7ebf',
                 '\u81ea\u5b66\u7ecf\u9a8c',
@@ -551,13 +901,9 @@
                 '\u6d59\u6c5f\u536b\u89c6',
                 '\u5fae\u8650',
                 '\u5218\u660a\u7136',
-                '\u7ed3\u5a5a',
-                '\u6027\u4fb5',
-                '\u5bcc\u5a46',
                 '\u975e\u4f60\u83ab\u5c5e',
                 '\u6700\u6e29\u67d4',
                 '\u6000\u5b55',
-                '\u7eff\u8336',
                 '\u8428\u9876\u9876',
                 '\u6d4e\u516c',
                 '\u534e\u6668\u5b87',
@@ -603,6 +949,7 @@
                 c && c.forEach(e => this.a.push(e));
             }
         },
+        bayes_module: null,
         // 手动拉黑的up, 重要数据, 结构 [{}], 跨标签通信
         block_ups: null,
         // 缓存数据, 不保存, 结构[]
@@ -617,6 +964,7 @@
         visited_videos: null,
         // 自动, 累积拦截次数, 跨标签通信
         accumulative_total: GM_Objects.get_value('accumulative_total', 0),
+        accumulative_bayes: GM_Objects.get_value('accumulative_bayes', 0),
         key_check(content) { return this.black_keys.a.includes_r(content) ? 2 : this.black_keys.b.includes_r(content) ? 1 : 0; },
         /**
          * 检查数据是否被拦截
@@ -635,7 +983,7 @@
                 r == 2 && this.cache_block_ups.push(up_id);
                 return true;
             }
-            return false;
+            return title ? this.bayes_module.bayes(title) ? (this.bayes_accumulative(title), true) : false : false;
         },
         /**
          * 取消拦截视频
@@ -646,9 +994,19 @@
          * 拦截视频
          * @param {string} video_id
          */
-        block_video(video_id) { this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('block', 'video', video_id), Colorful_Console.main('update block video info'); },
+        block_video(video_id) {
+            this.block_videos.push(video_id);
+            GM_Objects.set_value('block_videos', this.block_videos);
+            this.up_video_sync('block', 'video', video_id);
+            Colorful_Console.main('update block video info');
+        },
         // 计数记录
         accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
+        bayes_accumulative(title) {
+            this.accumulative_func();
+            GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
+            Colorful_Console.main('bayes block: ' + title, 'debug');
+        },
         // 视频和up, 拦截或者取消时, 数据同步
         up_video_sync(s_type, s_name, s_value) { GM_Objects.set_value('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
         // 评分, 拦截up的数据部分更新同步
@@ -696,9 +1054,13 @@
         // 数据同步监听
         _data_sync_monitor(site_id) {
             const configs = {
-                ccumulative_total: {
+                accumulative_total: {
                     run_in: Array.from({ length: 5 }, (_val, index) => index),
-                    f: (..._args) => this.accumulative_total++
+                    f: (..._args) => (this.accumulative_total = args[2])
+                },
+                accumulative_bayes: {
+                    run_in: Array.from({ length: 3 }, (_val, index) => index),
+                    f: (...args) => (this.accumulative_bayes = args[2])
                 },
                 visited_video_sync: {
                     run_in: [2],
@@ -758,6 +1120,10 @@
         // 初始化历史访问数据
         init_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
         // 数据初始化
+        /**
+         * 数据初始化
+         * @param {number} site_id
+         */
         data_init(site_id) {
             // 全局启用, 关键词过滤
             this.black_keys._main();
@@ -772,6 +1138,7 @@
             this._data_sync_monitor(site_id);
             this._rate_up_status_write_monitor();
             this.show_status = this._show_data_status;
+            this.bayes_module = new Bayes_Module();
         },
         // 展示数据状态
         show_status: () => null,
@@ -794,6 +1161,7 @@
             const details = [];
             details.push('-'.repeat((s.length + 4) * 2));
             details.push('blocked: ' + this.accumulative_total + ';');
+            details.push('bayes blocked: ' + this.accumulative_bayes + ';');
             [
                 [this.block_ups, 'block_ups'],
                 [this.block_videos, 'block_videos'],
@@ -802,7 +1170,7 @@
             ].forEach(e => details.push(e[1] + ': ' + e[0].length + ";"));
             // 被拦截up的访问状况
             // splice(), 支持删除和插入指定位置的元素
-            details.splice(3, 0, ...this._block_up_statistics());
+            details.splice(4, 0, ...this._block_up_statistics());
             const i = GM_Objects.get_value('install_date', 0);
             i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
             const script = GM_Objects.info.script;
@@ -1071,7 +1439,7 @@
                         Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id);
                         // 生成bbdown命令
                         const cm = `BBDown -mt --work-dir "E:\\video" "${this.#video_info.video_id}"`;
-                        i === 5 && GM_setClipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
+                        i === 5 && (GM_setClipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm)), Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true));
                         // 下一步, 添加信息到nlp
                     } else if (i === 4) Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
                     else if (i === 5) {
@@ -1339,6 +1707,8 @@
                         this.#search_page_results.push(null);
                         return true;
                     }
+                    // 内容带有标签信息
+                    ['<em class=\"keyword\">', '</em>', '<em class="keyword">'].forEach(e => (info.title = info.title.replaceAll(e, '')));
                     const r = Dynamic_Variants_Manager.completed_check(info);
                     if (r) this.#search_page_results.push(null);
                     else {
@@ -1642,7 +2012,7 @@
                                     this.#configs.hide_node(p);
                                     const info = this.#utilities_module.get_up_video_info(p);
                                     if (!info.is_video) break;
-                                    info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : Dynamic_Variants_Manager.cache_block_videos.push(info.video_id));
+                                    info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : (Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false));
                                 }
                                 break;
                             }
@@ -1865,6 +2235,7 @@
                                         video_id: e.bvid
                                     };
                                     for (const k in info) info[k] = info[k] + ''; // 确保所有的数据都是字符串
+                                    ['<em class=\"keyword\">', '</em>', '<em class="keyword">'].forEach(e => (info.title = info.title.replaceAll(e, '')));
                                     if ((!info.video_id && e.arcurl.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info)) {
                                         this.#utilities_module.clear_data(e);
                                         this.#init_data.push('hide');
