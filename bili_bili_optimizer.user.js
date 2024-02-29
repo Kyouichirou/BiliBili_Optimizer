@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.2
+// @version      1.3.3
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -532,6 +532,7 @@
             GM_Objects.set_value('total_len', this.#total_len);
             GM_Objects.set_value(dic_name, dic);
             GM_Objects.set_value(len_name, len_data);
+            Colorful_Console.main('successfully add content to bayes');
         }
     }
     // bayes module ------------
@@ -2143,18 +2144,25 @@
                         return false;
                     }
                 };
+                // 添加内容到贝叶斯白名单
+                const manage_bayes = (key) => {
+                    if (key !== 'w') return;
+                    const s = prompt('add content to bayes white list').trim();
+                    if (s.length < 6) return;
+                    Dynamic_Variants_Manager.bayes_module.add_new_content(s, true);
+                };
                 // 文本标签, 需要排除输入
                 const text_tags = ["textarea", "input"];
                 document.addEventListener('keydown', (event) => {
-                    if (event.shiftKey || event.ctrlKey) return;
+                    if (event.shiftKey || event.ctrlKey || event.altKey) return;
                     const target = event.target;
                     const localName = target.localName || '';
                     if (text_tags.includes(localName)) return;
                     const className = target.className || '';
                     if (className && className.includes("editor")) return;
-                    const key = event.key;
+                    const key = event.key.toLowerCase();
                     const id = this.#configs.id;
-                    search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && manage_black_key.main(key);
+                    search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && manage_black_key.main(key) && manage_bayes(key);
                 });
             },
             /**
