@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.1
+// @version      1.3.2
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -507,6 +507,7 @@
          */
         bayes(content) {
             const c = this.#seg_word(content);
+            if (c.length < 4) return false;
             let wp = this.#white_p, bp = this.#black_p;
             c.forEach(e => {
                 const bc = this.#black_counter[e] || 0;
@@ -646,12 +647,13 @@
         // 额外增加的数组函数, 用于在执行数据是否存在的时候, 同时记录下这次的操作
         // 不能使用箭头函数这里, 在为对象增加一个新的函数, 而需要this指向这个对象自身
         const f = mode ? (val) => this.includes(val) && `block ${id_name}: ${val}` : (val) => {
+            val = val.replaceAll(' ', '').toLowerCase();
             const r = this.find(e => val.includes(e));
             return r ? `block ${val}, target: ${r}` : false;
         };
         return (val) => {
             // 移除掉空格, 转为小写
-            const r = val && f(val.replaceAll(' ', '').toLowerCase());
+            const r = val && f(val);
             return r ? (Colorful_Console.main(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
         };
     }
@@ -1661,7 +1663,7 @@
                 // 读取目标元素的视频标题和up的名称
                 get_title_up_name(node, info) {
                     info.title = node.getElementsByTagName('h3')[0]?.title.trim() || '';
-                    info.up_name = node.getElementsByClassName('bili-video-card__info--author')[0]?.innerText.trim() || '';
+                    info.up_name = node.getElementsByClassName('bili-video-card__info--author')[0]?.innerHTML.trim() || '';
                 },
                 // 如何处理节点的方式
                 hide_node: (node) => (node.style.visibility = 'hidden'),
