@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.3
+// @version      1.3.4
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -106,6 +106,34 @@
         supportonurlchange: window.onurlchange,
     };
     // GM内置函数/对象 ---------------
+
+    // 帮助信息 - 快捷键
+    Object.defineProperty(GM_Objects.window, 'shortcuts', {
+        get: () => {
+            const shortcuts = [
+                ['快捷键', '辅助/记忆', '功能', '生效页面'],
+                ['p', 'pause', '暂停/播放视频', '视频'],
+                ['l', 'light', '视频关/开灯', '视频'],
+                ['t', '', '视频影院模式', '视频'],
+                ['+', '', '视频声音调大', '视频'],
+                ['-', '', '视频声音调小', '视频'],
+                ['u', '', '视频页面内全屏', '视频'],
+                ['f', 'fullscreen', '视频全屏', '视频'],
+                ['m', 'mute', '静音', '视频'],
+                ['b', 'bing', '必应搜索', '全站'],
+                ['s', 'search', '哔哩搜索', '全站'],
+                ['z', 'zhihu', '知乎搜索', '全站'],
+                ['w', 'white', '添加文本到贝叶斯白名单', '主页, 搜索'],
+                ['a', 'add', '添加拦截关键词', '主页, 搜索'],
+                ['r', 'remove', '移除拦截关键', '主页, 搜索'],
+                ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
+                ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
+                ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
+            ];
+            console.table(shortcuts);
+        }
+    });
+    // --------------- 帮助信息
 
     // --------------- 通用函数
     // 自定义打印内容
@@ -2195,9 +2223,9 @@
                         let text = "Block";
                         if (mode) Statics_Variant_Manager.up_part.unblock(up_id);
                         else {
+                            // 拦截up
                             const now = Date.now();
                             const info = {
-                                // 拦截up
                                 up_id: up_id,
                                 up_name: up_name,
                                 add_date: now,
@@ -2214,14 +2242,16 @@
                     };
                 },
                 main() {
-                    const title = document.title;
-                    const up_name = title.split('的个人空间')[0];
-                    if (up_name === 'undefined' || up_name.length === title.length) return;
-                    const up_id = Base_Info_Match.get_up_id(location.href);
-                    if (up_id) {
-                        const mode = Statics_Variant_Manager.up_part.check(up_id);
-                        this._create_event(this._create_button(mode), mode, up_id, up_name);
-                    }
+                    setTimeout(() => {
+                        const title = document.title;
+                        const up_name = title.split('的个人空间')[0];
+                        if (up_name === 'undefined' || up_name.length === title.length) return;
+                        const up_id = Base_Info_Match.get_up_id(location.href);
+                        if (up_id) {
+                            const mode = Statics_Variant_Manager.up_part.check(up_id);
+                            this._create_event(this._create_button(mode), mode, up_id, up_name);
+                        }
+                    }, 1000);
                 }
             },
             // 搜索页面
