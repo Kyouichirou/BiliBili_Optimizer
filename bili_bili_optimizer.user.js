@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.4
+// @version      1.3.5
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2043,7 +2043,7 @@
                                     this.#configs.hide_node(p);
                                     const info = this.#utilities_module.get_up_video_info(p);
                                     if (!info.is_video) break;
-                                    info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : (Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false));
+                                    info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false)));
                                 }
                                 break;
                             }
