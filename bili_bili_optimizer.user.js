@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.5
+// @version      1.3.6
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -540,7 +540,7 @@
             c.forEach(e => {
                 const bc = this.#black_counter[e] || 0;
                 const wc = this.#white_counter[e] || 0;
-                // 拉普拉斯平滑处理, 避免 0 概率
+                // 拉普拉斯平滑处理, 避免 0 概率, 这里写错了, 实际上是词汇出现的总次数的
                 wp += Math.log((wc + 1) / (this.#white_len + 2));
                 bp += Math.log((bc + 1) / (this.#black_len + 2));
             });
@@ -561,6 +561,12 @@
             GM_Objects.set_value(dic_name, dic);
             GM_Objects.set_value(len_name, len_data);
             Colorful_Console.main('successfully add content to bayes');
+        }
+        // 重置模型
+        reset() {
+            ['black_counter', 'black_len', 'white_counter', 'white_len', 'total_len'].forEach(e => GM_Objects.set_value(e, null));
+            this.#init_module();
+            Colorful_Console.main('successfully reset bayes', 'info', true);
         }
     }
     // bayes module ------------
@@ -2103,9 +2109,10 @@
                     f = fullscreen // 原生
                     m = mute // 原生
                 */
+               // 搜索
                 const search = {
                     /**
-                     *
+                     * 获取选中的内容
                      * @returns {string}
                      */
                     _get_content() {
@@ -2172,12 +2179,17 @@
                         return false;
                     }
                 };
-                // 添加内容到贝叶斯白名单
-                const manage_bayes = (key) => {
-                    if (key !== 'w') return;
-                    const s = prompt('add content to bayes white list').trim();
-                    if (s.length < 6) return;
-                    Dynamic_Variants_Manager.bayes_module.add_new_content(s, true);
+                // 管理贝叶斯
+                const manage_bayes = {
+                    _add_white() {
+                        const s = prompt('add content to bayes white list(`bayes reset` to reset)').trim();
+                        s === 'bayes reset' ? this._reset() : s.length < 6 && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true);
+                    },
+                    _reset() { confirm('reset bayes? it will clear bayes words, continue?') && Dynamic_Variants_Manager.bayes_module.reset(); },
+                    main(key) {
+                        if (key !== 'w') return;
+                        this._add_white();
+                    }
                 };
                 // 文本标签, 需要排除输入
                 const text_tags = ["textarea", "input"];
@@ -2190,7 +2202,7 @@
                     if (className && className.includes("editor")) return;
                     const key = event.key.toLowerCase();
                     const id = this.#configs.id;
-                    search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && manage_black_key.main(key) && manage_bayes(key);
+                    search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key);
                 });
             },
             /**
