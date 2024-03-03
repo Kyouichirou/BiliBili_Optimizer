@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.6
+// @version      1.3.7
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2546,7 +2546,7 @@
                                 display: block;
                             "
                         ></div>`;
-                    document.documentElement.insertAdjacentHTML("afterbegin", html);
+                    document.documentElement?.insertAdjacentHTML("afterbegin", html);
                 },
                 set_color(color, mode = true) {
                     if (this.current_color === color) return;
