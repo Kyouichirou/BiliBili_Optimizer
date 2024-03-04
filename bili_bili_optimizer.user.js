@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.7
+// @version      1.3.8
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -106,34 +106,6 @@
         supportonurlchange: window.onurlchange,
     };
     // GM内置函数/对象 ---------------
-
-    // 帮助信息 - 快捷键
-    Object.defineProperty(GM_Objects.window, 'shortcuts', {
-        get: () => {
-            const shortcuts = [
-                ['快捷键', '辅助/记忆', '功能', '生效页面'],
-                ['p', 'pause', '暂停/播放视频', '视频'],
-                ['l', 'light', '视频关/开灯', '视频'],
-                ['t', '', '视频影院模式', '视频'],
-                ['+', '', '视频声音调大', '视频'],
-                ['-', '', '视频声音调小', '视频'],
-                ['u', '', '视频页面内全屏', '视频'],
-                ['f', 'fullscreen', '视频全屏', '视频'],
-                ['m', 'mute', '静音', '视频'],
-                ['b', 'bing', '必应搜索', '全站'],
-                ['s', 'search', '哔哩搜索', '全站'],
-                ['z', 'zhihu', '知乎搜索', '全站'],
-                ['w', 'white', '添加文本到贝叶斯白名单', '主页, 搜索'],
-                ['a', 'add', '添加拦截关键词', '主页, 搜索'],
-                ['r', 'remove', '移除拦截关键', '主页, 搜索'],
-                ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
-                ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
-                ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
-            ];
-            console.table(shortcuts);
-        }
-    });
-    // --------------- 帮助信息
 
     // --------------- 通用函数
     // 自定义打印内容
@@ -552,6 +524,7 @@
          * @param {boolean} mode
          */
         add_new_content(content, mode) {
+            if (content.length < 3) return;
             const ws = this.#seg_word(content);
             const [dic, dic_name, len_name, len_data] = mode ? [this.#white_counter, 'white_counter', 'white_len', ++this.#white_len] : [this.#black_counter, 'black_counter', 'black_len', ++this.#black_len];
             ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
@@ -1298,6 +1271,48 @@
     };
     // 静态数据管理 ---------
 
+    // 展示帮助以及其他内部存储数据 -----
+    Object.defineProperties(
+        GM_Objects.window, {
+        'shortcuts': {
+            get: () => {
+                const shortcuts = [
+                    ['快捷键', '辅助/记忆', '功能', '生效页面'],
+                    ['p', 'pause', '暂停/播放视频', '视频'],
+                    ['l', 'light', '视频关/开灯', '视频'],
+                    ['t', '', '视频影院模式', '视频'],
+                    ['+', '', '视频声音调大', '视频'],
+                    ['-', '', '视频声音调小', '视频'],
+                    ['u', '', '视频页面内全屏', '视频'],
+                    ['f', 'fullscreen', '视频全屏', '视频'],
+                    ['m', 'mute', '静音', '视频'],
+                    ['b', 'bing', '必应搜索', '全站'],
+                    ['s', 'search', '哔哩搜索', '全站'],
+                    ['z', 'zhihu', '知乎搜索', '全站'],
+                    ['w', 'white', '添加文本到贝叶斯白名单', '主页, 搜索'],
+                    ['a', 'add', '添加拦截关键词', '主页, 搜索'],
+                    ['r', 'remove', '移除拦截关键', '主页, 搜索'],
+                    ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
+                    ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
+                    ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
+                ];
+                console.table(shortcuts);
+            }
+        },
+        'show_rate': {
+            get() {
+                const data = GM_Objects.get_value('rate_videos', []);
+                data.sort((a, b) => a.add_date - b.add_date);
+                data.forEach(e => {
+                    e['last_active_date'] = new Date(e['last_active_date']).toDateString();
+                    e['add_date'] = new Date(e['add_date']).toDateString();
+                });
+                console.table(data);
+            }
+        }
+    });
+    // -------- 展示帮助以及其他内部存储数据
+
     // --------- 视频控制模块
     class Video_Module {
         // 菜单控制速度
@@ -1476,7 +1491,8 @@
                         Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id);
                         // 生成bbdown命令
                         const cm = `BBDown -mt --work-dir "E:\\video" "${this.#video_info.video_id}"`;
-                        i === 5 && (GM_setClipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm)), Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true));
+                        GM_setClipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm))
+                        i === 5 && Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
                         // 下一步, 添加信息到nlp
                     } else if (i === 4) Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
                     else if (i === 5) {
@@ -2109,7 +2125,7 @@
                     f = fullscreen // 原生
                     m = mute // 原生
                 */
-               // 搜索
+                // 搜索
                 const search = {
                     /**
                      * 获取选中的内容
