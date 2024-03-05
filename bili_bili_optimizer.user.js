@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.3.8
+// @version      1.4.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -96,6 +96,14 @@
          * @returns {null}
          */
         openintab: (url, configs) => GM_openInTab(url, configs),
+        /**
+         * 复制内容到剪切板
+         * @param {string} content
+         * @param {string} type
+         * @param {Function} func
+         * @returns {null}
+         */
+        copy_to_clipboard: (content, type, func) => GM_setClipboard(content, type, func),
         // 关闭标签页
         window_close: () => window.close(),
         // 脚本信息
@@ -164,10 +172,13 @@
     class Bayes_Module {
         // 分词器
         #segmenter = null;
-        // 提取内容正则
+        // 提取英文单词
         #abc_reg = /[a-z]+/ig;
+        // 提取数字
         #num_reg = /[0-9]+/g;
+        // 提取年份和12306
         #year_reg = /20[0-2][0-9]|12306/g;
+        // 清除空格,数字, 单词
         #clear_reg = /[a-z0-9\s]+/ig;
         // 预置内容
         #white_list = [
@@ -427,6 +438,9 @@
         // 词频
         #black_counter = null;
         #white_counter = null;
+        // 词汇出现总数
+        #white_words = 0;
+        #black_words = 0;
         /**
          * 分词
          * @param {string} content
@@ -469,9 +483,18 @@
          * @param {number} total_len
          */
         #get_prior_probability(black_len, white_len, total_len) {
-            this.#black_p = Math.log((black_len + 1) / total_len + 2);
-            this.#white_p = Math.log((white_len + 1) / total_len + 2);
+            this.#black_p = black_len > 0 ? Math.log(black_len) - Math.log(total_len) : Math.log((black_len + 1) / total_len + 2);
+            this.#white_p = white_len > 0 ? Math.log(white_len) - Math.log(total_len) : Math.log((white_len + 1) / total_len + 2);
         }
+        #update_words_cal() {
+            const sum = (dic) => Object.values(dic).reduce((acc, cur) => acc + cur, 0);
+            const total_features_length = this.#feature_length;
+            // 对所有值 +1
+            this.#white_words = sum(this.#white_counter) + total_features_length;
+            this.#black_words = sum(this.#black_counter) + total_features_length;
+        }
+        // 各个词汇数量
+        get #feature_length() { return Object.keys(Object.assign({}, this.#black_counter, this.#white_counter)).length; }
         // 初始化模型
         #init_module() {
             let total_len = GM_Objects.get_value('total_len'), white_len = 0, black_len = 0;
@@ -495,6 +518,8 @@
             this.#black_len = black_len;
             this.#total_len = total_len;
             this.#get_prior_probability(black_len, white_len, total_len);
+            this.#update_words_cal();
+            this.#update_pre_cal();
         }
         constructor() {
             this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
@@ -508,15 +533,32 @@
         bayes(content) {
             const c = this.#seg_word(content);
             if (c.length < 4) return false;
-            let wp = this.#white_p, bp = this.#black_p;
-            c.forEach(e => {
-                const bc = this.#black_counter[e] || 0;
-                const wc = this.#white_counter[e] || 0;
-                // 拉普拉斯平滑处理, 避免 0 概率, 这里写错了, 实际上是词汇出现的总次数的
-                wp += Math.log((wc + 1) / (this.#white_len + 2));
-                bp += Math.log((bc + 1) / (this.#black_len + 2));
-            });
-            return (bp - wp) / Math.abs(bp) > 0.5;
+            // 预先计算部分数值
+            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data;
+            const [wp, bp] = c.reduce((acc, cur) => {
+                const bc = this.#black_counter[cur];
+                const wc = this.#white_counter[cur];
+                acc[0] += wc ? Math.log(wc) - w_t : w_1;
+                acc[1] += bc ? Math.log(bc) - b_t : b_1;
+                return acc;
+            }, [this.#white_p, this.#black_p]);
+            return (bp - wp) / Math.abs(bp) > 0.15;
+        }
+        // 预先计算部分的值
+        #pre_cal_data = {
+            'w_t': 0,
+            'b_t': 0,
+            'w_1': 0,
+            'b_1': 0
+        };
+        #update_pre_cal() {
+            let w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words);
+            // 当数值为0时, 取1进行计算的结果
+            let w_1 = Math.log(1) - w_t, b_1 = Math.log(1) - b_t;
+            this.#pre_cal_data.w_t = w_t;
+            this.#pre_cal_data.b_t = b_t;
+            this.#pre_cal_data.w_1 = w_1;
+            this.#pre_cal_data.b_1 = b_1;
         }
         /**
          * 添加新内容
@@ -530,6 +572,8 @@
             ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
             this.#total_len += 1;
             this.#get_prior_probability(this.#black_len, this.#white_len, this.#total_len);
+            this.#update_words_cal();
+            this.#update_pre_cal();
             GM_Objects.set_value('total_len', this.#total_len);
             GM_Objects.set_value(dic_name, dic);
             GM_Objects.set_value(len_name, len_data);
@@ -544,8 +588,7 @@
     }
     // bayes module ------------
 
-    // ------------- 数据结构
-    // 统一使用数组作为数据的载体
+    // ------------- 数据结构, 统一使用数组作为数据的载体
     class Dic_Array extends Array {
         #id_name;
         /**
@@ -1271,7 +1314,7 @@
     };
     // 静态数据管理 ---------
 
-    // 展示帮助以及其他内部存储数据 -----
+    // 展示帮助以及其他内部存储数据 -------
     Object.defineProperties(
         GM_Objects.window, {
         'shortcuts': {
@@ -1482,7 +1525,6 @@
                 const h = node.getElementsByTagName('h3')[0];
                 const select = node.getElementsByTagName('select')[0];
                 select.onchange = (e) => {
-                    debugger;
                     let i = parseInt(e.target.value), title = '';
                     if (i > 0 && i < 4) {
                         // 添加评分信息后, 从拦截的视频将数据移除掉
@@ -1491,9 +1533,9 @@
                         Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id);
                         // 生成bbdown命令
                         const cm = `BBDown -mt --work-dir "E:\\video" "${this.#video_info.video_id}"`;
-                        GM_setClipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm))
+                        GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
+                        // 评分为 5, 自动添加到 bayes模型中
                         i === 5 && Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
-                        // 下一步, 添加信息到nlp
                     } else if (i === 4) Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
                     else if (i === 5) {
                         title = 'Blocked';
@@ -1673,7 +1715,7 @@
 
     // ----------- 优化器主体
     class Bili_Optimizer {
-        // 配置
+        // 执行配置
         #configs = null;
         // 搜索页面初始化数据保存
         #init_data = null;
@@ -2628,13 +2670,15 @@
             // 配置启动函数
             [[this.#proxy_module], [this.#page_modules, href], [this.#event_module], [this.#html_modules]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
         }
-        /**
-         * 执行函数, call(this), 即使用当前optimizer这整个对象的this, 其他的自定义this
-         * @param {Array} funcs
-         */
-        #load_func(funcs) { funcs.forEach(e => e.type ? e() : e.call(this)); }
         // 启动整个程序
-        start() { this.#load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (this.#load_func(this.#end_load_funcs), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started')); }
+        start() {
+            /**
+             * 执行函数, call(this), 即使用当前optimizer这整个对象的this, 其他的自定义this
+             * @param {boolean} mode
+             */
+            const load_func = (mode) => (mode ? this.#start_load_funcs : this.#end_load_funcs).forEach(e => e.type ? e() : e.call(this));
+            load_func(true), GM_Objects.window.onload = () => (load_func(false), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started'));
+        }
     }
     // 优化器主体 -----------
 
@@ -2644,7 +2688,7 @@
         if (GM_Objects.get_value('maintain', false)) Colorful_Console.main('data under maintenance, wait a moment', 'warning', true);
         else {
             const { href, search, origin, pathname } = location;
-            // 清除直接访问链接的追踪参数
+            // 清除直接访问链接带有的追踪参数
             search.startsWith('?spm_id_from') ? (window.location.href = origin + pathname) : (new Bili_Optimizer(href)).start();
         }
     }
