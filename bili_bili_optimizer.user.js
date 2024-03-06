@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.0
+// @version      1.4.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -486,15 +486,31 @@
             this.#black_p = black_len > 0 ? Math.log(black_len) - Math.log(total_len) : Math.log((black_len + 1) / total_len + 2);
             this.#white_p = white_len > 0 ? Math.log(white_len) - Math.log(total_len) : Math.log((white_len + 1) / total_len + 2);
         }
+        // 各个词汇数量
+        get #features_length() { return Object.keys(Object.assign({}, this.#black_counter, this.#white_counter)).length; }
         #update_words_cal() {
             const sum = (dic) => Object.values(dic).reduce((acc, cur) => acc + cur, 0);
-            const total_features_length = this.#feature_length;
+            const total_features_length = this.#features_length;
             // 对所有值 +1
             this.#white_words = sum(this.#white_counter) + total_features_length;
             this.#black_words = sum(this.#black_counter) + total_features_length;
         }
-        // 各个词汇数量
-        get #feature_length() { return Object.keys(Object.assign({}, this.#black_counter, this.#white_counter)).length; }
+        // 预先计算部分的值
+        #pre_cal_data = {
+            'w_t': 0,
+            'b_t': 0,
+            'w_1': 0,
+            'b_1': 0
+        };
+        #update_pre_cal() {
+            const w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words);
+            // 当数值为0时, 取1进行计算的结果
+            const w_1 = Math.log(1) - w_t, b_1 = Math.log(1) - b_t;
+            this.#pre_cal_data.w_t = w_t;
+            this.#pre_cal_data.b_t = b_t;
+            this.#pre_cal_data.w_1 = w_1;
+            this.#pre_cal_data.b_1 = b_1;
+        }
         // 初始化模型
         #init_module() {
             let total_len = GM_Objects.get_value('total_len'), white_len = 0, black_len = 0;
@@ -524,6 +540,7 @@
         constructor() {
             this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
             this.#init_module();
+            GM_Objects.addvaluechangeistener('total_len', this.#init_module.bind(this));
         }
         /**
          * 计算概率
@@ -543,22 +560,6 @@
                 return acc;
             }, [this.#white_p, this.#black_p]);
             return (bp - wp) / Math.abs(bp) > 0.15;
-        }
-        // 预先计算部分的值
-        #pre_cal_data = {
-            'w_t': 0,
-            'b_t': 0,
-            'w_1': 0,
-            'b_1': 0
-        };
-        #update_pre_cal() {
-            let w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words);
-            // 当数值为0时, 取1进行计算的结果
-            let w_1 = Math.log(1) - w_t, b_1 = Math.log(1) - b_t;
-            this.#pre_cal_data.w_t = w_t;
-            this.#pre_cal_data.b_t = b_t;
-            this.#pre_cal_data.w_1 = w_1;
-            this.#pre_cal_data.b_1 = b_1;
         }
         /**
          * 添加新内容
@@ -794,7 +795,6 @@
                 '\u4e3d\u9896',
                 '\u738b\u4e00\u535a',
                 '\u8096\u6218',
-                '\u817e\u8baf',
                 '\u8fea\u4e3d\u70ed\u5df4',
                 '\u4e09\u5341\u800c\u5df2',
                 '\u7231\u60c5\u516c\u5bd3',
@@ -1172,7 +1172,6 @@
         init_block_ups: () => new Dic_Array(GM_Objects.get_value('block_ups', []), 'up_id'),
         // 初始化历史访问数据
         init_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
-        // 数据初始化
         /**
          * 数据初始化
          * @param {number} site_id
