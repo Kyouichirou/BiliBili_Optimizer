@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.1
+// @version      1.4.3
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -549,7 +549,7 @@
          */
         bayes(content) {
             const c = this.#seg_word(content);
-            if (c.length < 4) return false;
+            if (c.length < 6) return false;
             // 预先计算部分数值
             const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data;
             const [wp, bp] = c.reduce((acc, cur) => {
@@ -559,7 +559,7 @@
                 acc[1] += bc ? Math.log(bc) - b_t : b_1;
                 return acc;
             }, [this.#white_p, this.#black_p]);
-            return (bp - wp) / Math.abs(bp) > 0.15;
+            return (bp - wp) / Math.abs(bp) > 0.12;
         }
         /**
          * 添加新内容
@@ -1490,60 +1490,61 @@
         }
         // 视频操作菜单
         #video_rate_event() {
-            // 数据发生变化
-            // 0 菜单
-            // 1 3分
-            // 2 4分
-            // 3 5分
-            // 4 remove, 从评分中将数据移除掉
-            // 5 block, 拦截视频
-            // 6 unblock, 不拦截视频
             setTimeout(() => {
-                const add_rate = (val) => {
-                    const video_info = this.#video_info;
-                    const id = video_info.video_id;
-                    if (!id) {
-                        Colorful_Console.main('fail to get up_id', 'warning', true);
-                        return false;
+                const funcs = {
+                    // 0 菜单
+                    // 1 3分
+                    // 2 4分
+                    // 3 5分
+                    // 4 remove, 从评分中将数据移除掉
+                    // 5 block, 拦截视频
+                    // 6 unblock, 不拦截视频
+                    0: () => null,
+                    4: () => Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id),
+                    5: () => {
+                        Dynamic_Variants_Manager.block_video(this.#video_info.video_id);
+                        Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
+                        return 'Blocked';
+                    },
+                    6: () => Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id),
+                    _rate: (val) => {
+                        const add_rate = (val, video_info) => {
+                            const id = video_info.video_id;
+                            if (!id) Colorful_Console.main('fail to get up_id', 'warning', true);
+                            else {
+                                const now = Date.now();
+                                const info = {
+                                    video_id: id,
+                                    title: video_info.title,
+                                    up_id: video_info.up_id,
+                                    last_active_date: now,
+                                    visited_times: 1,
+                                    add_date: now,
+                                    rate: val
+                                };
+                                Statics_Variant_Manager.rate_video_part.add(info);
+                                return true;
+                            }
+                            return false;
+                        };
+                        val += 2;
+                        const id = this.#video_info.video_id;
+                        Dynamic_Variants_Manager.unblock_video(id);
+                        const title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
+                        const cm = `BBDown -mt --work-dir "E:\\video" "${id}"`;
+                        GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
+                        (val === 5 || confirm("add to whitelist of bayes model?")) && Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
+                        return title;
+                    },
+                    main(val) {
+                        const f = this[val];
+                        return f ? f() : this._rate(val);
                     }
-                    const now = Date.now();
-                    const info = {
-                        // 视频评分
-                        video_id: id,
-                        title: video_info.title,
-                        up_id: video_info.up_id,
-                        last_active_date: now,
-                        visited_times: 1,
-                        add_date: now,
-                        rate: val
-                    };
-                    Statics_Variant_Manager.rate_video_part.add(info);
-                    return true;
                 };
                 const node = document.getElementById('selectWrap');
                 const h = node.getElementsByTagName('h3')[0];
                 const select = node.getElementsByTagName('select')[0];
-                select.onchange = (e) => {
-                    let i = parseInt(e.target.value), title = '';
-                    if (i > 0 && i < 4) {
-                        // 添加评分信息后, 从拦截的视频将数据移除掉
-                        i += 2;
-                        if (add_rate(i)) title = 'Rate: ' + i;
-                        Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id);
-                        // 生成bbdown命令
-                        const cm = `BBDown -mt --work-dir "E:\\video" "${this.#video_info.video_id}"`;
-                        GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
-                        // 评分为 5, 自动添加到 bayes模型中
-                        i === 5 && Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
-                    } else if (i === 4) Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
-                    else if (i === 5) {
-                        title = 'Blocked';
-                        // 执行拦截后, 删除掉评分的信息
-                        Dynamic_Variants_Manager.block_video(this.#video_info.video_id), Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
-                    } else if (i === 6) Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id);
-                    h.innerText = title;
-                };
-                this.#monitor_video_change(select, h);
+                select.onchange = (e) => (h.innerText = funcs.main(parseInt(e.target.value)) || ''), this.#monitor_video_change(select, h);
             }, 300);
         }
         // 添加评分菜单
@@ -2682,7 +2683,7 @@
     // 优化器主体 -----------
 
     // ----------------- 启动
-    {
+    (() => {
         // 假如数据处于维护中, 就不执行脚本
         if (GM_Objects.get_value('maintain', false)) Colorful_Console.main('data under maintenance, wait a moment', 'warning', true);
         else {
@@ -2690,6 +2691,6 @@
             // 清除直接访问链接带有的追踪参数
             search.startsWith('?spm_id_from') ? (window.location.href = origin + pathname) : (new Bili_Optimizer(href)).start();
         }
-    }
+    })();
     // 启动 -----------------
 })();
