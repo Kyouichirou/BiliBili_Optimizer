@@ -242,6 +242,24 @@ shortcuts
 
 ![image](https://github.com/Kyouichirou/BiliBili_Optimizer/assets/64763483/e95639ee-09cb-40d9-b549-ee27c5964d79)
 
+### 7.4 命令输入
+
+目前支持三个关键词:
+
+| word      | 含义                   |
+| --------- | ---------------------- |
+| shortcuts | 显示快捷键             |
+| show_rate | 显示已经评分的视频信息 |
+| bayes     | 显示贝叶斯模型的状况.  |
+
+```JavaScript
+bayes = 0.15;
+```
+
+调节贝叶斯模型的敏感程度, 值越小越敏感, 反之亦然, 设置范围: `0.03 - 1`.
+
+![2024-03-13 16 10 08.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/2024-03-13%2016%2010%2008.png?raw=true)
+
 ## 八. 小结
 
 以上脚本仅作为交流学习使用, 无意侵犯B站....*B站功成不必在我, 倒闭必须有我(香菇滑鸡)*.
