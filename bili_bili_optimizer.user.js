@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.3
+// @version      1.4.4
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -441,6 +441,7 @@
         // 词汇出现总数
         #white_words = 0;
         #black_words = 0;
+        #threshold = GM_Objects.get_value('threshold', 0.12);
         /**
          * 分词
          * @param {string} content
@@ -555,11 +556,11 @@
             const [wp, bp] = c.reduce((acc, cur) => {
                 const bc = this.#black_counter[cur];
                 const wc = this.#white_counter[cur];
-                acc[0] += wc ? Math.log(wc) - w_t : w_1;
-                acc[1] += bc ? Math.log(bc) - b_t : b_1;
+                acc[0] += wc ? Math.log(wc + 1) - w_t : w_1;
+                acc[1] += bc ? Math.log(bc + 1) - b_t : b_1;
                 return acc;
             }, [this.#white_p, this.#black_p]);
-            return (bp - wp) / Math.abs(bp) > 0.12;
+            return (bp - wp) / Math.abs(bp) > this.#threshold;
         }
         /**
          * 添加新内容
@@ -585,6 +586,33 @@
             ['black_counter', 'black_len', 'white_counter', 'white_len', 'total_len'].forEach(e => GM_Objects.set_value(e, null));
             this.#init_module();
             Colorful_Console.main('successfully reset bayes', 'info', true);
+        }
+        /**
+         * 调整比例
+         * @param {number} val
+         */
+        adjust_threshold(val) {
+            try {
+                val = Number(val);
+                (0.03 < val && val < 1) ? (this.#threshold = val, GM_Objects.set_value('threshold', val), Colorful_Console.main('successfully adjust threshold')) : Colorful_Console.main('threshold must be between 0.03 and 1', 'warning');
+            } catch (error) {
+                console.error(error);
+            }
+        }
+        show_detail() {
+            const data = [
+                '--------',
+                '------------------',
+                'details of bayes module:',
+                '-----------------------------',
+                `white list length: ${this.#white_len}`,
+                `black list length: ${this.#white_len}`,
+                `white features length: ${this.#white_words}`,
+                `black features length: ${this.#black_words}`,
+                `threshold: ${this.#threshold}`,
+                '-----------------------------'
+            ];
+            console.log(data.join('\n'));
         }
     }
     // bayes module ------------
@@ -1351,6 +1379,10 @@
                 });
                 console.table(data);
             }
+        },
+        'bayes': {
+            get() { Dynamic_Variants_Manager.bayes_module?.show_detail(); },
+            set(value) { Dynamic_Variants_Manager.bayes_module?.adjust_threshold(value); }
         }
     });
     // -------- 展示帮助以及其他内部存储数据
