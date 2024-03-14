@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.5
+// @version      1.4.6
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -613,7 +613,7 @@
                 '-----------------------------',
                 'type of module: MultinomialNB;',
                 `white list length: ${this.#white_len};`,
-                `black list length: ${this.#white_len};`,
+                `black list length: ${this.#black_len};`,
                 `white features length: ${this.#white_words};`,
                 `black features length: ${this.#black_words};`,
                 `threshold: ${this.#threshold}`,
@@ -1072,7 +1072,7 @@
                 return true;
             }
             const b = this.bayes_module.bayes(title);
-            b > 0 ? (this.bayes_accumulative(title, b), true) : false;
+            return b > 0 ? (this.bayes_accumulative(title, b), true) : false;
         },
         /**
          * 取消拦截视频
