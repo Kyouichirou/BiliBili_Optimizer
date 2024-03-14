@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.4
+// @version      1.4.5
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -441,7 +441,8 @@
         // 词汇出现总数
         #white_words = 0;
         #black_words = 0;
-        #threshold = GM_Objects.get_value('threshold', 0.12);
+        // 临界值, 当w和b的概率的差距大于临界值时，执行判断
+        #threshold = 0;
         /**
          * 分词
          * @param {string} content
@@ -531,6 +532,7 @@
                 GM_Objects.set_value('black_counter', this.#black_counter);
                 GM_Objects.set_value('white_counter', this.#white_counter);
             }
+            this.#threshold = GM_Objects.get_value('threshold', 0.12);
             this.#white_len = white_len;
             this.#black_len = black_len;
             this.#total_len = total_len;
@@ -546,11 +548,13 @@
         /**
          * 计算概率
          * @param {string} content
-         * @returns {boolean}
+         * @returns {number}
          */
         bayes(content) {
+            if (!content) return 0;
             const c = this.#seg_word(content);
-            if (c.length < 6) return false;
+            const i = c.length;
+            if (i < 5) return 0;
             // 预先计算部分数值
             const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data;
             const [wp, bp] = c.reduce((acc, cur) => {
@@ -560,7 +564,8 @@
                 acc[1] += bc ? Math.log(bc + 1) - b_t : b_1;
                 return acc;
             }, [this.#white_p, this.#black_p]);
-            return (bp - wp) / Math.abs(bp) > this.#threshold;
+            const r = (bp - wp) / Math.abs(bp);
+            return r > (i > 10 ? this.#threshold : 0.25) ? r : 0;
         }
         /**
          * 添加新内容
@@ -599,16 +604,18 @@
                 console.error(error);
             }
         }
+        // 展示模型细节
         show_detail() {
             const data = [
                 '--------',
                 '------------------',
                 'details of bayes module:',
                 '-----------------------------',
-                `white list length: ${this.#white_len}`,
-                `black list length: ${this.#white_len}`,
-                `white features length: ${this.#white_words}`,
-                `black features length: ${this.#black_words}`,
+                'type of module: MultinomialNB;',
+                `white list length: ${this.#white_len};`,
+                `black list length: ${this.#white_len};`,
+                `white features length: ${this.#white_words};`,
+                `black features length: ${this.#black_words};`,
                 `threshold: ${this.#threshold}`,
                 '-----------------------------'
             ];
@@ -1064,7 +1071,8 @@
                 r == 2 && this.cache_block_ups.push(up_id);
                 return true;
             }
-            return title ? this.bayes_module.bayes(title) ? (this.bayes_accumulative(title), true) : false : false;
+            const b = this.bayes_module.bayes(title);
+            b > 0 ? (this.bayes_accumulative(title, b), true) : false;
         },
         /**
          * 取消拦截视频
@@ -1081,12 +1089,17 @@
             this.up_video_sync('block', 'video', video_id);
             Colorful_Console.main('update block video info');
         },
-        // 计数记录
+        // 累积拦截计数记录
         accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
-        bayes_accumulative(title) {
+        /**
+         * 贝叶斯拦截记录
+         * @param {string} title
+         * @param {number} b_result
+         */
+        bayes_accumulative(title, b_result) {
             this.accumulative_func();
             GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
-            Colorful_Console.main('bayes block: ' + title, 'debug');
+            Colorful_Console.main(`bayes block(${b_result.toFixed(4)}): ${title}`, 'debug');
         },
         // 视频和up, 拦截或者取消时, 数据同步
         up_video_sync(s_type, s_name, s_value) { GM_Objects.set_value('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
@@ -2663,15 +2676,9 @@
                     // 每次打开页面都写入透明度
                     GM_Objects.set_value('shade_opacity', this.current_opacity);
                     const uppercase = (e) => e.slice(0, 1).toUpperCase() + e.slice(1);
-                    Object.keys(this.colors).forEach((e, index) =>
-                        GM_Objects.registermenucommand(
-                            uppercase(e),
-                            this.set_color.bind(this, e),
-                            e.slice(0, 1) + index
-                        )
-                    );
-                    GM_Objects.addvaluechangeistener('shade_color', (...args) => args[3] && this.set_color(args[2], false));
-                    GM_Objects.addvaluechangeistener('shade_opacity', (...args) => args[3] && this.change_opacity(args[2]));
+                    Object.keys(this.colors).forEach((e, index) => GM_Objects.registermenucommand(uppercase(e), this.set_color.bind(this, e), e.slice(0, 1) + index));
+                    GM_Objects.addvaluechangeistener('shade_color', ((...args) => this.set_color(args[2], false)).bind(this));
+                    GM_Objects.addvaluechangeistener('shade_opacity', ((...args) => this.change_opacity(args[2])).bind(this));
                 }
             },
             get_funcs(id) {
@@ -2691,9 +2698,10 @@
         constructor(href) {
             // 确定配置参数
             const site = ['search', 'space', 'video', 'play'].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
+            // 载入配置
             this.#configs = this.#site_configs[site];
             this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
-            // 载入配置
+            // 根据id生成执行函数
             const id = this.#configs.id;
             // 注入css, 尽快执行
             this.#css_module.inject_css(id);
