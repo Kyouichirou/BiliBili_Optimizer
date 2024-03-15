@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.6
+// @version      1.4.7
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -565,7 +565,7 @@
                 return acc;
             }, [this.#white_p, this.#black_p]);
             const r = (bp - wp) / Math.abs(bp);
-            return r > (i > 10 ? this.#threshold : 0.25) ? r : 0;
+            return r > (i > 10 ? this.#threshold : 0.21) ? r : 0;
         }
         /**
          * 添加新内容
@@ -573,9 +573,12 @@
          * @param {boolean} mode
          */
         add_new_content(content, mode) {
-            if (content.length < 3) return;
+            if (content.length < 7) {
+                Colorful_Console.main('content length is less than 7, please check your input');
+                return;
+            }
             const ws = this.#seg_word(content);
-            const [dic, dic_name, len_name, len_data] = mode ? [this.#white_counter, 'white_counter', 'white_len', ++this.#white_len] : [this.#black_counter, 'black_counter', 'black_len', ++this.#black_len];
+            const [dic, dic_name, len_name, len_data, target] = mode ? [this.#white_counter, 'white_counter', 'white_len', ++this.#white_len, 'white'] : [this.#black_counter, 'black_counter', 'black_len', ++this.#black_len, 'black'];
             ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
             this.#total_len += 1;
             this.#get_prior_probability(this.#black_len, this.#white_len, this.#total_len);
@@ -584,7 +587,7 @@
             GM_Objects.set_value('total_len', this.#total_len);
             GM_Objects.set_value(dic_name, dic);
             GM_Objects.set_value(len_name, len_data);
-            Colorful_Console.main('successfully add content to bayes');
+            Colorful_Console.main(`successfully add content to bayes ${target} list`);
         }
         // 重置模型
         reset() {
@@ -2286,7 +2289,7 @@
                 const manage_bayes = {
                     _add_white() {
                         const s = prompt('add content to bayes white list(`bayes reset` to reset)').trim();
-                        s === 'bayes reset' ? this._reset() : s.length < 6 && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true);
+                        s === 'bayes reset' ? this._reset() : Dynamic_Variants_Manager.bayes_module.add_new_content(s, true);
                     },
                     _reset() { confirm('reset bayes? it will clear bayes words, continue?') && Dynamic_Variants_Manager.bayes_module.reset(); },
                     main(key) {
