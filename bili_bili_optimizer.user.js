@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.7
+// @version      1.4.8
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1405,6 +1405,8 @@
 
     // --------- 视频控制模块
     class Video_Module {
+        // 贝叶斯添加标记
+        #add_bayes_flag = false;
         // 菜单控制速度
         #is_first = true;
         #video_speed = 2;
@@ -1581,7 +1583,10 @@
                         const title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
                         const cm = `BBDown -mt --work-dir "E:\\video" "${id}"`;
                         GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
-                        (val === 5 || confirm("add to whitelist of bayes model?")) && Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
+                        if (!this.#add_bayes_flag && (val === 5 || confirm("add to whitelist of bayes model?"))) {
+                            Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
+                            this.#add_bayes_flag = true;
+                        }
                         return title;
                     },
                     main(val) {
@@ -1695,6 +1700,7 @@
                     const video_id = Base_Info_Match.get_video_id(info.url);
                     if (video_id === this.#video_info.video_id) return;
                     this.video_change_id = video_id;
+                    this.#add_bayes_flag = false;
                     this.#load_video_info();
                     this.#visited_record();
                 }, 600));
