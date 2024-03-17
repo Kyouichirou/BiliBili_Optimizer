@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.8
+// @version      1.4.9
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
 // @homepage     https://github.com/Kyouichirou/BiliBili_Optimizer
-// @updateURL
+// @updateURL    https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
 // @downloadURL  https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
 // @match        https://t.bilibili.com/
 // @match        https://www.bilibili.com/*
