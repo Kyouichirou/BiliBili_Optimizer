@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.0
+// @version      1.5.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1820,6 +1820,8 @@
                 hide_node: (node) => (node.style.visibility = 'hidden'),
                 // 判断发起请求数据api url是否需要进行拦截操作
                 handle_fetch_url: (url) => url.startsWith(this.#configs.api_prefix) ? (data) => data.data?.item : null,
+                // 用于处理节点名称的匹配方式
+                contextmenu_handle: (classname, target_name) => classname.startsWith(target_name)
             },
             video: {
                 id: 1,
@@ -1840,6 +1842,7 @@
                 get_title_up_name(node, info) { [['title', 'title'], ['up_name', 'name']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.innerText.trim() || '')); },
                 hide_node: (node) => (node.style.display = 'none'),
                 handle_fetch_url: (url) => url.startsWith(this.#configs.api_prefix) ? (data) => data.data : null,
+                contextmenu_handle: (classname, target_name) => classname === target_name
             },
             search: {
                 id: 2,
@@ -1892,7 +1895,8 @@
                         ['type?__refresh__=true', 'search_type=video']
                     ].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
                     return index < 0 ? null : index === 0 ? a : b;
-                }
+                },
+                contextmenu_handle: (classname, target_name) => classname === target_name
             },
             space: { id: 3 },
             other: { id: 4 },
@@ -2157,10 +2161,12 @@
                     event.stopPropagation();
                     const target_name = this.#configs.target_class;
                     let i = 0;
+                    const cfunc = this.#configs.contextmenu_handle;
                     try {
                         for (const p of event.composedPath()) {
                             const clname = p.className;
-                            if (clname.startsWith(target_name)) {
+                            if (cfunc(clname, target_name)) {
+                                debugger;
                                 if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
                                     this.#configs.hide_node(p);
                                     const info = this.#utilities_module.get_up_video_info(p);
