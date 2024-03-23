@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.4.9
+// @version      1.5.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1558,35 +1558,38 @@
                     },
                     6: () => Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id),
                     _rate: (val) => {
-                        const add_rate = (val, video_info) => {
-                            const id = video_info.video_id;
-                            if (!id) Colorful_Console.main('fail to get up_id', 'warning', true);
-                            else {
-                                const now = Date.now();
-                                const info = {
-                                    video_id: id,
-                                    title: video_info.title,
-                                    up_id: video_info.up_id,
-                                    last_active_date: now,
-                                    visited_times: 1,
-                                    add_date: now,
-                                    rate: val
-                                };
-                                Statics_Variant_Manager.rate_video_part.add(info);
-                                return true;
-                            }
-                            return false;
-                        };
-                        val += 2;
                         const id = this.#video_info.video_id;
-                        Dynamic_Variants_Manager.unblock_video(id);
-                        const title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
+                        let title = '';
+                        if (val !== 7) {
+                            const add_rate = (val, video_info) => {
+                                const id = video_info.video_id;
+                                if (!id) Colorful_Console.main('fail to get up_id', 'warning', true);
+                                else {
+                                    const now = Date.now();
+                                    const info = {
+                                        video_id: id,
+                                        title: video_info.title,
+                                        up_id: video_info.up_id,
+                                        last_active_date: now,
+                                        visited_times: 1,
+                                        add_date: now,
+                                        rate: val
+                                    };
+                                    Statics_Variant_Manager.rate_video_part.add(info);
+                                    return true;
+                                }
+                                return false;
+                            };
+                            val += 2;
+                            Dynamic_Variants_Manager.unblock_video(id);
+                            title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
+                            if (!this.#add_bayes_flag && (val === 5 || confirm("add to whitelist of bayes model?"))) {
+                                Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
+                                this.#add_bayes_flag = true;
+                            }
+                        }
                         const cm = `BBDown -mt --work-dir "E:\\video" "${id}"`;
                         GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
-                        if (!this.#add_bayes_flag && (val === 5 || confirm("add to whitelist of bayes model?"))) {
-                            Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
-                            this.#add_bayes_flag = true;
-                        }
                         return title;
                     },
                     main(val) {
@@ -1666,6 +1669,7 @@
                             <option value="4">Remove</option>
                             <option value="5">Block</option>
                             <option value="6">unBlock</option>
+                            <option value="7">BBdown</option>
                         </select>
                     </dd>
                 </dl>
@@ -2156,7 +2160,7 @@
                     try {
                         for (const p of event.composedPath()) {
                             const clname = p.className;
-                            if (clname === target_name) {
+                            if (clname.startsWith(target_name)) {
                                 if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
                                     this.#configs.hide_node(p);
                                     const info = this.#utilities_module.get_up_video_info(p);
