@@ -2166,7 +2166,6 @@
                         for (const p of event.composedPath()) {
                             const clname = p.className;
                             if (cfunc(clname, target_name)) {
-                                debugger;
                                 if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
                                     this.#configs.hide_node(p);
                                     const info = this.#utilities_module.get_up_video_info(p);
