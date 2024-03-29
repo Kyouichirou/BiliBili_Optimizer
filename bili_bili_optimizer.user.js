@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.1
+// @version      1.5.2
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1588,7 +1588,22 @@
                                 this.#add_bayes_flag = true;
                             }
                         }
-                        const cm = `BBDown -mt --work-dir "E:\\video" "${id}"`;
+                        const params = [];
+                        if (this.#video_info.is_collection) {
+                            params.push('-p ALL');
+                            const nodes = document.getElementsByClassName('title');
+                            const voices = ['有声', '小说剧', '广播剧', '播讲'];
+                            let ic = 0;
+                            for (const node of nodes) {
+                                const t = node.innerHTML.replaceAll(' ', '');
+                                ic += (voices.some(e => t.includes(e)) ? 1 : 0);
+                                if (ic > 4) {
+                                    params.push('--audio-only');
+                                    break;
+                                }
+                            }
+                        }
+                        const cm = `BBDown -mt --work-dir "E:\\video" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
                         GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
                         return title;
                     },
