@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.2
+// @version      1.5.3
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -441,8 +441,11 @@
         // 词汇出现总数
         #white_words = 0;
         #black_words = 0;
+        // 平滑值
+        #alpha = 1;
         // 临界值, 当w和b的概率的差距大于临界值时，执行判断
         #threshold = 0;
+        #module_name = 'MultinomialNB';
         /**
          * 分词
          * @param {string} content
@@ -485,14 +488,14 @@
          * @param {number} total_len
          */
         #get_prior_probability(black_len, white_len, total_len) {
-            this.#black_p = black_len > 0 ? Math.log(black_len) - Math.log(total_len) : Math.log((black_len + 1) / total_len + 2);
-            this.#white_p = white_len > 0 ? Math.log(white_len) - Math.log(total_len) : Math.log((white_len + 1) / total_len + 2);
+            this.#black_p = black_len > 0 ? Math.log(black_len) - Math.log(total_len) : Math.log(this.#alpha / (total_len + 2 * this.#alpha));
+            this.#white_p = white_len > 0 ? Math.log(white_len) - Math.log(total_len) : Math.log(this.#alpha / (total_len + 2 * this.#alpha));
         }
         // 各个词汇数量
         get #features_length() { return Object.keys(Object.assign({}, this.#black_counter, this.#white_counter)).length; }
         #update_words_cal() {
             const sum = (dic) => Object.values(dic).reduce((acc, cur) => acc + cur, 0);
-            const total_features_length = this.#features_length;
+            const total_features_length = this.#features_length * this.#alpha;
             // 对所有值 +1
             this.#white_words = sum(this.#white_counter) + total_features_length;
             this.#black_words = sum(this.#black_counter) + total_features_length;
@@ -507,7 +510,7 @@
         #update_pre_cal() {
             const w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words);
             // 当数值为0时, 取1进行计算的结果
-            const w_1 = Math.log(1) - w_t, b_1 = Math.log(1) - b_t;
+            const w_1 = Math.log(this.#alpha) - w_t, b_1 = Math.log(this.#alpha) - b_t;
             this.#pre_cal_data.w_t = w_t;
             this.#pre_cal_data.b_t = b_t;
             this.#pre_cal_data.w_1 = w_1;
@@ -556,15 +559,13 @@
             const i = c.length;
             if (i < 5) return 0;
             // 预先计算部分数值
-            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data;
-            const [wp, bp] = c.reduce((acc, cur) => {
+            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, alpha = this.#alpha, [wp, bp] = c.reduce((acc, cur) => {
                 const bc = this.#black_counter[cur];
                 const wc = this.#white_counter[cur];
-                acc[0] += wc ? Math.log(wc + 1) - w_t : w_1;
-                acc[1] += bc ? Math.log(bc + 1) - b_t : b_1;
+                acc[0] += wc ? Math.log(wc + alpha) - w_t : w_1;
+                acc[1] += bc ? Math.log(bc + alpha) - b_t : b_1;
                 return acc;
-            }, [this.#white_p, this.#black_p]);
-            const r = (bp - wp) / Math.abs(bp);
+            }, [this.#white_p, this.#black_p]), r = (bp - wp) / Math.abs(bp);
             return r > (i > 10 ? this.#threshold : 0.21) ? r : 0;
         }
         /**
@@ -614,12 +615,13 @@
                 '------------------',
                 'details of bayes module:',
                 '-----------------------------',
-                'type of module: MultinomialNB;',
+                `type of module: ${this.#module_name};`,
                 `white list length: ${this.#white_len};`,
                 `black list length: ${this.#black_len};`,
                 `white features length: ${this.#white_words};`,
                 `black features length: ${this.#black_words};`,
                 `threshold: ${this.#threshold}`,
+                `aplha: ${this.#alpha}`,
                 '-----------------------------'
             ];
             console.log(data.join('\n'));
