@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.3
+// @version      1.5.4
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -432,20 +432,22 @@
         #black_p = 0;
         #white_p = 0;
         // 内容长度
-        #white_len = 0;
-        #black_len = 0;
-        #total_len = 0;
+        #bayes_white_len = 0;
+        #bayes_black_len = 0;
+        #bayes_total_len = 0;
         // 词频
-        #black_counter = null;
-        #white_counter = null;
+        #bayes_black_counter = null;
+        #bayes_white_counter = null;
         // 词汇出现总数
         #white_words = 0;
         #black_words = 0;
         // 平滑值
-        #alpha = 1;
-        // 临界值, 当w和b的概率的差距大于临界值时，执行判断
-        #threshold = 0;
-        #module_name = 'MultinomialNB';
+        #configs = {
+            alpha: 1,
+            // 临界值, 当w和b的概率的差距大于临界值时，执行判断
+            threshold: 0.15,
+            name: 'MultinomialNB'
+        };
         /**
          * 分词
          * @param {string} content
@@ -478,27 +480,17 @@
             return words;
         }
         #get_word_counter() {
-            this.#black_counter = GM_Objects.get_value('black_counter');
-            this.#white_counter = GM_Objects.get_value('white_counter');
-        }
-        /**
-         * 计算先验概率
-         * @param {number} black_len
-         * @param {number} white_len
-         * @param {number} total_len
-         */
-        #get_prior_probability(black_len, white_len, total_len) {
-            this.#black_p = black_len > 0 ? Math.log(black_len) - Math.log(total_len) : Math.log(this.#alpha / (total_len + 2 * this.#alpha));
-            this.#white_p = white_len > 0 ? Math.log(white_len) - Math.log(total_len) : Math.log(this.#alpha / (total_len + 2 * this.#alpha));
+            this.#bayes_black_counter = GM_Objects.get_value('bayes_black_counter');
+            this.#bayes_white_counter = GM_Objects.get_value('bayes_white_counter');
         }
         // 各个词汇数量
-        get #features_length() { return Object.keys(Object.assign({}, this.#black_counter, this.#white_counter)).length; }
+        get #features_length() { return Object.keys(Object.assign({}, this.#bayes_black_counter, this.#bayes_white_counter)).length; }
         #update_words_cal() {
             const sum = (dic) => Object.values(dic).reduce((acc, cur) => acc + cur, 0);
-            const total_features_length = this.#features_length * this.#alpha;
+            const total_features_length = this.#features_length * this.#configs.alpha;
             // 对所有值 +1
-            this.#white_words = sum(this.#white_counter) + total_features_length;
-            this.#black_words = sum(this.#black_counter) + total_features_length;
+            this.#white_words = sum(this.#bayes_white_counter) + total_features_length;
+            this.#black_words = sum(this.#bayes_black_counter) + total_features_length;
         }
         // 预先计算部分的值
         #pre_cal_data = {
@@ -510,43 +502,62 @@
         #update_pre_cal() {
             const w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words);
             // 当数值为0时, 取1进行计算的结果
-            const w_1 = Math.log(this.#alpha) - w_t, b_1 = Math.log(this.#alpha) - b_t;
+            const w_1 = Math.log(this.#configs.alpha) - w_t, b_1 = Math.log(this.#configs.alpha) - b_t;
             this.#pre_cal_data.w_t = w_t;
             this.#pre_cal_data.b_t = b_t;
             this.#pre_cal_data.w_1 = w_1;
             this.#pre_cal_data.b_1 = b_1;
         }
-        // 初始化模型
-        #init_module() {
-            let total_len = GM_Objects.get_value('total_len'), white_len = 0, black_len = 0;
-            if (total_len) {
-                white_len = GM_Objects.get_value('white_len');
-                black_len = GM_Objects.get_value('black_len');
-                this.#get_word_counter();
-            } else {
-                white_len = this.#white_list.length;
-                black_len = this.#black_list.length;
-                total_len = white_len + black_len;
-                GM_Objects.set_value('white_len', white_len);
-                GM_Objects.set_value('black_len', black_len);
-                GM_Objects.set_value('total_len', total_len);
-                this.#black_counter = this.#word_counter(this.#black_list.map(e => this.#seg_word(e)).flat());
-                this.#white_counter = this.#word_counter(this.#white_list.map(e => this.#seg_word(e)).flat());
-                GM_Objects.set_value('black_counter', this.#black_counter);
-                GM_Objects.set_value('white_counter', this.#white_counter);
-            }
-            this.#threshold = GM_Objects.get_value('threshold', 0.12);
-            this.#white_len = white_len;
-            this.#black_len = black_len;
-            this.#total_len = total_len;
-            this.#get_prior_probability(black_len, white_len, total_len);
+        /**
+         * 计算先验概率
+         * @param {number} bayes_black_len
+         * @param {number} bayes_white_len
+         * @param {number} bayes_total_len
+         */
+        #get_prior_probability(bayes_black_len, bayes_white_len, bayes_total_len) {
+            this.#black_p = bayes_black_len > 0 ? Math.log(bayes_black_len) - Math.log(bayes_total_len) : Math.log(this.#configs.alpha / (bayes_total_len + 2 * this.#configs.alpha));
+            this.#white_p = bayes_white_len > 0 ? Math.log(bayes_white_len) - Math.log(bayes_total_len) : Math.log(this.#configs.alpha / (bayes_total_len + 2 * this.#configs.alpha));
+        }
+        /**
+         * 更新模型参数
+         * @param {number} mode 0, 1, 2
+         */
+        #update_paramters(mode) {
+            this.#get_prior_probability(this.#bayes_black_len, this.#bayes_white_len, this.#bayes_total_len);
             this.#update_words_cal();
             this.#update_pre_cal();
+            mode > 0 && GM_Objects.set_value('bayes_reload', mode);
+        }
+        // 初始化模型
+        #init_module() {
+            let bayes_total_len = GM_Objects.get_value('bayes_total_len'), bayes_white_len = 0, bayes_black_len = 0;
+            if (bayes_total_len) {
+                bayes_white_len = GM_Objects.get_value('bayes_white_len');
+                bayes_black_len = GM_Objects.get_value('bayes_black_len');
+                this.#get_word_counter();
+            } else {
+                bayes_white_len = this.#white_list.length;
+                bayes_black_len = this.#black_list.length;
+                bayes_total_len = bayes_white_len + bayes_black_len;
+                GM_Objects.set_value('bayes_white_len', bayes_white_len);
+                GM_Objects.set_value('bayes_black_len', bayes_black_len);
+                GM_Objects.set_value('bayes_total_len', bayes_total_len);
+                this.#bayes_black_counter = this.#word_counter(this.#black_list.map(e => this.#seg_word(e)).flat());
+                this.#bayes_white_counter = this.#word_counter(this.#white_list.map(e => this.#seg_word(e)).flat());
+                GM_Objects.set_value('bayes_black_counter', this.#bayes_black_counter);
+                GM_Objects.set_value('bayes_white_counter', this.#bayes_white_counter);
+            }
+            this.#configs = GM_Objects.get_value('bayes_configs', this.#configs);
+            this.#bayes_white_len = bayes_white_len;
+            this.#bayes_black_len = bayes_black_len;
+            this.#bayes_total_len = bayes_total_len;
+            this.#update_paramters(0);
         }
         constructor() {
             this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
             this.#init_module();
-            GM_Objects.addvaluechangeistener('total_len', this.#init_module.bind(this));
+            // 监听这个值用以判断是否需要重新载入模型/更新参数
+            GM_Objects.addvaluechangeistener('bayes_reload', ((...args) => args[2] === 1 ? this.#init_module() : (this.this.#configs = GM_Objects.get_value('bayes_configs'), this.#update_paramters())).bind(this));
         }
         /**
          * 计算概率
@@ -559,14 +570,14 @@
             const i = c.length;
             if (i < 5) return 0;
             // 预先计算部分数值
-            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, alpha = this.#alpha, [wp, bp] = c.reduce((acc, cur) => {
-                const bc = this.#black_counter[cur];
-                const wc = this.#white_counter[cur];
+            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, alpha = this.#configs.alpha, [wp, bp] = c.reduce((acc, cur) => {
+                const bc = this.#bayes_black_counter[cur];
+                const wc = this.#bayes_white_counter[cur];
                 acc[0] += wc ? Math.log(wc + alpha) - w_t : w_1;
                 acc[1] += bc ? Math.log(bc + alpha) - b_t : b_1;
                 return acc;
             }, [this.#white_p, this.#black_p]), r = (bp - wp) / Math.abs(bp);
-            return r > (i > 10 ? this.#threshold : 0.21) ? r : 0;
+            return r > (i > 10 ? this.#configs.threshold : 0.21) ? r : 0;
         }
         /**
          * 添加新内容
@@ -579,31 +590,62 @@
                 return;
             }
             const ws = this.#seg_word(content);
-            const [dic, dic_name, len_name, len_data, target] = mode ? [this.#white_counter, 'white_counter', 'white_len', ++this.#white_len, 'white'] : [this.#black_counter, 'black_counter', 'black_len', ++this.#black_len, 'black'];
+            const [dic, dic_name, len_name, len_data, target] = mode ? [this.#bayes_white_counter, 'bayes_white_counter', 'bayes_white_len', ++this.#bayes_white_len, 'white'] : [this.#bayes_black_counter, 'bayes_black_counter', 'bayes_black_len', ++this.#bayes_black_len, 'black'];
             ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
-            this.#total_len += 1;
-            this.#get_prior_probability(this.#black_len, this.#white_len, this.#total_len);
-            this.#update_words_cal();
-            this.#update_pre_cal();
-            GM_Objects.set_value('total_len', this.#total_len);
+            this.#bayes_total_len += 1;
+            // 更新模型参数
+            this.#update_paramters(1);
+            GM_Objects.set_value('bayes_total_len', this.#bayes_total_len);
             GM_Objects.set_value(dic_name, dic);
             GM_Objects.set_value(len_name, len_data);
             Colorful_Console.main(`successfully add content to bayes ${target} list`);
         }
         // 重置模型
         reset() {
-            ['black_counter', 'black_len', 'white_counter', 'white_len', 'total_len'].forEach(e => GM_Objects.set_value(e, null));
-            this.#init_module();
-            Colorful_Console.main('successfully reset bayes', 'info', true);
+            ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len', 'bayes_total_len'].forEach(e => GM_Objects.set_value(e, null));
+            this.#init_module(), Colorful_Console.main('successfully reset bayes', 'info', true);
         }
         /**
-         * 调整比例
+         * 调整具体的数值
+         * @param {string} key
+         * @param {number} lower
+         * @param {number} upupper
          * @param {number} val
+         * @returns {number}
          */
-        adjust_threshold(val) {
+        #adjust_config_val(key, lower, upupper, val) {
+            val = Number(val);
+            const r = (lower < val && val < upupper) ? [`successfully adjust ${key} : ${val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
+            Colorful_Console.main(...r);
+            return r.length === 1 ? val : 0;
+        }
+        /**
+         * 调整模型配置
+         * @param {object} configs { threshold: number, alpha: number, name: string }
+         */
+        adjust_configs(configs) {
             try {
-                val = Number(val);
-                (0.03 < val && val < 1) ? (this.#threshold = val, GM_Objects.set_value('threshold', val), Colorful_Console.main('successfully adjust threshold')) : Colorful_Console.main('threshold must be between 0.03 and 1', 'warning');
+                if (typeof configs === 'object') {
+                    const f = [['threshold', 0.03, 0.3, 1], ['alpha', 0.01, 1, 10]].reduce((b, e) => {
+                        const val = configs[e[0]];
+                        if (val) {
+                            const i = e.pop();
+                            e.push(val);
+                            const v = this.#adjust_config_val(...e);
+                            if (v > 0) {
+                                this.#configs[e[0]] = v;
+                                return b + i;
+                            }
+                            return b;
+                        }
+                        return b;
+                    }, 0);
+                    // 模型选择等待加入
+                    if (f > 0) {
+                        GM_Objects.set_value('bayes_configs', this.#configs);
+                        f > 9 && this.#update_paramters(2);
+                    }
+                } else Colorful_Console.main('configs must be an object: { threshold: 0.1, alpha: 1, name: "MultinomialNB" } ', 'warning');
             } catch (error) {
                 console.error(error);
             }
@@ -615,13 +657,13 @@
                 '------------------',
                 'details of bayes module:',
                 '-----------------------------',
-                `type of module: ${this.#module_name};`,
-                `white list length: ${this.#white_len};`,
-                `black list length: ${this.#black_len};`,
+                `type of module: ${this.#configs.name};`,
+                `white list length: ${this.#bayes_white_len};`,
+                `black list length: ${this.#bayes_black_len};`,
                 `white features length: ${this.#white_words};`,
                 `black features length: ${this.#black_words};`,
-                `threshold: ${this.#threshold}`,
-                `aplha: ${this.#alpha}`,
+                `threshold: ${this.#configs.threshold}`,
+                `alpha: ${this.#configs.alpha}`,
                 '-----------------------------'
             ];
             console.log(data.join('\n'));
@@ -1243,6 +1285,7 @@
         // 统计拦截的up的情况
         _block_up_statistics() {
             // 对拦截次数进行排序
+            if (this.block_ups.length === 0) return [];
             this.block_ups.sort((a, b) => a.visited_times - b.visited_times);
             const i = this.block_ups.length;
             // 各个百分段的拦截次数
@@ -1400,7 +1443,7 @@
         },
         'bayes': {
             get() { Dynamic_Variants_Manager.bayes_module?.show_detail(); },
-            set(value) { Dynamic_Variants_Manager.bayes_module?.adjust_threshold(value); }
+            set(value) { Dynamic_Variants_Manager.bayes_module?.adjust_configs(value); }
         }
     });
     // -------- 展示帮助以及其他内部存储数据
