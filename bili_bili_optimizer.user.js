@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.4
+// @version      1.5.5
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -448,6 +448,13 @@
             threshold: 0.15,
             name: 'MultinomialNB'
         };
+        // 预先计算部分的值
+        #pre_cal_data = {
+            'w_t': 0,
+            'b_t': 0,
+            'w_1': 0,
+            'b_1': 0
+        };
         /**
          * 分词
          * @param {string} content
@@ -483,30 +490,23 @@
             this.#bayes_black_counter = GM_Objects.get_value('bayes_black_counter');
             this.#bayes_white_counter = GM_Objects.get_value('bayes_white_counter');
         }
-        // 各个词汇数量
+        // 总词汇数
         get #features_length() { return Object.keys(Object.assign({}, this.#bayes_black_counter, this.#bayes_white_counter)).length; }
-        #update_words_cal() {
-            const sum = (dic) => Object.values(dic).reduce((acc, cur) => acc + cur, 0);
-            const total_features_length = this.#features_length * this.#configs.alpha;
-            // 对所有值 +1
-            this.#white_words = sum(this.#bayes_white_counter) + total_features_length;
-            this.#black_words = sum(this.#bayes_black_counter) + total_features_length;
-        }
-        // 预先计算部分的值
-        #pre_cal_data = {
-            'w_t': 0,
-            'b_t': 0,
-            'w_1': 0,
-            'b_1': 0
-        };
         #update_pre_cal() {
-            const w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words);
-            // 当数值为0时, 取1进行计算的结果
-            const w_1 = Math.log(this.#configs.alpha) - w_t, b_1 = Math.log(this.#configs.alpha) - b_t;
+            // 当数值为0时, 取alpha进行计算的结果
+            const w_t = Math.log(this.#white_words), b_t = Math.log(this.#black_words), a = Math.log(this.#configs.alpha), w_1 = a - w_t, b_1 = a - b_t;
             this.#pre_cal_data.w_t = w_t;
             this.#pre_cal_data.b_t = b_t;
             this.#pre_cal_data.w_1 = w_1;
             this.#pre_cal_data.b_1 = b_1;
+        }
+        // 各个类别下词数
+        #update_words_cal() {
+            const sum = (dic) => Object.values(dic).reduce((acc, cur) => acc + cur, 0);
+            const total_features_length = this.#features_length * this.#configs.alpha;
+            // 对所有值 + alpha
+            this.#white_words = sum(this.#bayes_white_counter) + total_features_length;
+            this.#black_words = sum(this.#bayes_black_counter) + total_features_length;
         }
         /**
          * 计算先验概率
@@ -527,6 +527,20 @@
             this.#update_words_cal();
             this.#update_pre_cal();
             mode > 0 && GM_Objects.set_value('bayes_reload', mode);
+        }
+        /**
+         * 调整具体的数值
+         * @param {string} key
+         * @param {number} lower
+         * @param {number} upupper
+         * @param {number} val
+         * @returns {number}
+         */
+        #adjust_config_val(key, lower, upupper, val) {
+            val = Number(val);
+            const r = (lower < val && val < upupper) ? [`successfully adjust ${key} : ${val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
+            Colorful_Console.main(...r);
+            return r.length === 1 ? val : 0;
         }
         // 初始化模型
         #init_module() {
@@ -606,20 +620,6 @@
             this.#init_module(), Colorful_Console.main('successfully reset bayes', 'info', true);
         }
         /**
-         * 调整具体的数值
-         * @param {string} key
-         * @param {number} lower
-         * @param {number} upupper
-         * @param {number} val
-         * @returns {number}
-         */
-        #adjust_config_val(key, lower, upupper, val) {
-            val = Number(val);
-            const r = (lower < val && val < upupper) ? [`successfully adjust ${key} : ${val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
-            Colorful_Console.main(...r);
-            return r.length === 1 ? val : 0;
-        }
-        /**
          * 调整模型配置
          * @param {object} configs { threshold: number, alpha: number, name: string }
          */
@@ -645,7 +645,7 @@
                         GM_Objects.set_value('bayes_configs', this.#configs);
                         f > 9 && this.#update_paramters(2);
                     }
-                } else Colorful_Console.main('configs must be an object: { threshold: 0.1, alpha: 1, name: "MultinomialNB" } ', 'warning');
+                } else Colorful_Console.main('configs must be an object: e.g, { threshold: 0.1, alpha: 1, name: "MultinomialNB" } ', 'warning');
             } catch (error) {
                 console.error(error);
             }
@@ -1869,7 +1869,8 @@
                     };
                     // 确保数据都是字符串类型
                     for (const k in info) info[k] += '';
-                    return (!info.video_id && data.arcurl?.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info);
+                    // data.business_info, 广告信息
+                    return data.business_info ? true : (!info.video_id && data.arcurl?.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info);
                 },
                 // 读取目标元素的视频标题和up的名称
                 get_title_up_name(node, info) {
@@ -2792,10 +2793,10 @@
         start() {
             /**
              * 执行函数, call(this), 即使用当前optimizer这整个对象的this, 其他的自定义this
-             * @param {boolean} mode
+             * @param {Array} funcs
              */
-            const load_func = (mode) => (mode ? this.#start_load_funcs : this.#end_load_funcs).forEach(e => e.type ? e() : e.call(this));
-            load_func(true), GM_Objects.window.onload = () => (load_func(false), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started'));
+            const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
+            load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started'));
         }
     }
     // 优化器主体 -----------
