@@ -98,7 +98,23 @@
 
 ![image-20240222182654661.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/image-20240222182654661.png?raw=true)
 
-对于贝叶斯黑名单的使用需要较为注意, 适用于大批量出现的垃圾推广拦截.
+### 2.1 贝叶斯
+
+![image-20230719180154961.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/image-20230719180154961.png?raw=true)
+
+个人在写很多脚本的拦截器时, 基本上也犯了<黑客与画家>所提及的错误, 没有优先尝试从数学的角度来实现.
+
+![2024-03-01 11 36 21.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/2024-03-01%2011%2036%2021.png?raw=true)
+
+这些内容有着显著的特征, 通过若干词汇的变换, 注册大量僵尸账号反复发布这些重复信息, 通过拦截关键词, 拦截up无法对内容实现精准大批量的拦截, 这些类型的内容就很适合通过贝叶斯来拦截.
+
+不管是基于关键词, 还是用户ID, 视频ID的拦截, 这些都是硬性规则, 很难对于垃圾信息做出较大范围的拦截, 同时还需费时费力去构建规则.
+
+通过观察垃圾信息, 很容易发现, 大量的信息都是类似的, 使用的文字, 字母, 标点符号, 通过判断这些内容出现的次数, 那么显然很容易根据出现的概率来判断是否为垃圾内容.
+
+这部分内容详情见另一篇文章: [贝叶斯文本分类算法的JavaScript实现 | Lian (kyouichirou.github.io)](https://kyouichirou.github.io/post/bei-xie-si-wen-ben-fen-lei-suan-fa-de-javascript-shi-xian/)
+
+对于贝叶斯黑名单的使用需要较为注意, 适用于大批量较为规律出现的垃圾推广拦截, 否则可能需要微调模型来实现较好的拦截效果.
 
 ```bash
 【Python源码】轻松破解WiFi密码, 随时随地上网( 附源码) , 再也不用担心外出没流量了~~
@@ -108,21 +124,7 @@
 【2024最新】用python爬虫处理excel搞定自动化办公, 几分钟轻松搞定一天工作, 全天摸鱼( 附带课件源码, pycharm激活工具) 
 ```
 
-![2024-03-01 11 36 21.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/2024-03-01%2011%2036%2021.png?raw=true)
-
-这些内容有着显著的特征, 通过若干词汇的变换, 或者是注册大量僵尸账号反复发布的重复信息, 通过拦截关键词, 拦截up无法对内容实现精准大批量的拦截, 这些类型的内容就很适合通过贝叶斯来拦截.
-
-### 2.1 贝叶斯
-
-![image-20230719180154961.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/image-20230719180154961.png?raw=true)
-
-个人在写很多脚本的拦截器时, 基本上也犯了<黑客与画家>所提及的错误, 没有优先尝试从数学的角度来实现.
-
-不管是基于关键词, 还是用户ID, 视频ID的拦截, 这些都是硬性规则, 很难对于垃圾信息做出较大范围的拦截, 同时还需费时费力去构建规则.
-
-通过观察垃圾信息, 很容易发现, 大量的信息都是类似的, 使用的文字, 字母, 标点符号, 通过判断这些内容出现的次数, 那么显然很容易根据出现的概率来判断是否为垃圾内容.
-
-这部分内容详情见另一篇文章: [贝叶斯文本分类算法的JavaScript实现 | Lian (kyouichirou.github.io)](https://kyouichirou.github.io/post/bei-xie-si-wen-ben-fen-lei-suan-fa-de-javascript-shi-xian/)
+相关设置见下文, 命令行输入部分.
 
 ## 三. 搜索优化
 
@@ -252,13 +254,19 @@ shortcuts
 | show_rate | 显示已经评分的视频信息 |
 | bayes     | 显示贝叶斯模型的状况.  |
 
+#### 7.4.1 贝叶斯设置
+
 ```JavaScript
-bayes = 0.15;
+bayes = {name: 'complementnb', alpha: 0.8, threshold: 0.12};
 ```
 
-调节贝叶斯模型的敏感程度, 值越小越敏感, 反之亦然, 设置范围: `0.03 - 1`.
+输入必须是`{}`结构数据, 可以单独设置其中的参数,  三个参数的含义:
 
-![2024-03-13 16 10 08.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/2024-03-13%2016%2010%2008.png?raw=true)
+- name, 模型的选择, 默认为`multinomialnb`多项式贝叶斯, 目前提供`complementnb`, `multinomialnb`两个模型的选择.
+- alpha, 模型微调参数, 数值越大则敏感度越低, 反之, 设置值范围: 0.01 - 1.
+- threshold, 结果粗调, 数值越大敏感度越低, 反之, 设置值范围: 0.03 - 0.3.
+
+![2024-04-15 11 17 26.png](https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/images/2024-04-15%2011%2017%2026.png?raw=true)
 
 ## 八. 小结
 
