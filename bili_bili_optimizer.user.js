@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.6
+// @version      1.5.7
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -593,13 +593,16 @@
             // 监听这个值用以判断是否需要重新载入/切换模型/更新参数
             GM_Objects.addvaluechangeistener('bayes_reload', ((...args) => {
                 const a = args[2];
-                if (a === 1) this.#init_module();
+                if (a === 0) return;
+                else if (a === 1) this.#init_module();
                 else {
                     this.#get_configs();
                     if (a === 2) this.#update_paramters();
                     else if (a === 3) this.#get_module();
                     else if (a === 4) this.#update_paramters(), this.#get_module();
                 }
+                // 重置这个值, 否则下次写入相同的值无法触发监听
+                GM_Objects.set_value('bayes_reload', 0);
             }).bind(this));
         }
         bayes() { }
