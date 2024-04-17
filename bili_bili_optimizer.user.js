@@ -1,17 +1,19 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.5.7
+// @version      1.6.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
 // @homepage     https://github.com/Kyouichirou/BiliBili_Optimizer
 // @updateURL    https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
 // @downloadURL  https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
+// @supportURL   https://github.com/Kyouichirou/BiliBili_Optimizer
 // @match        https://t.bilibili.com/
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
+// @connect      img.qovv.cn
 // @grant        GM_info
 // @grant        GM_addStyle
 // @grant        GM_setValue
@@ -21,6 +23,7 @@
 // @grant        unsafeWindow
 // @grant        GM_setClipboard
 // @grant        GM_notification
+// @grant        GM_xmlhttpRequest
 // @grant        window.onurlchange
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
@@ -54,7 +57,7 @@
          * 设置值
          * @param {string} key_name
          * @param {any} value
-         * @returns {any}
+         * @returns {null}
          */
         set_value: (key_name, value) => GM_setValue(key_name, value),
         /**
@@ -67,7 +70,7 @@
          * 注册菜单事件, 返回注册id
          * @param {string} name
          * @param {Function} callback_func
-         * @returns {HTMLElement}
+         * @returns {number}
          */
         registermenucommand: (name, callback_func) => GM_registerMenuCommand(name, callback_func),
         /**
@@ -112,8 +115,65 @@
         window: unsafeWindow,
         // 判断是否支持监听url的改变
         supportonurlchange: window.onurlchange,
+        // httprequest, 可跨越
+        xmlhttprequest: GM_xmlhttpRequest
     };
     // GM内置函数/对象 ---------------
+
+    // ---------------- 链接常量
+    const Constants_URLs = {
+        blog: 'https://kyouichirou.github.io/',
+        manual: 'https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/README.md',
+        weibo_ico: 'https://img.qovv.cn/2024/04/17/661f34bf803b9.webp',
+        weibo_url: 'https://img.qovv.cn/2024/04/17/661f39ea6db70.png',
+        tea_ico: 'https://img.qovv.cn/2024/04/17/661f3488082a0.png',
+        support: 'https://img.qovv.cn/2024/04/17/661f3400de6da.webp',
+        install: 'https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js',
+        /**
+         * 将字符串响应头转为字典
+         * @param {string} content
+         * @returns {object}
+         */
+        _convert_dic(content) {
+            return content.split('\n').map(e => e.trim()).filter(e => e.length > 0).map(e => e.split(': ')).reduce((acc, e) => {
+                acc[e[0]] = e[1];
+                return acc;
+            }, {});
+        },
+        /**
+         * 发起请求
+         * @param {string} url
+         * @returns {Promise}
+         */
+        _http(url) {
+            return new Promise((resolve, reject) => GM_Objects.xmlhttprequest({
+                method: "HEAD",
+                url: url,
+                headers: { "Cache-Control": "no-cache" },
+                onload: (response) => {
+                    const code = response.status;
+                    code === 200 && this._convert_dic(response.responseHeaders)['content-length'] > 0 ? resolve(true) : reject('request code: ' + code + `, : ${url}`);
+                },
+                onerror: (_response) => reject('error: ' + url),
+                ontimeout: (_response) => reject('timeout: ' + url)
+            }));
+        },
+        // 检查图床的图片是否可以正常访问, 每三天检查一次
+        _check_pic() {
+            const xmls = [];
+            for (const k in this) {
+                const url = (k === 'main' || k.startsWith('_')) ? '' : this[k];
+                url.startsWith('https://img.qovv.cn') && xmls.push(this._http(url));
+            }
+            Promise.allSettled(xmls).then(res => {
+                const error_urls = res.filter(item => item.status === 'rejected').map(item => item.reason);
+                error_urls.length > 0 ? (GM_Objects.notification('fail to load some pics', 'warning', true), console.log(`fail to load some pics:\n${error_urls.join(';\n')}`)) : Colorful_Console.main('all pics have been loaded successfully');
+                GM_Objects.set_value('pic_check_date', Date.now());
+            });
+        },
+        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 3 && this._check_pic(), 10000); }
+    };
+    // 链接常量 ---------------
 
     // --------------- 通用函数
     // 自定义打印内容
@@ -525,7 +585,7 @@
          * 触发重新加载
          * @param {number} mode
          */
-        #trigger_reload(mode) { GM_Objects.set_value('bayes_reload', mode); }
+        #trigger_reload(mode) { GM_Objects.set_value('bayes_reload', { 'mode': mode, 'update': Date.now() }); }
         #get_configs() { this.#configs = GM_Objects.get_value('bayes_configs', this.#configs); }
         #get_module() { this.bayes = this.#cal_bayes.bind(this, ...(this.#configs.name !== 'multinomialnb' ? [0, 0] : [this.#white_p, this.#black_p])); }
         /**
@@ -566,9 +626,9 @@
         }
         // 初始化模型
         #init_module() {
-            let bayes_white_len = GM_Objects.get_value('bayes_white_len'), bayes_black_len = 0;
+            let bayes_white_len = GM_Objects.get_value('bayes_white_len', 0), bayes_black_len = 0;
             if (bayes_white_len) {
-                bayes_black_len = GM_Objects.get_value('bayes_black_len');
+                bayes_black_len = GM_Objects.get_value('bayes_black_len', 0);
                 this.#get_word_counter();
             } else {
                 bayes_white_len = this.#white_list.length;
@@ -592,7 +652,7 @@
             this.#init_module();
             // 监听这个值用以判断是否需要重新载入/切换模型/更新参数
             GM_Objects.addvaluechangeistener('bayes_reload', ((...args) => {
-                const a = args[2];
+                const a = args[2]['mode'];
                 if (a === 0) return;
                 else if (a === 1) this.#init_module();
                 else {
@@ -601,11 +661,14 @@
                     else if (a === 3) this.#get_module();
                     else if (a === 4) this.#update_paramters(), this.#get_module();
                 }
-                // 重置这个值, 否则下次写入相同的值无法触发监听
-                GM_Objects.set_value('bayes_reload', 0);
             }).bind(this));
         }
-        bayes() { }
+        /**
+         * 贝叶斯判断
+         * @param {string} _content
+         * @returns {number}
+         */
+        bayes(_content) { }
         /**
          * 添加新内容
          * @param {string} content
@@ -2264,7 +2327,7 @@
                             if (++i > 6) break;
                         }
                     } catch (error) {
-                        console.log(error);
+                        console.error(error);
                         GM_Objects.notification('some error cause on menus event', 'warning');
                     }
                 }, true);
@@ -2699,6 +2762,7 @@
         };
         // 添加html元素
         #html_modules = {
+            // 遮罩
             _shade: {
                 run_in: Array.from({ length: 6 }, (_val, index) => index).filter(e => e !== 1),
                 colors: {
@@ -2786,14 +2850,151 @@
                     GM_Objects.addvaluechangeistener('shade_opacity', ((...args) => this.change_opacity(args[2])).bind(this));
                 }
             },
+            // 支持
+            _support_me: {
+                id_name: 'support_me',
+                interval_id: 0,
+                support: null,
+                tips: null,
+                opacity: null,
+                timeout: 30,
+                tips_text: 'this tips will be automatically closed or you can click anywhere of popup to close it',
+                get html() {
+                    const mt = -5;
+                    return `
+                        <div
+                            id="${this.id_name}"
+                            style="
+                                background: darkgray;
+                                text-align: justify;
+                                width: 700px;
+                                font-size: 16px;
+                                height: 468px;
+                                position: fixed;
+                                top:50%;
+                                left:50%;
+                                transform: translate(-50%,-50%);
+                                z-index: 100000;
+                            "
+                        >
+                            <div style="padding: 2.5%; font-weight: bold; font-size: 18px; font-family: Microsoft YaHei;">
+                                Support Me!
+                                <span
+                                    class="manual_btn"
+                                    style="font-size: 12px; font-weight: normal; float: right"
+                                >
+                                    <i
+                                        title="click, share with your friends. share to weibo"
+                                        style="
+                                            margin-right: 10px;
+                                            content: url(${Constants_URLs.weibo_ico});
+                                        "
+                                    ></i>
+                                    <a
+                                        href=${Constants_URLs.manual}
+                                        target="_blank"
+                                        title="help manual"
+                                        style="color: #2b638b"
+                                        >Manual</a
+                                    >
+                                    <span> || version: ${GM_info.script.version}</span>
+                                </span>
+                            </div>
+                            <div style="font-family: Monotype Corsiva; font-size: 16px; padding-left: 2%">
+                                make thing better and simpler.!
+                                <img
+                                    src="${Constants_URLs.tea_ico}"
+                                    style="
+                                        float: left;
+                                        height: 42px;
+                                        width: 42px;
+                                        margin: -10px 4px 0 0px;
+                                    "
+                                />
+                            </div>
+                            <div
+                                class="support_img"
+                                style="padding-top: 4%; width: 100%; padding-left: 7.5%"
+                                title="any help, support me.!"
+                            >
+                                <div class="qrCode">
+                                    <img
+                                        src="${Constants_URLs.support}"
+                                    />
+                                </div>
+                            </div>
+                            <div class="timeout" style="font-size: 12px; padding: 3%">
+                                ${this.timeout}s, ${this.tips_text}.
+                            </div>
+                            <a
+                                href=${Constants_URLs.blog}
+                                target="_blank"
+                                style="margin: ${mt}px 10px 0px 0px; float: right; font-size: 14px; color: teal"
+                                title="my blog"
+                            >
+                                Github: Lian
+                            </a>
+                        </div>`;
+                },
+                /**
+                 * 更变透明度
+                 * @param {number} opacity
+                 */
+                opacity_change(opacity) {
+                    const target = document.getElementById("screen_shade_cover");
+                    target && (this.opacity === null ? (this.opacity = target.style.opacity) : target.style.opacity !== opacity) && (target.style.opacity = opacity);
+                },
+                // 微博分享
+                share_weibo() {
+                    const url = `https://service.weibo.com/share/share.php?url=${GM_Objects.info.script.supportURL}&title=BiliBili_Optimizer, 更好的B站.!&summery=undefined&pic=${Constants_URLs.weibo_url}&#_loginLayer_${Date.now()}`;
+                    GM_Objects.openintab(url, { insert: true, active: true });
+                },
+                // 倒计时
+                timer() {
+                    let time = this.timeout;
+                    this.interval_id = setInterval(() => {
+                        this.tips.innerText = `${--time}s, ${this.tips_text}`;
+                        time === 0 && this.remove();
+                    }, 1000);
+                },
+                // click事件
+                click_event() { this.support.onclick = (e) => e.target.localName === "i" ? this.share_weibo() : e.target.localName !== "a" && setTimeout(() => this.remove(), 300); },
+                // 创建弹窗
+                creat_popup() {
+                    // 先将遮罩设置为透明
+                    this.opacity_change(0);
+                    document.documentElement.insertAdjacentHTML("beforeend", this.html);
+                    setTimeout(() => {
+                        this.support = document.getElementById(this.id_name);
+                        this.tips = this.support.getElementsByClassName("timeout")[0];
+                        this.click_event();
+                        this.timer();
+                    }, 300);
+                },
+                // 销毁弹窗
+                remove() {
+                    if (this.interval_id) {
+                        clearInterval(this.interval_id);
+                        this.interval_id = null;
+                    }
+                    this.opacity_change(this.opacity);
+                    this.opacity = null;
+                    this.support.remove();
+                    this.support = null;
+                    this.tips = null;
+                },
+                main() { this.support ? this.remove() : this.creat_popup(); },
+            },
             get_funcs(id) {
+                const f = (() => GM_Objects.registermenucommand('Support || Donation', this._support_me.main.bind(this._support_me)));
+                f.start = 1, f.type = 1;
                 if (this._shade.run_in.includes(id)) {
                     this._shade.init();
                     const a = this._shade.main.bind(this._shade);
-                    a.start = 1;
-                    return [a];
+                    a.start = 1, a.type = 1;
+                    return [a, f];
                 }
-                return [];
+                return [f];
             }
         };
         /**
@@ -2822,7 +3023,7 @@
              * @param {Array} funcs
              */
             const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
-            load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started'));
+            load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started'));
         }
     }
     // 优化器主体 -----------
