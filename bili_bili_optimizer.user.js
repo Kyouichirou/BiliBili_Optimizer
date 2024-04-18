@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.0
+// @version      1.6.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -218,13 +218,13 @@
          * @param {string} href
          * @returns {string}
          */
-        get_video_id(href) { return this._match(this._video_id_reg, href); },
+        get_video_id(href) { return href.includes('/video/') ? this._match(this._video_id_reg, href) : ''; },
         /**
          * 匹配up id
          * @param {string} href
          * @returns {string}
          */
-        get_up_id(href) { return this._match(this._up_id_reg, href); }
+        get_up_id(href) { return href.includes('space.bilibili') ? this._match(this._up_id_reg, href) : ''; }
     };
     // 通用函数 ---------------
 
@@ -889,6 +889,7 @@
             a: [
                 '\u4f20\u5a92\u5b66\u9662',
                 '\u53f8\u51e4',
+                '\u9a6c\u7763\u5de5',
                 '\u79e6\u660a',
                 '\u738b\u9a81',
                 '\u9a81\u8bdd\u4e00\u4e0b',
@@ -1086,7 +1087,6 @@
                 '\u81ea\u5b66\u7ecf\u9a8c',
                 '\u9ad8\u8003',
                 '\u5fe0\u544a',
-                '\u534e\u4e3a',
                 '\u6234\u5efa\u4e1a',
                 '\u5f20\u4e1c\u5347',
                 '\u6731\u671d\u9633',
@@ -1149,10 +1149,11 @@
                         while (i > 1000) t.pop(), --i;
                         this._write_data(t);
                     }
-                } else this._write_data(data);
+                } else this._write_data([...new Set(data)]);
                 this.a = [...new Set([...this.a, ...data])];
                 // 重新赋值后, 需要重新添加函数
                 this.a.includes_r = includes_r.call(this.a, false);
+                this._show_info(data, true);
             },
             /**
              * 移除拦截关键词
@@ -1165,13 +1166,12 @@
                     const t = arr.filter(e => !data.includes(e));
                     t.length !== arr.length && this._write_data(t);
                 }
+                this._show_info(data, false);
             },
-            _write_data(data) { GM_Objects.set_value('black_keys', data), Colorful_Console.main('update black keys', 'info', true); },
+            _show_info(data, mode) { console.log(`${mode ? 'add' : 'remove'} black keys:\n${[...new Set(data)].join('\n')}`); },
+            _write_data(data) { GM_Objects.set_value('black_keys', data), GM_Objects.notification('update black keys', 'info'); },
             _get_data() { return GM_Objects.get_value('black_keys'); },
-            _main() {
-                const c = this._get_data();
-                c && c.forEach(e => this.a.push(e));
-            }
+            _main() { this._get_data()?.forEach(e => this.a.push(e)); }
         },
         bayes_module: null,
         // 手动拉黑的up, 重要数据, 结构 [{}], 跨标签通信
@@ -1220,10 +1220,9 @@
          * @param {string} video_id
          */
         block_video(video_id) {
-            this.block_videos.push(video_id);
-            GM_Objects.set_value('block_videos', this.block_videos);
+            this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos);
             this.up_video_sync('block', 'video', video_id);
-            Colorful_Console.main('update block video info');
+            Colorful_Console.main(`add video to block_video list: ${video_id}`);
         },
         // 累积拦截计数记录
         accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
@@ -1233,8 +1232,7 @@
          * @param {number} b_result
          */
         bayes_accumulative(title, b_result) {
-            this.accumulative_func();
-            GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
+            this.accumulative_func(), GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
             Colorful_Console.main(`bayes block(${b_result.toFixed(4)}): ${title}`, 'debug');
         },
         // 视频和up, 拦截或者取消时, 数据同步
@@ -1431,7 +1429,7 @@
              * @returns {boolean}
              */
             check(up_id) { return this._data.some(e => e.up_id === up_id); },
-            _info_write(data, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.main('update_up_info', 'info', mode); },
+            _info_write(data, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.main(`${mode ? 'remove up from ' : 'add up to '} block_ups list: ${up_id}`, 'info', mode); },
             /**
              * 取消up拦截
              * @param {string} up_id
@@ -1697,8 +1695,7 @@
                         if (val !== 7) {
                             const add_rate = (val, video_info) => {
                                 const id = video_info.video_id;
-                                if (!id) Colorful_Console.main('fail to get up_id', 'warning', true);
-                                else {
+                                if (id) {
                                     const now = Date.now();
                                     const info = {
                                         video_id: id,
@@ -1712,6 +1709,7 @@
                                     Statics_Variant_Manager.rate_video_part.add(info);
                                     return true;
                                 }
+                                Colorful_Console.main('fail to get up_id', 'warning', true);
                                 return false;
                             };
                             val += 2;
@@ -1726,7 +1724,7 @@
                         if (this.#video_info.is_collection) {
                             params.push('-p ALL');
                             const nodes = document.getElementsByClassName('title');
-                            const voices = ['有声', '小说剧', '广播剧', '播讲'];
+                            const voices = ['有声', '小说剧', '广播剧', '播讲', '听书'];
                             let ic = 0;
                             for (const node of nodes) {
                                 const t = node.innerHTML.replaceAll(' ', '');
@@ -2046,7 +2044,11 @@
                     ].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
                     return index < 0 ? null : index === 0 ? a : b;
                 },
-                contextmenu_handle: (classname, target_name) => classname === target_name
+                contextmenu_handle: (classname, target_name) => classname === target_name,
+                check_search: (href) => {
+                    const c = decodeURIComponent(href.slice(32)), { a, b } = Dynamic_Variants_Manager.black_keys, r = a.find(e => c.includes(e)) || b.find(e => c.includes(e));
+                    return r && (alert(`hey, bro, don't waste time on rubbish: "${r}"; there will be closed the page after this alert.`), GM_Objects.window_close(), true);
+                }
             },
             space: { id: 3 },
             other: { id: 4 },
@@ -2070,6 +2072,11 @@
                 };
                 for (const a of links) {
                     const href = a.href;
+                    if (href?.includes('cm.bilibili.com')) {
+                        Colorful_Console.main(`advertisement clear: ${href}`);
+                        info.is_video = false;
+                        return info;
+                    }
                     if (!info.video_id) {
                         // 小课堂的内容清除掉
                         if (href.includes('/cheese')) {
@@ -2335,14 +2342,14 @@
             // 点击链接事件
             _click: () => {
                 const cure_href_reg = /[&\?](live|spm|from)[\w]+=\d+/;
-                const get_cure_href = (href) => href && href.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href;
+                const get_cure_href = (href) => href?.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href;
                 document.addEventListener('click', (event) => {
                     const path = event.composedPath();
                     let i = 0;
                     for (const p of path) {
                         if (p.localName === 'a') {
                             let href = p.href || '';
-                            if (href && !href.startsWith('javascript')) {
+                            if (!href?.startsWith('javascript')) {
                                 if ((this.#configs.id === 1 || this.#configs.id === 5) && (href.includes('/video/') || href.includes('play/'))) return;
                                 event.preventDefault();
                                 event.stopImmediatePropagation();
@@ -2442,8 +2449,8 @@
                             const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
                             const s = prompt(title).trim();
                             if (s) {
-                                const a = s.split(' ').map(e => e.trim()).filter(e => e && !e.includes("_")).map(e => e.toLowerCase());
-                                c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a);
+                                const a = s.split(' ').map(e => e.trim()).filter(e => !e?.includes("_")).map(e => e.toLowerCase());
+                                a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
                             }
                             return true;
                         }
@@ -2463,17 +2470,20 @@
                     }
                 };
                 // 文本标签, 需要排除输入
-                const text_tags = ["textarea", "input"];
+                const local_tags = ["textarea", "input"], class_tags = ['input', 'text', 'editor'];
+                const check_is_input = (target) => {
+                    const localname = (target.localName || '').toLowerCase();
+                    if (localname && local_tags.includes(localname)) return true;
+                    const classname = (target.className || '').toLowerCase();
+                    if (classname && class_tags.some(e => classname.includes(e))) return true;
+                    return false;
+                };
                 document.addEventListener('keydown', (event) => {
                     if (event.shiftKey || event.ctrlKey || event.altKey) return;
-                    const target = event.target;
-                    const localName = target.localName || '';
-                    if (text_tags.includes(localName)) return;
-                    const className = target.className || '';
-                    if (className && className.includes("editor")) return;
+                    if (check_is_input(event.target)) return;
                     const key = event.key.toLowerCase();
                     const id = this.#configs.id;
-                    search.main(key) ? null : this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key);
+                    !search.main(key) && (this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key));
                 });
             },
             /**
@@ -2657,6 +2667,7 @@
                     }, 3000);
                 }
             },
+            // 首页
             _home_module: {
                 _maintain() {
                     if (!confirm('data maintenance will take some time, start?')) return;
@@ -2850,7 +2861,7 @@
                     GM_Objects.addvaluechangeistener('shade_opacity', ((...args) => this.change_opacity(args[2])).bind(this));
                 }
             },
-            // 支持
+            // 支持弹窗
             _support_me: {
                 id_name: 'support_me',
                 interval_id: 0,
@@ -3006,6 +3017,12 @@
             const site = ['search', 'space', 'video', 'play'].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
             // 载入配置
             this.#configs = this.#site_configs[site];
+            // 检查搜索链接是否包含垃圾
+            if (this.#configs.check_search?.(href)) {
+                // window_close()无法关闭最后一个标签, 所以这里还需要拦截后续的操作
+                Colorful_Console.main('you are accessing a rubbish page and the script will not run properly.', 'warning', true);
+                return;
+            }
             this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
             // 根据id生成执行函数
             const id = this.#configs.id;
