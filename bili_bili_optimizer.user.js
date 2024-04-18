@@ -1429,7 +1429,7 @@
              * @returns {boolean}
              */
             check(up_id) { return this._data.some(e => e.up_id === up_id); },
-            _info_write(data, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.main(`${mode ? 'remove up from ' : 'add up to '} block_ups list: ${up_id}`, 'info', mode); },
+            _info_write(data, up_id, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.main(`${mode ? 'remove up from ' : 'add up to '} block_ups list: ${up_id}`, 'info', mode); },
             /**
              * 取消up拦截
              * @param {string} up_id
@@ -1437,7 +1437,7 @@
              */
             unblock(up_id) {
                 const data = this._data;
-                data.remove(up_id) && (this._info_write(data), Dynamic_Variants_Manager.up_video_sync('unblock', 'up', up_id));
+                data.remove(up_id) && (this._info_write(data, up_id), Dynamic_Variants_Manager.up_video_sync('unblock', 'up', up_id));
             },
             /**
              * 拦截up
@@ -1448,7 +1448,7 @@
                 const data = this._data;
                 const up_id = info.up_id;
                 if (data.some(e => e.up_id === up_id)) return;
-                data.push(info), this._info_write(data, true), Dynamic_Variants_Manager.up_video_sync('block', 'up', info);
+                data.push(info), this._info_write(data, up_id, true), Dynamic_Variants_Manager.up_video_sync('block', 'up', info);
             },
         },
         rate_video_part: {
