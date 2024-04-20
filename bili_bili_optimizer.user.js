@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.1
+// @version      1.6.2
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1418,6 +1418,7 @@
 
     // --------- 静态数据管理
     const Statics_Variant_Manager = {
+        // 管理up
         up_part: {
             /**
              * @returns {Array}
@@ -1451,6 +1452,7 @@
                 data.push(info), this._info_write(data, up_id, true), Dynamic_Variants_Manager.up_video_sync('block', 'up', info);
             },
         },
+        // 管理评分
         rate_video_part: {
             /**
              * @returns {Array}
@@ -1474,6 +1476,17 @@
                 arr[s_type](data) && (this._info_write(arr), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
             _info_write(data) { GM_Objects.set_value('rate_videos', data), Colorful_Console.main('update_rate_video_info'); }
+        },
+        // 管理标记的下载视频记录
+        mark_download_video: {
+            get _data() { return GM_Objects.get_value('mark_download_videos', []); },
+            _info_write(data) { GM_Objects.set_value('mark_download_videos', data), Colorful_Console.main('successfully marked video as downloaded'); },
+            add(info) {
+                const data = this._data, video_id = info.video_id;
+                if (data.some(e => e.video_id === video_id)) return;
+                data.push(info), this._info_write(data);
+            },
+            check(video_id) { return this._data.some(e => e.video_id === video_id); }
         },
         /**
          * 历史访问记录, 只有添加, 没有删除
@@ -1539,6 +1552,7 @@
     class Video_Module {
         // 贝叶斯添加标记
         #add_bayes_flag = false;
+        #download_flag = false;
         // 菜单控制速度
         #is_first = true;
         #video_speed = 2;
@@ -1615,7 +1629,7 @@
             this.#is_first = false;
             this.#video_speed += (mode ? 0.5 : -0.5);
             this.#auto_speed_mode = false;
-            if (0 < this.#video_speed < 5) this.#video.playbackRate = this.#video_speed, this.#is_first = this.#video_speed < 2;
+            if (0 < this.#video_speed && this.#video_speed < 5) this.#video.playbackRate = this.#video_speed, this.#is_first = this.#video_speed < 2;
         }
         #auto_light = {
             _light_off: false,
@@ -1670,167 +1684,192 @@
                 this.#record_id = null;
             }, duration);
         }
-        // 视频操作菜单
+        // 菜单执行函数
+        #rate_funcs = {
+            // 菜单
+            0: () => null,
+            // remove, 从评分中将数据移除掉
+            4: () => Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id),
+            // block, 拦截视频
+            5: () => {
+                Dynamic_Variants_Manager.block_video(this.#video_info.video_id);
+                Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
+                return 'Blocked';
+            },
+            // unblock, 不拦截视频
+            6: () => Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id),
+            // 标记已经下载
+            8: (mode = false) => {
+                if (mode || !this.#download_flag) {
+                    this.#rate_funcs.set_color(true);
+                    Statics_Variant_Manager.mark_download_video.add({ video_id: this.#video_info.video_id, title: this.#video_info.title });
+                }
+                this.#download_flag = true;
+            },
+            set_color(mode) {
+                const h1 = document.getElementsByTagName('h1')[0];
+                h1.style.color = mode ? 'chocolate' : 'black';
+                mode && (h1.title = `${h1.title}; Downloaded.`);
+            },
+            // 1 3分
+            // 2 4分
+            // 3 5分
+            // 7 bbdown, 下载视频
+            _rate: (val) => {
+                const id = this.#video_info.video_id;
+                let title = '';
+                if (val !== 7) {
+                    const add_rate = (val, video_info) => {
+                        const id = video_info.video_id;
+                        if (id) {
+                            const now = Date.now();
+                            const info = {
+                                video_id: id,
+                                title: video_info.title,
+                                up_id: video_info.up_id,
+                                last_active_date: now,
+                                visited_times: 1,
+                                add_date: now,
+                                rate: val
+                            };
+                            Statics_Variant_Manager.rate_video_part.add(info);
+                            return true;
+                        }
+                        Colorful_Console.main('fail to get up_id', 'warning', true);
+                        return false;
+                    };
+                    val += 2;
+                    Dynamic_Variants_Manager.unblock_video(id);
+                    title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
+                    if (!this.#add_bayes_flag && (val === 5 || confirm("add to whitelist of bayes model?"))) {
+                        Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
+                        this.#add_bayes_flag = true;
+                    }
+                } else !this.#download_flag && confirm('marked video has been downloaded?') && this.#rate_funcs['8'](true);
+                const params = [];
+                if (this.#video_info.is_collection) {
+                    params.push('-p ALL');
+                    const nodes = document.getElementsByClassName('title');
+                    const voices = ['有声', '小说剧', '广播剧', '播讲', '听书'];
+                    let ic = 0;
+                    for (const node of nodes) {
+                        const t = node.innerHTML.replaceAll(' ', '');
+                        ic += (voices.some(e => t.includes(e)) ? 1 : 0);
+                        if (ic > 4) {
+                            params.push('--audio-only');
+                            break;
+                        }
+                    }
+                }
+                const cm = `BBDown -mt --work-dir "E:\\video" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
+                GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
+                return title;
+            },
+            main(val) {
+                const f = this[val];
+                return f ? f() : this._rate(val);
+            }
+        };
+        // 视频操作菜单事件
         #video_rate_event() {
             setTimeout(() => {
-                const funcs = {
-                    // 0 菜单
-                    // 1 3分
-                    // 2 4分
-                    // 3 5分
-                    // 4 remove, 从评分中将数据移除掉
-                    // 5 block, 拦截视频
-                    // 6 unblock, 不拦截视频
-                    0: () => null,
-                    4: () => Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id),
-                    5: () => {
-                        Dynamic_Variants_Manager.block_video(this.#video_info.video_id);
-                        Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
-                        return 'Blocked';
-                    },
-                    6: () => Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id),
-                    _rate: (val) => {
-                        const id = this.#video_info.video_id;
-                        let title = '';
-                        if (val !== 7) {
-                            const add_rate = (val, video_info) => {
-                                const id = video_info.video_id;
-                                if (id) {
-                                    const now = Date.now();
-                                    const info = {
-                                        video_id: id,
-                                        title: video_info.title,
-                                        up_id: video_info.up_id,
-                                        last_active_date: now,
-                                        visited_times: 1,
-                                        add_date: now,
-                                        rate: val
-                                    };
-                                    Statics_Variant_Manager.rate_video_part.add(info);
-                                    return true;
-                                }
-                                Colorful_Console.main('fail to get up_id', 'warning', true);
-                                return false;
-                            };
-                            val += 2;
-                            Dynamic_Variants_Manager.unblock_video(id);
-                            title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
-                            if (!this.#add_bayes_flag && (val === 5 || confirm("add to whitelist of bayes model?"))) {
-                                Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
-                                this.#add_bayes_flag = true;
-                            }
-                        }
-                        const params = [];
-                        if (this.#video_info.is_collection) {
-                            params.push('-p ALL');
-                            const nodes = document.getElementsByClassName('title');
-                            const voices = ['有声', '小说剧', '广播剧', '播讲', '听书'];
-                            let ic = 0;
-                            for (const node of nodes) {
-                                const t = node.innerHTML.replaceAll(' ', '');
-                                ic += (voices.some(e => t.includes(e)) ? 1 : 0);
-                                if (ic > 4) {
-                                    params.push('--audio-only');
-                                    break;
-                                }
-                            }
-                        }
-                        const cm = `BBDown -mt --work-dir "E:\\video" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
-                        GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
-                        return title;
-                    },
-                    main(val) {
-                        const f = this[val];
-                        return f ? f() : this._rate(val);
-                    }
-                };
-                const node = document.getElementById('selectWrap');
-                const h = node.getElementsByTagName('h3')[0];
-                const select = node.getElementsByTagName('select')[0];
-                select.onchange = (e) => (h.innerText = funcs.main(parseInt(e.target.value)) || ''), this.#monitor_video_change(select, h);
+                const node = document.getElementById('selectWrap'), h = node.getElementsByTagName('h3')[0], select = node.getElementsByTagName('select')[0];
+                select.onchange = (e) => (h.innerText = this.#rate_funcs.main(parseInt(e.target.value)) || ''), this.#reset_menus(select, h);
+                this.#update_download_status(false);
             }, 300);
         }
         // 添加评分菜单
         #add_video_rate_element() {
-            const vid = this.#video_info.video_id;
-            const rate = Statics_Variant_Manager.rate_video_part.check_video_rate(vid);
-            const status = rate === 0 ? '' : Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 'Blocked' : 'Rate: ' + rate;
-            const html = `
-            <div class="select_wrap" id="selectWrap">
-                <style>
-                    div#selectWrap {
-                        width: 139px;
-                        border: 2px solid gray;
-                    }
-                    .select_wrap dt {
-                        float: left;
-                        width: 64px;
-                        line-height: 30px;
-                        text-align: right;
-                        font-size: 14px;
-                    }
-                    .select_wrap dd {
-                        margin-left: 56px;
-                        line-height: 30px;
-                    }
-                    select#selectElem {
-                        width: 62px;
-                        text-align: center;
-                    }
-                    .select_container {
-                        position: relative;
-                        display: inline-block;
-                    }
-                    .select_container ul {
-                        position: absolute;
-                        top: 35px;
-                        width: 100%;
-                        margin: 0;
-                        padding: 0;
-                        background: #fff;
-                        border-radius: 4px;
-                        box-shadow: 0 0px 5px #ccc;
-                    }
-                    .select_container li {
-                        list-style: none;
-                        font-size: 12px;
-                        line-height: 30px;
-                        padding: 0 10px;
-                        cursor: pointer;
-                    }
-                    .select_container li:hover,
-                    .select_container li.cur {
-                        background: #dbf0ff;
-                    }
-                </style>
-                <h3 style="margin-left: 8%;">${status}</h2>
-                <hr>
-                <dl>
-                    <dt>Menus：</dt>
-                    <dd>
-                        <select id="selectElem">
-                            <option value="0">menus</option>
-                            <option value="1">Rate: 3</option>
-                            <option value="2">Rate: 4</option>
-                            <option value="3">Rate: 5</option>
-                            <option value="4">Remove</option>
-                            <option value="5">Block</option>
-                            <option value="6">unBlock</option>
-                            <option value="7">BBdown</option>
-                        </select>
-                    </dd>
-                </dl>
-            </div>`;
-            const toolbar = document.getElementsByClassName('video-toolbar-left');
+            const vid = this.#video_info.video_id,
+                rate = Statics_Variant_Manager.rate_video_part.check_video_rate(vid),
+                status = rate === 0 ? '' : Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 'Blocked' : 'Rate: ' + rate,
+                html = `
+                <div class="select_wrap" id="selectWrap">
+                    <style>
+                        div#selectWrap {
+                            width: 139px;
+                            border: 2px solid gray;
+                        }
+                        .select_wrap dt {
+                            float: left;
+                            width: 64px;
+                            line-height: 30px;
+                            text-align: right;
+                            font-size: 14px;
+                        }
+                        .select_wrap dd {
+                            margin-left: 56px;
+                            line-height: 30px;
+                        }
+                        select#selectElem {
+                            width: 62px;
+                            text-align: center;
+                        }
+                        .select_container {
+                            position: relative;
+                            display: inline-block;
+                        }
+                        .select_container ul {
+                            position: absolute;
+                            top: 35px;
+                            width: 100%;
+                            margin: 0;
+                            padding: 0;
+                            background: #fff;
+                            border-radius: 4px;
+                            box-shadow: 0 0px 5px #ccc;
+                        }
+                        .select_container li {
+                            list-style: none;
+                            font-size: 12px;
+                            line-height: 30px;
+                            padding: 0 10px;
+                            cursor: pointer;
+                        }
+                        .select_container li:hover,
+                        .select_container li.cur {
+                            background: #dbf0ff;
+                        }
+                    </style>
+                    <h3 style="margin-left: 8%;">${status}</h2>
+                    <hr>
+                    <dl>
+                        <dt>Menus：</dt>
+                        <dd>
+                            <select id="selectElem">
+                                <option value="0">menus</option>
+                                <option value="1">Rate: 3</option>
+                                <option value="2">Rate: 4</option>
+                                <option value="3">Rate: 5</option>
+                                <option value="4" title="remove video rate">Remove</option>
+                                <option value="5" title="block video">Block</option>
+                                <option value="6" title="unblock video">unBlock</option>
+                                <option value="7" title="generate download video command of bbdown">BBdown</option>
+                                <option value="8" title="mark video as downloaded">Marked</option>
+                            </select>
+                        </dd>
+                    </dl>
+                </div>`,
+                toolbar = document.getElementsByClassName('video-toolbar-left');
             if (toolbar.length > 0) {
                 // 这个函数不会返回插入生成的节点, 返回空值
                 toolbar[0].insertAdjacentHTML('beforeend', html);
                 this.#video_rate_event();
             } else Colorful_Console.main('fail to insert rate element', 'warning', true);
         }
+        #update_download_status(mode) {
+            const f = this.#download_flag, r = Statics_Variant_Manager.mark_download_video.check(this.#video_info.video_id);
+            // 当已经标记下载, 再设置下载标记时, 则不执行
+            if (f && mode && r) return;
+            // 当已经标记下载, 加载下一个没有被标记的视频, 则恢复原来的颜色
+            else if (f && !r) this.#rate_funcs.set_color(false);
+            // 当未标记下载, 加载下一个被标记的视频, 则显示颜色
+            else if (!f && r) this.#rate_funcs.set_color(true);
+            this.#download_flag = r;
+        }
         video_change_id = null;
         // 监听视频播放发生变化
-        #monitor_video_change(select, h) {
+        #reset_menus(select, h) {
             let tmp = null;
             // 注意, Object.defineProperty无法拦截私有属性的操作
             Object.defineProperty(this, 'video_change_id', {
@@ -1854,6 +1893,7 @@
                     this.#add_bayes_flag = false;
                     this.#load_video_info();
                     this.#visited_record();
+                    this.#update_download_status(true);
                 }, 600));
                 return true;
             } else Colorful_Console.main('browser does not support url_change event, please update browser', 'warning', true);
@@ -1905,13 +1945,18 @@
             if (this.#video) this.#init_flag = true;
         }
         main() {
+            // 先载入视频信息
             this.#load_video_info();
+            // 浏览器需要支持url change事件
             if (this.#url_change_monitor()) {
+                // 插入菜单
                 this.#add_video_rate_element();
+                // 创建菜单事件
                 this.#create_video_event();
-                this.#regist_menus_command();
+                // 关灯控制
                 this.#auto_light.main() && setTimeout(() => this.light_control(1), 300);
                 this.#visited_record();
+                this.#regist_menus_command();
                 GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
             } else Colorful_Console.main('video module will not function properly', 'debug');
         }
@@ -2662,8 +2707,7 @@
                         // 页面中相关的信息已经集成在html上
                         clear_all_card();
                         this.#video_instance = new Video_Module();
-                        this.#video_module_init_flag = this.#video_instance.is_init_success;
-                        this.#video_module_init_flag && this.#video_instance.main();
+                        (this.#video_module_init_flag = this.#video_instance.is_init_success) && this.#video_instance.main();
                     }, 3000);
                 }
             },
