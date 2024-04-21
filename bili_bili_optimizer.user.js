@@ -2873,7 +2873,7 @@
                                 display: block;
                             "
                         ></div>`;
-                    document.documentElement?.insertAdjacentHTML("afterbegin", html);
+                    setTimeout(() => document.documentElement?.insertAdjacentHTML("afterbegin", html));
                 },
                 set_color(color, mode = true) {
                     if (this.current_color === color) return;
