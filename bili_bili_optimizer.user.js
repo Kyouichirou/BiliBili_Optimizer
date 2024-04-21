@@ -1745,7 +1745,7 @@
                         Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
                         this.#add_bayes_flag = true;
                     }
-                } else !this.#download_flag && confirm('marked video has been downloaded?') && this.#rate_funcs['8'](true);
+                } else !this.#download_flag && confirm('mark video as downloaded?') && this.#rate_funcs['8'](true);
                 const params = [];
                 if (this.#video_info.is_collection) {
                     params.push('-p ALL');
