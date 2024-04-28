@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.2
+// @version      1.6.3
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -693,8 +693,9 @@
         }
         // 重置模型
         reset() {
-            ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len'].forEach(e => GM_Objects.set_value(e, null));
+            ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len', 'bayes_configs'].forEach(e => GM_Objects.set_value(e, null));
             this.#init_module(), Colorful_Console.main('successfully reset bayes', 'info', true);
+            this.#trigger_reload(1);
         }
         /**
          * 调整模型配置
@@ -1747,6 +1748,7 @@
                     }
                 } else !this.#download_flag && confirm('mark video as downloaded?') && this.#rate_funcs['8'](true);
                 const params = [];
+                // 只有当页面的视频为合集的状态才会生成相应的参数
                 if (this.#video_info.is_collection) {
                     params.push('-p ALL');
                     const nodes = document.getElementsByClassName('title');
