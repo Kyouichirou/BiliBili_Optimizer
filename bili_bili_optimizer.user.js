@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.3
+// @version      1.6.4
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -13,7 +13,8 @@
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
-// @connect      img.qovv.cn
+// @connect      files.superbed.cn
+// @connect      www.freeimg.cn
 // @grant        GM_info
 // @grant        GM_addStyle
 // @grant        GM_setValue
@@ -124,11 +125,12 @@
     const Constants_URLs = {
         blog: 'https://kyouichirou.github.io/',
         manual: 'https://github.com/Kyouichirou/BiliBili_Optimizer/blob/main/README.md',
-        weibo_ico: 'https://img.qovv.cn/2024/04/17/661f34bf803b9.webp',
-        weibo_url: 'https://img.qovv.cn/2024/04/17/661f39ea6db70.png',
-        tea_ico: 'https://img.qovv.cn/2024/04/17/661f3488082a0.png',
-        support: 'https://img.qovv.cn/2024/04/17/661f3400de6da.webp',
+        weibo_ico: 'https://files.superbed.cn/store/images/dc/0c/6630afa60ea9cb140356dc0c.webp',
+        weibo_url: 'https://files.superbed.cn/store/images/b9/2a/6630af950ea9cb140356b92a.png',
+        tea_ico: 'https://files.superbed.cn/store/images/72/8c/6630af710ea9cb140356728c.png',
+        support: 'https://www.freeimg.cn/i/2024/04/30/6630b0568bb99.webp',
         install: 'https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js',
+        feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
          * 将字符串响应头转为字典
          * @param {string} content
@@ -152,6 +154,7 @@
                 headers: { "Cache-Control": "no-cache" },
                 onload: (response) => {
                     const code = response.status;
+                    // 请求头得到的内容是字符串, 需要转换为对象
                     code === 200 && this._convert_dic(response.responseHeaders)['content-length'] > 0 ? resolve(true) : reject('request code: ' + code + `, : ${url}`);
                 },
                 onerror: (_response) => reject('error: ' + url),
@@ -163,11 +166,11 @@
             const xmls = [];
             for (const k in this) {
                 const url = (k === 'main' || k.startsWith('_')) ? '' : this[k];
-                url.startsWith('https://img.qovv.cn') && xmls.push(this._http(url));
+                ['www.freeimg.cn', 'files.superbed.cn'].some((e) => url.includes(e)) && xmls.push(this._http(url));
             }
             Promise.allSettled(xmls).then(res => {
                 const error_urls = res.filter(item => item.status === 'rejected').map(item => item.reason);
-                error_urls.length > 0 ? (GM_Objects.notification('fail to load some pics', 'warning', true), console.log(`fail to load some pics:\n${error_urls.join(';\n')}`)) : Colorful_Console.main('all pics have been loaded successfully');
+                error_urls.length > 0 ? (GM_Objects.notification('fail to load some pics', 'warning', true), console.log(`fail to load some pics:\n${error_urls.join(';\n')}`)) : Colorful_Console.print('all pics have been loaded successfully', 'debug');
                 GM_Objects.set_value('pic_check_date', Date.now());
             });
         },
@@ -189,7 +192,7 @@
          * @param {string} type
          * @param {boolean} mode
          */
-        main(content, type = 'info', mode = false) {
+        print(content, type = 'info', mode = false) {
             const bc = this._colors[type];
             const title = bc ? type : (bc = this._colors.info, 'info');
             const params = [
@@ -227,6 +230,143 @@
         get_up_id(href) { return href.includes('space.bilibili') ? this._match(this._up_id_reg, href) : ''; }
     };
     // 通用函数 ---------------
+
+    // ------- 支持模块
+    const Support_Me = {
+        _id_name: 'support_me',
+        _interval_id: 0,
+        _support: null,
+        _tips: null,
+        _opacity: null,
+        _timeout: 30,
+        _tips_text: 'this tips will be automatically closed or you can click anywhere of popup to close it.',
+        get _html() {
+            const mt = -5;
+            return `
+                <div
+                    id="${this.id_name}"
+                    style="
+                        background: darkgray;
+                        text-align: justify;
+                        width: 700px;
+                        font-size: 16px;
+                        height: 468px;
+                        position: fixed;
+                        top:50%;
+                        left:50%;
+                        transform: translate(-50%,-50%);
+                        z-index: 100000;
+                    "
+                >
+                    <div style="padding: 2.5%; font-weight: bold; font-size: 18px; font-family: Microsoft YaHei;">
+                        Support Me!
+                        <span
+                            class="manual_btn"
+                            style="font-size: 12px; font-weight: normal; float: right"
+                        >
+                            <i
+                                title="click, share with your friends. share to weibo"
+                                style="
+                                    margin-right: 10px;
+                                    content: url(${Constants_URLs.weibo_ico});
+                                "
+                            ></i>
+                            <a
+                                href=${Constants_URLs.manual}
+                                target="_blank"
+                                title="help manual"
+                                style="color: #2b638b"
+                                >Manual</a
+                            >
+                            <span> || version: ${GM_info.script.version}</span>
+                        </span>
+                    </div>
+                    <div style="font-family: Monotype Corsiva; font-size: 16px; padding-left: 2%">
+                        make thing better and simpler.!
+                        <img
+                            src="${Constants_URLs.tea_ico}"
+                            style="
+                                float: left;
+                                height: 42px;
+                                width: 42px;
+                                margin: -10px 4px 0 0px;
+                            "
+                        />
+                    </div>
+                    <div
+                        class="support_img"
+                        style="padding-top: 4%; width: 100%; padding-left: 7.5%"
+                        title="any help, support me.!"
+                    >
+                        <div class="qrCode">
+                            <img
+                                src="${Constants_URLs.support}"
+                            />
+                        </div>
+                    </div>
+                    <div class="timeout" style="font-size: 12px; padding: 3%">
+                        ${this.timeout}s, ${this.tips_text}.
+                    </div>
+                    <a
+                        href=${Constants_URLs.blog}
+                        target="_blank"
+                        style="margin: ${mt}px 10px 0px 0px; float: right; font-size: 14px; color: teal"
+                        title="my blog"
+                    >
+                        Github: Lian
+                    </a>
+                </div>`;
+        },
+        /**
+         * 更变透明度
+         * @param {number} opacity
+         */
+        _opacity_change(opacity) {
+            const target = document.getElementById("screen_shade_cover");
+            target && (this._opacity === null ? (this._opacity = target.style.opacity) : target.style.opacity !== opacity) && (target.style.opacity = opacity);
+        },
+        // 微博分享
+        _share_weibo() {
+            const url = `https://service.weibo.com/share/share.php?url=${GM_Objects.info.script.supportURL}&title=BiliBili_Optimizer, 更好的B站.!&summery=undefined&pic=${Constants_URLs.weibo_url}&#_loginLayer_${Date.now()}`;
+            GM_Objects.openintab(url, { insert: true, active: true });
+        },
+        // 倒计时
+        _timer() {
+            let time = this._timeout;
+            this._interval_id = setInterval(() => {
+                this._tips.innerText = `${--time}s, ${this._tips_text}`;
+                time === 0 && this._remove();
+            }, 1000);
+        },
+        // click事件
+        _click_event() { this._support.onclick = (e) => e.target.localName === "i" ? this._share_weibo() : e.target.localName !== "a" && setTimeout(() => this._remove(), 300); },
+        // 创建弹窗
+        _creat_popup() {
+            // 先将遮罩设置为透明
+            this._opacity_change(0);
+            document.documentElement.insertAdjacentHTML("beforeend", this._html);
+            setTimeout(() => {
+                this._support = document.getElementById(this.id_name);
+                this._tips = this._support.getElementsByClassName("timeout")[0];
+                this._click_event();
+                this._timer();
+            }, 300);
+        },
+        // 销毁弹窗
+        _remove() {
+            if (this._interval_id) {
+                clearInterval(this._interval_id);
+                this._interval_id = null;
+            }
+            this._opacity_change(this._opacity);
+            this._opacity = null;
+            this._support.remove();
+            this._support = null;
+            this._tips = null;
+        },
+        main() { this._support ? this._remove() : this._creat_popup(); },
+    };
+    // 支持模块 -------
 
     // Bayes_Module ----------
     class Bayes_Module {
@@ -508,6 +648,10 @@
             threshold: 0.15,
             name: 'multinomialnb'
         };
+        // 计算的详情
+        #result_detail = { 'content': '', 'seg_array': null, 'black_pro': 0, 'white_pro': 0, 'ratio': 0, 'class': '' };
+        get configs() { return this.#configs; }
+        get test_result() { return this.#result_detail; }
         // 预先计算部分的值
         #pre_cal_data = {
             'w_t': 0,
@@ -599,7 +743,7 @@
         #adjust_config_val(key, lower, upupper, val) {
             val = Number(val);
             const r = (lower < val && val < upupper) ? [`successfully adjust ${key} : ${val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
-            Colorful_Console.main(...r);
+            Colorful_Console.print(...r);
             return r.length === 1 ? val : 0;
         }
         /**
@@ -613,7 +757,7 @@
             if (!content) return 0;
             const c = this.#seg_word(content);
             const i = c.length;
-            if (i < 5) return 0;
+            if (i < 5) return -1;
             // 预先计算部分数值
             const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, alpha = this.#configs.alpha, [bp, wp] = c.reduce((acc, cur) => {
                 const bc = this.#bayes_black_counter[cur];
@@ -621,8 +765,9 @@
                 acc[0] += bc ? Math.log(bc + alpha) - b_t : b_1;
                 acc[1] += wc ? Math.log(wc + alpha) - w_t : w_1;
                 return acc;
-            }, [b_pro, w_pro]), r = (bp - wp) / Math.abs(bp);
-            return r > (i > 10 ? this.#configs.threshold : 0.21) ? r : 0;
+            }, [b_pro, w_pro]), r = (bp - wp) / Math.abs(bp), f = r > (i > 10 ? this.#configs.threshold : 0.21) ? r : 0;
+            this.#result_detail = { 'content': content, 'seg_array': c, 'black_pro': bp, 'white_pro': wp, 'ratio': r, 'class': f > 0 ? 'black' : 'white' };
+            return f;
         }
         // 初始化模型
         #init_module() {
@@ -644,8 +789,8 @@
             this.#bayes_black_len = bayes_black_len;
             this.#bayes_total_len = bayes_white_len + bayes_black_len;
             this.#get_configs();
-            this.#get_module();
             this.#update_paramters();
+            this.#get_module();
         }
         constructor() {
             this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
@@ -676,7 +821,7 @@
          */
         add_new_content(content, mode) {
             if (content.length < 7) {
-                Colorful_Console.main('content length is less than 7, please check your input', 'warning', true);
+                Colorful_Console.print('content length is less than 7, please check your input', 'warning', true);
                 return;
             }
             const ws = this.#seg_word(content);
@@ -689,12 +834,13 @@
             this.#update_paramters();
             // 触发重新加载
             this.#trigger_reload(1);
-            Colorful_Console.main(`successfully add content to bayes ${target} list`);
+            Colorful_Console.print(`successfully add content to bayes ${target} list`);
         }
         // 重置模型
         reset() {
+            if (!confirm('reset bayes? it will clear current settings and words, then restore default settings, continue?')) return;
             ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len', 'bayes_configs'].forEach(e => GM_Objects.set_value(e, null));
-            this.#init_module(), Colorful_Console.main('successfully reset bayes', 'info', true);
+            this.#init_module(), Colorful_Console.print('successfully reset bayes', 'info', true);
             this.#trigger_reload(1);
         }
         /**
@@ -726,8 +872,8 @@
                                 this.#configs.name = name;
                                 f += 2;
                                 this.#get_module();
-                                Colorful_Console.main(`successfully change bayes module to ${name}`, 'info');
-                            } else Colorful_Console.main(`${name} is not a valid bayes module name, please check your input: 'multinomialnb' | 'complementnb'`, 'warning', true);
+                                Colorful_Console.print(`successfully change bayes module to ${name}`, 'info');
+                            } else Colorful_Console.print(`${name} is not a valid bayes module name, please check your input: 'multinomialnb' | 'complementnb'`, 'warning', true);
                         }
                     }
                     if (f > 0) {
@@ -735,7 +881,7 @@
                         f > 9 && this.#update_paramters();
                         this.#trigger_reload(f < 4 ? f === 1 ? 5 : 3 : f < 12 ? 2 : 4);
                     }
-                } else Colorful_Console.main('configs must be an object: e.g, { threshold: 0.1, alpha: 1, name: "multinomialnb" } ', 'warning');
+                } else Colorful_Console.print('configs must be an object: e.g, { threshold: 0.1, alpha: 1, name: "multinomialnb" } ', 'warning');
             } catch (error) {
                 console.error(error);
             }
@@ -796,7 +942,7 @@
                 // 更新访问状态, 以便后面清理数据时作为指标
                 Dynamic_Variants_Manager.rate_up_status_sync(id_name, id, now, target.visited_times);
                 id_name === 'up_id' && Dynamic_Variants_Manager.accumulative_func();
-                Colorful_Console.main(`block ${this.#id_name}: ${id}`);
+                Colorful_Console.print(`block ${this.#id_name}: ${id}`);
             }
             return mode ? target : f;
         }
@@ -878,7 +1024,7 @@
         return (val) => {
             // 移除掉空格, 转为小写
             const r = val && f(val);
-            return r ? (Colorful_Console.main(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
+            return r ? (Colorful_Console.print(r), Dynamic_Variants_Manager.accumulative_func(), true) : false;
         };
     }
     // 数据结构 --------------
@@ -1190,60 +1336,85 @@
         // 自动, 累积拦截次数, 跨标签通信
         accumulative_total: GM_Objects.get_value('accumulative_total', 0),
         accumulative_bayes: GM_Objects.get_value('accumulative_bayes', 0),
-        key_check(content) { return this.black_keys.a.includes_r(content) ? 2 : this.black_keys.b.includes_r(content) ? 1 : 0; },
-        /**
-         * 检查数据是否被拦截
-         * @param {object} info
-         * @returns {boolean}
-         */
-        completed_check(info) {
-            // 1. 优先拦截up
-            // 2. 缓存up
-            // 3. 拦截关键词, 如果包含a类关键词, 拉黑up在缓存
-            // 4. 最后检查拦截视频
-            const { title, up_id, video_id, up_name } = info;
-            if (this.block_ups.includes_r(up_id) || this.cache_block_ups.includes_r(up_id) || this.block_videos.includes_r(video_id) || this.cache_block_videos.includes_r(video_id)) return true;
-            const r = this.key_check(title + "_" + up_name);
-            if (r > 0) {
-                r == 2 && this.cache_block_ups.push(up_id);
-                return true;
-            }
-            const b = this.bayes_module.bayes(title);
-            return b > 0 ? (this.bayes_accumulative(title, b), true) : false;
+        // 统计拦截的up的情况
+        _block_up_statistics() {
+            // 对拦截次数进行排序
+            if (this.block_ups.length === 0) return [];
+            this.block_ups.sort((a, b) => a.visited_times - b.visited_times);
+            const i = this.block_ups.length;
+            // 各个百分段的拦截次数
+            const data = [0.25, 0.5, 0.75].map(e => ' ' + e * 100 + '% block times less than: ' + this.block_ups[Math.floor(e * i)].visited_times + ';');
+            const a = this.block_ups[i - 1];
+            data.push(' up of most block: ' + a.up_name + ', ' + a.visited_times + ';');
+            data.push('-'.repeat(42));
+            return data;
         },
-        /**
-         * 取消拦截视频
-         * @param {string} video_id
-         */
-        unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
-        /**
-         * 拦截视频
-         * @param {string} video_id
-         */
-        block_video(video_id) {
-            this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos);
-            this.up_video_sync('block', 'video', video_id);
-            Colorful_Console.main(`add video to block_video list: ${video_id}`);
+        // 展示数据的状态
+        _show_data_status() {
+            const s = 'bilibili_optimizer_detail:';
+            Colorful_Console.print(s);
+            const details = [];
+            details.push('-'.repeat((s.length + 4) * 2));
+            details.push('blocked: ' + this.accumulative_total + ';');
+            details.push('bayes blocked: ' + this.accumulative_bayes + ';');
+            [
+                [this.block_ups, 'block_ups'],
+                [this.block_videos, 'block_videos'],
+                [this.black_keys.a, 'a_black_keys'],
+                [this.black_keys.b, 'b_black_keys']
+            ].forEach(e => details.push(e[1] + ': ' + e[0].length + ";"));
+            // 被拦截up的访问状况
+            // splice(), 支持删除和插入指定位置的元素
+            details.splice(4, 0, ...this._block_up_statistics());
+            const i = GM_Objects.get_value('install_date', 0);
+            i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
+            const script = GM_Objects.info.script;
+            ['version', 'author', 'lastModified', 'homepage'].forEach(e => details.push(e + ': ' + script[e] + ';'));
+            details.push('-'.repeat((s.length + 4) * 2));
+            console.log(details.join('\n'));
+            const title = 'make thing better and simpler.';
+            const params = [
+                `%c ${title}`,
+                "padding: 1px; border-radius: 3px 0 0 3px; color: #00a1d6; font-family: Monotype Corsiva; font-size: 12px;",
+            ];
+            console.log(...params);
+            return true;
         },
-        // 累积拦截计数记录
-        accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
+        // 创建贝叶斯辅助函数
+        _create_bayes_funcs() {
+            GM_Objects.window.bayes = new Proxy({
+                /**
+                 * 调整贝叶斯参数
+                 * @param {object} configs {}
+                 * @returns {object}
+                 */
+                configs: (configs) => this.bayes_module.adjust_configs(configs),
+                /**
+                 * 测试文本分类
+                 * @param {string} content
+                 * @returns
+                 */
+                test: (content) => console.log(this.bayes_module.bayes(content) < 0 ? 'the length of content does not meet the requirements' : this.bayes_module.test_result),
+                detail: () => this.bayes_module.show_detail(),
+                reset: () => this.bayes_module.reset(),
+            }, {
+                get: (target, prop) => {
+                    if (prop === 'detail') target[prop]();
+                    else if (prop === 'configs') return this.bayes_module.configs;
+                    else return target[prop];
+                },
+                set: (target, prop, value) => prop === 'configs' && target[prop](value),
+            });
+        },
         /**
          * 贝叶斯拦截记录
          * @param {string} title
          * @param {number} b_result
          */
-        bayes_accumulative(title, b_result) {
+        _bayes_accumulative(title, b_result) {
             this.accumulative_func(), GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
-            Colorful_Console.main(`bayes block(${b_result.toFixed(4)}): ${title}`, 'debug');
+            Colorful_Console.print(`bayes block(${b_result.toFixed(4)}): ${title}`, 'debug');
         },
-        // 视频和up, 拦截或者取消时, 数据同步
-        up_video_sync(s_type, s_name, s_value) { GM_Objects.set_value('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
-        // 评分, 拦截up的数据部分更新同步
-        _status_info: null,
-        rate_up_status_sync(s_type, id, date, times) { GM_Objects.set_value('up_rate_status_sync', { type: s_type, value: { id: id, date: date, times: times } }), this._status_info = s_type; },
-        // 评分和访问数据同步
-        // 初始化视频评分数据
-        rate_visited_data_sync(data) { GM_Objects.set_value(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
         // up, 评分, 状态更新写入, 假如频繁写入, 相对影响性能的, 当数据累积到一定数量才写入, 或者定时写入, 而不是一变化就写入
         _rate_up_status_write_monitor() {
             let up_times = 0, rate_times = 0, tmp = null;
@@ -1326,6 +1497,51 @@
                 item.run_in.includes(site_id) && GM_Objects.addvaluechangeistener(k, item.f.bind(this));
             }
         },
+        key_check(content) { return this.black_keys.a.includes_r(content) ? 2 : this.black_keys.b.includes_r(content) ? 1 : 0; },
+        /**
+         * 检查数据是否被拦截
+         * @param {object} info
+         * @returns {boolean}
+         */
+        completed_check(info) {
+            // 1. 优先拦截up
+            // 2. 缓存up
+            // 3. 拦截关键词, 如果包含a类关键词, 拉黑up在缓存
+            // 4. 最后检查拦截视频
+            const { title, up_id, video_id, up_name } = info;
+            if (this.block_ups.includes_r(up_id) || this.cache_block_ups.includes_r(up_id) || this.block_videos.includes_r(video_id) || this.cache_block_videos.includes_r(video_id)) return true;
+            const r = this.key_check(title + "_" + up_name);
+            if (r > 0) {
+                r == 2 && this.cache_block_ups.push(up_id);
+                return true;
+            }
+            const b = this.bayes_module.bayes(title);
+            return b > 0 ? (this._bayes_accumulative(title, b), true) : false;
+        },
+        /**
+         * 取消拦截视频
+         * @param {string} video_id
+         */
+        unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
+        /**
+         * 拦截视频
+         * @param {string} video_id
+         */
+        block_video(video_id) {
+            this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos);
+            this.up_video_sync('block', 'video', video_id);
+            Colorful_Console.print(`add video to block_video list: ${video_id}`);
+        },
+        // 累积拦截计数记录
+        accumulative_func() { GM_Objects.set_value('accumulative_total', ++this.accumulative_total); },
+        // 视频和up, 拦截或者取消时, 数据同步
+        up_video_sync(s_type, s_name, s_value) { GM_Objects.set_value('up_video_sync', { type: s_type, name: s_name, value: s_value }); },
+        // 评分, 拦截up的数据部分更新同步
+        _status_info: null,
+        rate_up_status_sync(s_type, id, date, times) { GM_Objects.set_value('up_rate_status_sync', { type: s_type, value: { id: id, date: date, times: times } }), this._status_info = s_type; },
+        // 评分和访问数据同步
+        // 初始化视频评分数据
+        rate_visited_data_sync(data) { GM_Objects.set_value(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
         // 初始化视频评分数据
         init_rate_videos() {
             const o = new Dic_Array(GM_Objects.get_value('rate_videos', []), 'video_id');
@@ -1348,11 +1564,13 @@
         init_block_ups: () => new Dic_Array(GM_Objects.get_value('block_ups', []), 'up_id'),
         // 初始化历史访问数据
         init_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
+        // 展示数据状态
+        show_status: () => null,
         /**
-         * 数据初始化
-         * @param {number} site_id
-         */
-        data_init(site_id) {
+        * 数据初始化
+        * @param {number} site_id
+        */
+        init(site_id) {
             // 全局启用, 关键词过滤
             this.black_keys._main();
             this.black_keys.a.includes_r = includes_r.call(this.black_keys.a, false), this.black_keys.b.includes_r = includes_r.call(this.black_keys.b, false);
@@ -1367,53 +1585,8 @@
             this._rate_up_status_write_monitor();
             this.show_status = this._show_data_status;
             this.bayes_module = new Bayes_Module();
+            this._create_bayes_funcs();
         },
-        // 展示数据状态
-        show_status: () => null,
-        // 统计拦截的up的情况
-        _block_up_statistics() {
-            // 对拦截次数进行排序
-            if (this.block_ups.length === 0) return [];
-            this.block_ups.sort((a, b) => a.visited_times - b.visited_times);
-            const i = this.block_ups.length;
-            // 各个百分段的拦截次数
-            const data = [0.25, 0.5, 0.75].map(e => ' ' + e * 100 + '% block times less than: ' + this.block_ups[Math.floor(e * i)].visited_times + ';');
-            const a = this.block_ups[i - 1];
-            data.push(' up of most block: ' + a.up_name + ', ' + a.visited_times + ';');
-            data.push('-'.repeat(42));
-            return data;
-        },
-        // 展示数据的状态
-        _show_data_status() {
-            const s = 'bilibili_optimizer_detail:';
-            Colorful_Console.main(s);
-            const details = [];
-            details.push('-'.repeat((s.length + 4) * 2));
-            details.push('blocked: ' + this.accumulative_total + ';');
-            details.push('bayes blocked: ' + this.accumulative_bayes + ';');
-            [
-                [this.block_ups, 'block_ups'],
-                [this.block_videos, 'block_videos'],
-                [this.black_keys.a, 'a_black_keys'],
-                [this.black_keys.b, 'b_black_keys']
-            ].forEach(e => details.push(e[1] + ': ' + e[0].length + ";"));
-            // 被拦截up的访问状况
-            // splice(), 支持删除和插入指定位置的元素
-            details.splice(4, 0, ...this._block_up_statistics());
-            const i = GM_Objects.get_value('install_date', 0);
-            i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
-            const script = GM_Objects.info.script;
-            ['version', 'author', 'lastModified', 'homepage'].forEach(e => details.push(e + ': ' + script[e] + ';'));
-            details.push('-'.repeat((s.length + 4) * 2));
-            console.log(details.join('\n'));
-            const title = 'make thing better and simpler.';
-            const params = [
-                `%c ${title}`,
-                "padding: 1px; border-radius: 3px 0 0 3px; color: #00a1d6; font-family: Monotype Corsiva; font-size: 12px;",
-            ];
-            console.log(...params);
-            return true;
-        }
     };
     // 动态数据管理 ---------
 
@@ -1431,7 +1604,7 @@
              * @returns {boolean}
              */
             check(up_id) { return this._data.some(e => e.up_id === up_id); },
-            _info_write(data, up_id, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.main(`${mode ? 'remove up from ' : 'add up to '} block_ups list: ${up_id}`, 'info', mode); },
+            _info_write(data, up_id, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.print(`${mode ? 'remove up from ' : 'add up to '} block_ups list: ${up_id}`, 'info', mode); },
             /**
              * 取消up拦截
              * @param {string} up_id
@@ -1476,12 +1649,12 @@
                 const s_type = mode ? 'add' : 'remove';
                 arr[s_type](data) && (this._info_write(arr), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
-            _info_write(data) { GM_Objects.set_value('rate_videos', data), Colorful_Console.main('update_rate_video_info'); }
+            _info_write(data) { GM_Objects.set_value('rate_videos', data), Colorful_Console.print('update_rate_video_info'); }
         },
         // 管理标记的下载视频记录
         mark_download_video: {
             get _data() { return GM_Objects.get_value('mark_download_videos', []); },
-            _info_write(data) { GM_Objects.set_value('mark_download_videos', data), Colorful_Console.main('successfully marked video as downloaded'); },
+            _info_write(data) { GM_Objects.set_value('mark_download_videos', data), Colorful_Console.print('successfully marked video as downloaded'); },
             add(info) {
                 const data = this._data, video_id = info.video_id;
                 if (data.some(e => e.video_id === video_id)) return;
@@ -1498,7 +1671,7 @@
             arr.push(video_id);
             GM_Objects.set_value('visited_videos', arr);
             Dynamic_Variants_Manager.rate_visited_data_sync(video_id);
-            Colorful_Console.main('play record has been writed');
+            Colorful_Console.print('play record has been writed');
         },
     };
     // 静态数据管理 ---------
@@ -1506,7 +1679,7 @@
     // 展示帮助以及其他内部存储数据 -------
     Object.defineProperties(
         GM_Objects.window, {
-        'shortcuts': {
+        'show_shortcuts': {
             get: () => {
                 const shortcuts = [
                     ['快捷键', '辅助/记忆', '功能', '生效页面'],
@@ -1542,9 +1715,34 @@
                 console.table(data);
             }
         },
-        'bayes': {
-            get() { Dynamic_Variants_Manager.bayes_module?.show_detail(); },
-            set(value) { Dynamic_Variants_Manager.bayes_module?.adjust_configs(value); }
+        'show_black_keys': {
+            get() {
+                const a = Dynamic_Variants_Manager.black_keys.a;
+                console.log(`black keys(${a.length}):\n_________\n`, a);
+            }
+        },
+        'feedback': { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: true, active: true }); } },
+        'support': { get() { Support_Me.main(); } },
+        'manual': { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: true, active: true }); } },
+        'help': {
+            get() {
+                const cmds = [
+                    ['show_shortcuts', 'show the shortcuts'],
+                    ['show_rate', 'show all rated videos'],
+                    ['show_black_keys', 'show all a-class black keys'],
+                    ['bayes', 'setup and show the bayes model'],
+                    ['support', 'show the popup of support me'],
+                    ['feedback', 'open the webpage of issues'],
+                    ['manual', 'open the webpage of manual'],
+                    ['help', 'show the info of help']
+                ];
+                const i = cmds.reduce((acc, e) => {
+                    const a = e[0].length;
+                    if (a > acc) acc = a;
+                    return acc;
+                }, 0) + 2;
+                console.log(cmds.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
+            }
         }
     });
     // -------- 展示帮助以及其他内部存储数据
@@ -1595,7 +1793,7 @@
                 if (video.length > 0) return video[0];
             };
             const video = document.getElementsByClassName('bwp-video');
-            return video.length > 0 ? video[0] : Colorful_Console.main('no video element of bwp-video', 'warning', true);
+            return video.length > 0 ? video[0] : Colorful_Console.print('no video element of bwp-video', 'warning', true);
         }
         #get_up_id() {
             const nodes = document.getElementsByClassName('staff-name');
@@ -1610,7 +1808,7 @@
             this.#video_info.up_id = node.length > 0 ? Base_Info_Match.get_up_id(node[0].href) : this.#get_up_id();
             this.#video_info.duration = this.#video.duration;
             // 检查获取的内容是否完整
-            for (const key in this.#video_info) key !== 'is_collection' && !this.#video_info[key] && Colorful_Console.main(`video_info: lack of value: ${key}`, 'debug');
+            for (const key in this.#video_info) key !== 'is_collection' && !this.#video_info[key] && Colorful_Console.print(`video_info: lack of value: ${key}`, 'debug');
         }
         // 播放事件
         #create_video_event() {
@@ -1679,7 +1877,7 @@
                 this.#record_id = null;
             }
             const duration = parseInt(this.#video_info.duration * 500);
-            if (duration === 0) Colorful_Console.main('video duration exceptions', 'warning');
+            if (duration === 0) Colorful_Console.print('video duration exceptions', 'warning');
             else this.#record_id = setTimeout(() => {
                 Statics_Variant_Manager.add_visited_video(this.#video_info.video_id);
                 this.#record_id = null;
@@ -1736,7 +1934,7 @@
                             Statics_Variant_Manager.rate_video_part.add(info);
                             return true;
                         }
-                        Colorful_Console.main('fail to get up_id', 'warning', true);
+                        Colorful_Console.print('fail to get up_id', 'warning', true);
                         return false;
                     };
                     val += 2;
@@ -1764,7 +1962,7 @@
                     }
                 }
                 const cm = `BBDown -mt --work-dir "E:\\video" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
-                GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.main("bbdown commandline: " + cm));
+                GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.print("bbdown commandline: " + cm));
                 return title;
             },
             main(val) {
@@ -1857,7 +2055,7 @@
                 // 这个函数不会返回插入生成的节点, 返回空值
                 toolbar[0].insertAdjacentHTML('beforeend', html);
                 this.#video_rate_event();
-            } else Colorful_Console.main('fail to insert rate element', 'warning', true);
+            } else Colorful_Console.print('fail to insert rate element', 'warning', true);
         }
         #update_download_status(mode) {
             const f = this.#download_flag, r = Statics_Variant_Manager.mark_download_video.check(this.#video_info.video_id);
@@ -1898,7 +2096,7 @@
                     this.#update_download_status(true);
                 }, 600));
                 return true;
-            } else Colorful_Console.main('browser does not support url_change event, please update browser', 'warning', true);
+            } else Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true);
         }
         #click_target(classname) { document.getElementsByClassName(classname)[0]?.click(); }
         // 自动速度控制, 用于快速观看视频
@@ -1937,7 +2135,7 @@
                     return;
                 }
             }
-            Colorful_Console.main('light off element miss', 'debug', true);
+            Colorful_Console.print('light off element miss', 'debug', true);
         }
         wide_screen() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-web'); }
         // 影院宽屏模式
@@ -1960,7 +2158,7 @@
                 this.#visited_record();
                 this.#regist_menus_command();
                 GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
-            } else Colorful_Console.main('video module will not function properly', 'debug');
+            } else Colorful_Console.print('video module will not function properly', 'debug');
         }
     }
     // 视频控制模块 ---------
@@ -2095,6 +2293,14 @@
                 check_search: (href) => {
                     const c = decodeURIComponent(href.slice(32)), { a, b } = Dynamic_Variants_Manager.black_keys, r = a.find(e => c.includes(e)) || b.find(e => c.includes(e));
                     return r && (alert(`hey, bro, don't waste time on rubbish: "${r}"; there will be closed the page after this alert.`), GM_Objects.window_close(), true);
+                },
+                insert_blocked_element(node) {
+                    const html = `
+                    <div class="bili-video-cards blocked"
+                        style="position: absolute;background-color: rgba(60, 60, 60, 0.85);display: flex;justify-content: center;align-items: center;z-index: 10;backdrop-filter: blur(6px);border-radius: 6px;height: 100%;width: 100%;">
+                        <div style="color: rgb(250, 250, 250);">blocked</div>
+                    </div>`;
+                    node.insertAdjacentHTML('afterbegin', html);
                 }
             },
             space: { id: 3 },
@@ -2120,14 +2326,14 @@
                 for (const a of links) {
                     const href = a.href;
                     if (href?.includes('cm.bilibili.com')) {
-                        Colorful_Console.main(`advertisement clear: ${href}`);
+                        Colorful_Console.print(`advertisement clear: ${href}`);
                         info.is_video = false;
                         return info;
                     }
                     if (!info.video_id) {
                         // 小课堂的内容清除掉
                         if (href.includes('/cheese')) {
-                            Colorful_Console.main(`cheese clear: ${href}`);
+                            Colorful_Console.print(`cheese clear: ${href}`);
                             info.is_video = false;
                             return info;
                         }
@@ -2140,7 +2346,7 @@
                 let i = 0, j = 0;
                 for (const k in info) {
                     if (!info[k]) {
-                        j > 0 && Colorful_Console.main(`less data: ${k}`, 'debug');
+                        j > 0 && Colorful_Console.print(`less data: ${k}`, 'debug');
                         i++;
                     } else j++;
                 }
@@ -2219,7 +2425,7 @@
                         if (url) {
                             // 检查搜索的内容是否包含垃圾
                             if (Dynamic_Variants_Manager.key_check(decodeURIComponent(url))) {
-                                Colorful_Console.main('search content contain black key', 'warning', true);
+                                Colorful_Console.print('search content contain black key', 'warning', true);
                                 return;
                             }
                             args[2][0] = url;
@@ -2247,7 +2453,7 @@
                                 if (hfu) response.json = () => response.clone().json().then((data) => {
                                     const results = hfu(data), hdf = this.#configs.handle_data_func;
                                     // 假如拦截内容, 则清空该组内容, 图片填充
-                                    results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.main('url no match rule: ' + url, 'debug');
+                                    results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.print('url no match rule: ' + url, 'debug');
                                     return data;
                                 });
                                 return response;
@@ -2460,7 +2666,7 @@
                         const url = this[key];
                         if (url) {
                             const s = this._get_content();
-                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._protocols + url + encodeURIComponent(s), { insert: true, activate: true }) : Colorful_Console.main('search content contain black key', 'warning', true));
+                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._protocols + url + encodeURIComponent(s), { insert: true, activate: true }) : Colorful_Console.print('search content contain black key', 'warning', true));
                             return true;
                         }
                         return false;
@@ -2507,14 +2713,10 @@
                 // 管理贝叶斯
                 const manage_bayes = {
                     _add_white() {
-                        const s = prompt('add content to bayes white list(`bayes reset` to reset)').trim();
-                        s === 'bayes reset' ? this._reset() : Dynamic_Variants_Manager.bayes_module.add_new_content(s, true);
+                        const s = prompt('add content to bayes white list').trim();
+                        return s && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true), true;
                     },
-                    _reset() { confirm('reset bayes? it will clear bayes words, continue?') && Dynamic_Variants_Manager.bayes_module.reset(); },
-                    main(key) {
-                        if (key !== 'w') return;
-                        this._add_white();
-                    }
+                    main(key) { return key === 'w' && this._add_white(); }
                 };
                 // 文本标签, 需要排除输入
                 const local_tags = ["textarea", "input"], class_tags = ['input', 'text', 'editor'];
@@ -2625,7 +2827,7 @@
                                         v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(info.video_id);
                                         this.#init_data.push(((v_r.r !== 0 || v_r.v !== 0) ? v_r : null));
                                     }
-                                }) : Colorful_Console.main('init data info object api has changed', 'warning', true);
+                                }) : Colorful_Console.print('init data info object api has changed', 'warning', true);
                             }
                             if (this.#init_data.length === 0) this.#init_data = null;
                             init_data = val;
@@ -2641,18 +2843,18 @@
                             <span data-v-62f526a6="">r: ${v_r.r} | v: ${v_r.v}</span>
                         </span>`;
                         const ele = node.getElementsByClassName('bili-video-card__stats--left');
-                        ele.length > 0 ? ele[0].insertAdjacentHTML('beforeend', html) : Colorful_Console.main('fail to insert element to video card', 'debug');
+                        ele.length > 0 ? ele[0].insertAdjacentHTML('beforeend', html) : Colorful_Console.print('fail to insert element to video card', 'debug');
                     };
                     // 执行遍历html元素
                     const clear_all_card = (target, data) => {
                         if (!data || data.length === 0) {
-                            Colorful_Console.main('search clear card no data', 'debug');
+                            Colorful_Console.print('search clear card no data', 'debug');
                             return;
                         }
                         const p = target.getElementsByClassName(this.#configs.parent_class);
                         const k = p.length;
                         if (k === 0) {
-                            Colorful_Console.main('search clear card no node', 'debug');
+                            Colorful_Console.print('search clear card no node', 'debug');
                             return;
                         }
                         const nodes = p[k - 1].getElementsByClassName(this.#configs.target_class);
@@ -2677,10 +2879,10 @@
                                 }
                                 if (f) break;
                             }
-                            !f && Colorful_Console.main('search-page monitior records no target', 'debug');
-                        }).observe(wrapper[0], { childList: true }) : Colorful_Console.main('search page monitor no target node', 'debug');
+                            !f && Colorful_Console.print('search-page monitior records no target', 'debug');
+                        }).observe(wrapper[0], { childList: true }) : Colorful_Console.print('search page monitor no target node', 'debug');
                     };
-                    this.#init_data ? setTimeout(() => (clear_all_card(document, this.#init_data), this.#init_data = null, node_monitor()), 3000) : node_monitor();
+                    this.#init_data ? setTimeout(() => (clear_all_card(document, this.#init_data), this.#init_data = null, node_monitor()), 300) : node_monitor();
                     const configs = this.#configs;
                     let tmp = null;
                     // 由于首页插入的节点的操作在请求数据之前, 需要额外监听等待数据请求后才执行操作.
@@ -2717,7 +2919,7 @@
             _home_module: {
                 _maintain() {
                     if (!confirm('data maintenance will take some time, start?')) return;
-                    Colorful_Console.main('data maintenance has started', 'info', true), GM_Objects.set_value('maintain', true);
+                    Colorful_Console.print('data maintenance has started', 'info', true), GM_Objects.set_value('maintain', true);
                     try {
                         const data = GM_Objects.get_value('block_ups', []);
                         if (data.length > 1500) {
@@ -2735,7 +2937,7 @@
                         }
                     } catch (error) {
                         console.error(error);
-                        GM_Objects.set_value('maintain', false), Colorful_Console.main('data maintenance has been completed, close all pages to restart', 'info', true);
+                        GM_Objects.set_value('maintain', false), Colorful_Console.print('data maintenance has been completed, close all pages to restart', 'info', true);
                     }
                     setTimeout(() => GM_Objects.window_close(), 5000);
                 },
@@ -2772,7 +2974,7 @@
                 setTimeout(() => {
                     const nodes = document.getElementsByClassName(this.#configs.init_class);
                     if (nodes.length === 0) {
-                        Colorful_Console.main('no initial elements', 'debug', true);
+                        Colorful_Console.print('no initial elements', 'debug', true);
                         return;
                     }
                     const hd = this.#configs.hide_node, guvi = this.#utilities_module.get_up_video_info;
@@ -2780,7 +2982,7 @@
                         const info = guvi(node);
                         info && (!info.is_video || Dynamic_Variants_Manager.completed_check(info)) && hd(node);
                     }
-                }, 300);
+                }, 100);
             },
             /**
              * 配置执行函数
@@ -2907,143 +3109,8 @@
                     GM_Objects.addvaluechangeistener('shade_opacity', ((...args) => this.change_opacity(args[2])).bind(this));
                 }
             },
-            // 支持弹窗
-            _support_me: {
-                id_name: 'support_me',
-                interval_id: 0,
-                support: null,
-                tips: null,
-                opacity: null,
-                timeout: 30,
-                tips_text: 'this tips will be automatically closed or you can click anywhere of popup to close it',
-                get html() {
-                    const mt = -5;
-                    return `
-                        <div
-                            id="${this.id_name}"
-                            style="
-                                background: darkgray;
-                                text-align: justify;
-                                width: 700px;
-                                font-size: 16px;
-                                height: 468px;
-                                position: fixed;
-                                top:50%;
-                                left:50%;
-                                transform: translate(-50%,-50%);
-                                z-index: 100000;
-                            "
-                        >
-                            <div style="padding: 2.5%; font-weight: bold; font-size: 18px; font-family: Microsoft YaHei;">
-                                Support Me!
-                                <span
-                                    class="manual_btn"
-                                    style="font-size: 12px; font-weight: normal; float: right"
-                                >
-                                    <i
-                                        title="click, share with your friends. share to weibo"
-                                        style="
-                                            margin-right: 10px;
-                                            content: url(${Constants_URLs.weibo_ico});
-                                        "
-                                    ></i>
-                                    <a
-                                        href=${Constants_URLs.manual}
-                                        target="_blank"
-                                        title="help manual"
-                                        style="color: #2b638b"
-                                        >Manual</a
-                                    >
-                                    <span> || version: ${GM_info.script.version}</span>
-                                </span>
-                            </div>
-                            <div style="font-family: Monotype Corsiva; font-size: 16px; padding-left: 2%">
-                                make thing better and simpler.!
-                                <img
-                                    src="${Constants_URLs.tea_ico}"
-                                    style="
-                                        float: left;
-                                        height: 42px;
-                                        width: 42px;
-                                        margin: -10px 4px 0 0px;
-                                    "
-                                />
-                            </div>
-                            <div
-                                class="support_img"
-                                style="padding-top: 4%; width: 100%; padding-left: 7.5%"
-                                title="any help, support me.!"
-                            >
-                                <div class="qrCode">
-                                    <img
-                                        src="${Constants_URLs.support}"
-                                    />
-                                </div>
-                            </div>
-                            <div class="timeout" style="font-size: 12px; padding: 3%">
-                                ${this.timeout}s, ${this.tips_text}.
-                            </div>
-                            <a
-                                href=${Constants_URLs.blog}
-                                target="_blank"
-                                style="margin: ${mt}px 10px 0px 0px; float: right; font-size: 14px; color: teal"
-                                title="my blog"
-                            >
-                                Github: Lian
-                            </a>
-                        </div>`;
-                },
-                /**
-                 * 更变透明度
-                 * @param {number} opacity
-                 */
-                opacity_change(opacity) {
-                    const target = document.getElementById("screen_shade_cover");
-                    target && (this.opacity === null ? (this.opacity = target.style.opacity) : target.style.opacity !== opacity) && (target.style.opacity = opacity);
-                },
-                // 微博分享
-                share_weibo() {
-                    const url = `https://service.weibo.com/share/share.php?url=${GM_Objects.info.script.supportURL}&title=BiliBili_Optimizer, 更好的B站.!&summery=undefined&pic=${Constants_URLs.weibo_url}&#_loginLayer_${Date.now()}`;
-                    GM_Objects.openintab(url, { insert: true, active: true });
-                },
-                // 倒计时
-                timer() {
-                    let time = this.timeout;
-                    this.interval_id = setInterval(() => {
-                        this.tips.innerText = `${--time}s, ${this.tips_text}`;
-                        time === 0 && this.remove();
-                    }, 1000);
-                },
-                // click事件
-                click_event() { this.support.onclick = (e) => e.target.localName === "i" ? this.share_weibo() : e.target.localName !== "a" && setTimeout(() => this.remove(), 300); },
-                // 创建弹窗
-                creat_popup() {
-                    // 先将遮罩设置为透明
-                    this.opacity_change(0);
-                    document.documentElement.insertAdjacentHTML("beforeend", this.html);
-                    setTimeout(() => {
-                        this.support = document.getElementById(this.id_name);
-                        this.tips = this.support.getElementsByClassName("timeout")[0];
-                        this.click_event();
-                        this.timer();
-                    }, 300);
-                },
-                // 销毁弹窗
-                remove() {
-                    if (this.interval_id) {
-                        clearInterval(this.interval_id);
-                        this.interval_id = null;
-                    }
-                    this.opacity_change(this.opacity);
-                    this.opacity = null;
-                    this.support.remove();
-                    this.support = null;
-                    this.tips = null;
-                },
-                main() { this.support ? this.remove() : this.creat_popup(); },
-            },
             get_funcs(id) {
-                const f = (() => GM_Objects.registermenucommand('Support || Donation', this._support_me.main.bind(this._support_me)));
+                const f = (() => GM_Objects.registermenucommand('Support || Donation', Support_Me.main.bind(Support_Me)));
                 f.start = 1, f.type = 1;
                 if (this._shade.run_in.includes(id)) {
                     this._shade.init();
@@ -3066,7 +3133,7 @@
             // 检查搜索链接是否包含垃圾
             if (this.#configs.check_search?.(href)) {
                 // window_close()无法关闭最后一个标签, 所以这里还需要拦截后续的操作
-                Colorful_Console.main('you are accessing a rubbish page and the script will not run properly.', 'warning', true);
+                Colorful_Console.print('you are accessing a rubbish page and the script will not run properly.', 'warning', true);
                 return;
             }
             this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
@@ -3075,7 +3142,7 @@
             // 注入css, 尽快执行
             this.#css_module.inject_css(id);
             // 初始化动态数据管理模块
-            Dynamic_Variants_Manager.data_init(id);
+            Dynamic_Variants_Manager.init(id);
             // 配置启动函数
             [[this.#proxy_module], [this.#page_modules, href], [this.#event_module], [this.#html_modules]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
         }
@@ -3086,7 +3153,7 @@
              * @param {Array} funcs
              */
             const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
-            load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.main('bili_optimizer has started'));
+            load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started'));
         }
     }
     // 优化器主体 -----------
@@ -3094,7 +3161,7 @@
     // ----------------- 启动
     (() => {
         // 假如数据处于维护中, 就不执行脚本
-        if (GM_Objects.get_value('maintain', false)) Colorful_Console.main('data under maintenance, wait a moment', 'warning', true);
+        if (GM_Objects.get_value('maintain', false)) Colorful_Console.print('data under maintenance, wait a moment', 'warning', true);
         else {
             const { href, search, origin, pathname } = location;
             // 清除直接访问链接带有的追踪参数
