@@ -14,7 +14,7 @@
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
 // @connect      files.superbed.cn
-// @connect      www.freeimg.cn
+// @connect      i.postimg.cc
 // @grant        GM_info
 // @grant        GM_addStyle
 // @grant        GM_setValue
@@ -128,7 +128,7 @@
         weibo_ico: 'https://files.superbed.cn/store/images/dc/0c/6630afa60ea9cb140356dc0c.webp',
         weibo_url: 'https://files.superbed.cn/store/images/b9/2a/6630af950ea9cb140356b92a.png',
         tea_ico: 'https://files.superbed.cn/store/images/72/8c/6630af710ea9cb140356728c.png',
-        support: 'https://www.freeimg.cn/i/2024/04/30/6630b0568bb99.webp',
+        support: 'https://i.postimg.cc/g0Y7BJfb/payme.webp',
         install: 'https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js',
         feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
@@ -166,7 +166,7 @@
             const xmls = [];
             for (const k in this) {
                 const url = (k === 'main' || k.startsWith('_')) ? '' : this[k];
-                ['www.freeimg.cn', 'files.superbed.cn'].some((e) => url.includes(e)) && xmls.push(this._http(url));
+                ['i.postimg.cc', 'files.superbed.cn'].some((e) => url.includes(e)) && xmls.push(this._http(url));
             }
             Promise.allSettled(xmls).then(res => {
                 const error_urls = res.filter(item => item.status === 'rejected').map(item => item.reason);
