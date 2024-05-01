@@ -1441,7 +1441,7 @@
                         ['configs', 'bayes.configs; show the configs; bayes.configs = {};, setup configs'],
                         ['reset', 'bayes.reset(0); reset the bayes, default 0, will clear all data; 1 reset configs; 2 clear words data and keep configs.'],
                         ['deatail', 'bayes.detail; show the detail of bayes model.'],
-                        ['test', 'test("content"); will return the result of test content.']
+                        ['test', 'test("content"); will return the result of test content.'],
                         ['help', 'show the info of help.']
                     ], i = helps.reduce((acc, e) => {
                         const a = e[0].length;
