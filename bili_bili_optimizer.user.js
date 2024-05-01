@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.4
+// @version      1.6.5
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -641,17 +641,23 @@
         // 词汇出现总数
         #white_words = 0;
         #black_words = 0;
-        // 平滑值
+        // 内容长度限制 = (feature_length_limit - 1) * 1 + 2, 即假设内容最起码包好一个词(2) + 单个值(1)
+        #content_len_limit = 0;
+        // 模型参数/超参数
         #configs = {
+            // 拉普拉斯平滑系数, 越小越细腻
             alpha: 1,
             // 临界值, 当w和b的概率的差距大于临界值时，执行判断
             threshold: 0.15,
-            name: 'multinomialnb'
+            // 单个字的权重
+            single_weight: 0.618,
+            // 特征值个数限制
+            feature_length_limit: 5,
+            // 模型名称
+            name: 'multinomialnb',
         };
         // 计算的详情
         #result_detail = { 'content': '', 'seg_array': null, 'black_pro': 0, 'white_pro': 0, 'ratio': 0, 'class': '' };
-        get configs() { return this.#configs; }
-        get test_result() { return this.#result_detail; }
         // 预先计算部分的值
         #pre_cal_data = {
             'w_t': 0,
@@ -710,26 +716,31 @@
             this.#white_words = sum(this.#bayes_white_counter) + total_features_length;
             this.#black_words = sum(this.#bayes_black_counter) + total_features_length;
         }
+        #update_content_len_limit() { this.#content_len_limit = (this.#configs.feature_length_limit - 1) * 1 + 2; }
         /**
          * 计算先验概率
          * @param {number} bayes_black_len
          * @param {number} bayes_white_len
          * @param {number} bayes_total_len
          */
-        #get_prior_probability(bayes_black_len, bayes_white_len, bayes_total_len) {
+        #update_prior_probability(bayes_black_len, bayes_white_len, bayes_total_len) {
             this.#black_p = bayes_black_len > 0 ? Math.log(bayes_black_len) - Math.log(bayes_total_len) : Math.log(this.#configs.alpha / (bayes_total_len + 2 * this.#configs.alpha));
             this.#white_p = bayes_white_len > 0 ? Math.log(bayes_white_len) - Math.log(bayes_total_len) : Math.log(this.#configs.alpha / (bayes_total_len + 2 * this.#configs.alpha));
         }
         /**
-         * 更新模型参数
+         * 更新模型使用的参数
          * @param {boolean} mode
          */
-        #update_paramters() { this.#get_prior_probability(this.#bayes_black_len, this.#bayes_white_len, this.#bayes_total_len), this.#update_words_cal(), this.#update_pre_cal(); }
-        /**
-         * 触发重新加载
-         * @param {number} mode
-         */
-        #trigger_reload(mode) { GM_Objects.set_value('bayes_reload', { 'mode': mode, 'update': Date.now() }); }
+        #update_paramters() {
+            // 先验概率
+            this.#update_prior_probability(this.#bayes_black_len, this.#bayes_white_len, this.#bayes_total_len);
+            // 特征数量
+            this.#update_words_cal();
+            // 预先计算部分的值
+            this.#update_pre_cal();
+            // 内容长度限制
+            this.#update_content_len_limit();
+        }
         #get_configs() { this.#configs = GM_Objects.get_value('bayes_configs', this.#configs); }
         #get_module() { this.bayes = this.#cal_bayes.bind(this, ...(this.#configs.name !== 'multinomialnb' ? [0, 0] : [this.#white_p, this.#black_p])); }
         /**
@@ -737,37 +748,15 @@
          * @param {string} key
          * @param {number} lower
          * @param {number} upupper
+         * @param {function} func
          * @param {number} val
          * @returns {number}
          */
-        #adjust_config_val(key, lower, upupper, val) {
-            val = Number(val);
+        #adjust_config_val(key, lower, upupper, func, val) {
+            val = func(val);
             const r = (lower < val && val < upupper) ? [`successfully adjust ${key} : ${val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
             Colorful_Console.print(...r);
             return r.length === 1 ? val : 0;
-        }
-        /**
-         * 计算概率
-         * @param {number} w_pro
-         * @param {number} b_pro
-         * @param {string} content
-         * @returns {number}
-         */
-        #cal_bayes(w_pro, b_pro, content) {
-            if (!content) return 0;
-            const c = this.#seg_word(content);
-            const i = c.length;
-            if (i < 5) return -1;
-            // 预先计算部分数值
-            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, alpha = this.#configs.alpha, [bp, wp] = c.reduce((acc, cur) => {
-                const bc = this.#bayes_black_counter[cur];
-                const wc = this.#bayes_white_counter[cur];
-                acc[0] += bc ? Math.log(bc + alpha) - b_t : b_1;
-                acc[1] += wc ? Math.log(wc + alpha) - w_t : w_1;
-                return acc;
-            }, [b_pro, w_pro]), r = (bp - wp) / Math.abs(bp), f = r > (i > 10 ? this.#configs.threshold : 0.21) ? r : 0;
-            this.#result_detail = { 'content': content, 'seg_array': c, 'black_pro': bp, 'white_pro': wp, 'ratio': r, 'class': f > 0 ? 'black' : 'white' };
-            return f;
         }
         // 初始化模型
         #init_module() {
@@ -792,10 +781,8 @@
             this.#update_paramters();
             this.#get_module();
         }
-        constructor() {
-            this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
-            this.#init_module();
-            // 监听这个值用以判断是否需要重新载入/切换模型/更新参数
+        // 监听判断是否需要重新载入/切换模型/更新参数
+        #monitor_paramters_change() {
             GM_Objects.addvaluechangeistener('bayes_reload', ((...args) => {
                 const a = args[2]['mode'];
                 if (a === 0) return;
@@ -803,10 +790,37 @@
                 else {
                     this.#get_configs();
                     if (a === 2) this.#update_paramters();
-                    else if (a === 3) this.#get_module();
+                    else if (a === 3) this.#get_module(); // 切换先验概率
                     else if (a === 4) this.#update_paramters(), this.#get_module();
                 }
             }).bind(this));
+        }
+        /**
+         * 触发重新加载
+         * @param {number} mode
+         */
+        #trigger_reload(mode) { GM_Objects.set_value('bayes_reload', { 'mode': mode, 'update': Date.now() }); }
+        /**
+         * 计算概率
+         * @param {number} w_pro
+         * @param {number} b_pro
+         * @param {string} content
+         * @returns {number}
+         */
+        #cal_bayes(w_pro, b_pro, content) {
+            if (content.length < this.#content_len_limit) return -1;
+            const c = Object.entries(this.#word_counter(this.#seg_word(content)));
+            const i = c.length;
+            if (i < this.#configs.feature_length_limit) return -1;
+            // 预先计算部分数值
+            const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, sweight = this.#configs.single_weight, alpha = this.#configs.alpha, [bp, wp] = c.reduce((acc, cur) => {
+                const [word, count] = cur, bc = this.#bayes_black_counter[word], wc = this.#bayes_white_counter[word], sw = word.length === 1 ? sweight : 1;
+                acc[0] += (bc ? Math.log(bc + alpha) - b_t : b_1) / sw * count;
+                acc[1] += (wc ? Math.log(wc + alpha) - w_t : w_1) / sw * count;
+                return acc;
+            }, [b_pro, w_pro]), r = (bp - wp) / Math.abs(bp), f = r > (i > 7 ? this.#configs.threshold : 0.21) ? r : 0;
+            this.#result_detail = { 'content': content, 'seg_array': c, 'black_pro': bp, 'white_pro': wp, 'ratio': r, 'class': f > 0 ? 'black' : 'white' };
+            return f;
         }
         /**
          * 贝叶斯判断
@@ -820,8 +834,8 @@
          * @param {boolean} mode
          */
         add_new_content(content, mode) {
-            if (content.length < 7) {
-                Colorful_Console.print('content length is less than 7, please check your input', 'warning', true);
+            if (content.length < this.#content_len_limit) {
+                Colorful_Console.print('the length of input is less than 7, check your input', 'warning', true);
                 return;
             }
             const ws = this.#seg_word(content);
@@ -836,12 +850,18 @@
             this.#trigger_reload(1);
             Colorful_Console.print(`successfully add content to bayes ${target} list`);
         }
-        // 重置模型
-        reset() {
-            if (!confirm('reset bayes? it will clear current settings and words, then restore default settings, continue?')) return;
-            ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len', 'bayes_configs'].forEach(e => GM_Objects.set_value(e, null));
-            this.#init_module(), Colorful_Console.print('successfully reset bayes', 'info', true);
+        /**
+         * 重置模型
+         * @param {number} mode 0, all; 2, configs; 1, words
+         * @returns {null}
+         */
+        reset(mode) {
+            if (mode === 0 && !confirm('reset bayes? it will clear current settings and words data to restore default settings, continue?')) return;
+            const config_names = ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len', 'bayes_configs'], i = config_names.length;
+            config_names.slice(...[[0, i], [0, i - 1], [-1, i]][mode]).forEach(e => GM_Objects.set_value(e, null));
+            this.#init_module();
             this.#trigger_reload(1);
+            Colorful_Console.print('successfully reset bayes', 'info', true);
         }
         /**
          * 调整模型配置
@@ -850,7 +870,7 @@
         adjust_configs(configs) {
             try {
                 if (typeof configs === 'object') {
-                    let f = [['threshold', 0.03, 0.3, 1], ['alpha', 0.01, 1, 10]].reduce((b, e) => {
+                    let f = [['threshold', 0.029, 0.31, Number, 1], ['single_weight', 0.009, 1.1, Number, 1], ['feature_length_limit', 2, 10, parseInt, 10], ['alpha', 0.009, 1.1, Number, 10]].reduce((b, e) => {
                         const val = configs[e[0]];
                         if (val) {
                             const i = e.pop();
@@ -870,16 +890,20 @@
                         if (name !== this.#configs.name) {
                             if (['multinomialnb', 'complementnb'].includes(name)) {
                                 this.#configs.name = name;
-                                f += 2;
+                                f += 3;
                                 this.#get_module();
-                                Colorful_Console.print(`successfully change bayes module to ${name}`, 'info');
-                            } else Colorful_Console.print(`${name} is not a valid bayes module name, please check your input: 'multinomialnb' | 'complementnb'`, 'warning', true);
+                                Colorful_Console.print(`successfully change bayes model to ${name}`, 'info');
+                            } else Colorful_Console.print(`${name} is not a valid bayes model name, please check your input: 'multinomialnb' | 'complementnb'`, 'warning', true);
                         }
                     }
+                    // threshold, single_weight这两个参数发生变化, 则只更新configs内容, 不需要更新预计算参数
+                    // 模型类型发生变化, 则需要更新预计算参数中的先验参数
+                    // alpha发生变化, 则需要更新预计算参数中的所有参数
                     if (f > 0) {
                         GM_Objects.set_value('bayes_configs', this.#configs);
                         f > 9 && this.#update_paramters();
-                        this.#trigger_reload(f < 4 ? f === 1 ? 5 : 3 : f < 12 ? 2 : 4);
+                        f -= 3;
+                        this.#trigger_reload(f < 3 ? f < 0 ? 5 : 3 : (f > 9 && f < 13 || f > 19) ? 4 : 2);
                     }
                 } else Colorful_Console.print('configs must be an object: e.g, { threshold: 0.1, alpha: 1, name: "multinomialnb" } ', 'warning');
             } catch (error) {
@@ -891,18 +915,28 @@
             const data = [
                 '--------',
                 '------------------',
-                'details of bayes module:',
+                'details of bayes model:',
                 '-----------------------------',
-                `type of module: ${this.#configs.name};`,
+                `name of model: ${this.#configs.name};`,
+                `totally blocked times: ${Dynamic_Variants_Manager.accumulative_bayes}`,
                 `white list length: ${this.#bayes_white_len};`,
                 `black list length: ${this.#bayes_black_len};`,
                 `white features length: ${this.#white_words};`,
                 `black features length: ${this.#black_words};`,
                 `threshold: ${this.#configs.threshold}`,
                 `alpha: ${this.#configs.alpha}`,
+                `single feature weight: ${this.#configs.single_weight}`,
+                `feature length limit: ${this.#configs.feature_length_limit}`,
                 '-----------------------------'
             ];
             console.log(data.join('\n'));
+        }
+        get configs() { return this.#configs; }
+        get test_result() { return this.#result_detail; }
+        constructor() {
+            this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
+            this.#init_module();
+            this.#monitor_paramters_change();
         }
     }
     // bayes module ------------
@@ -1392,14 +1426,33 @@
                 /**
                  * 测试文本分类
                  * @param {string} content
-                 * @returns
+                 * @returns {null}
                  */
                 test: (content) => console.log(this.bayes_module.bayes(content) < 0 ? 'the length of content does not meet the requirements' : this.bayes_module.test_result),
                 detail: () => this.bayes_module.show_detail(),
-                reset: () => this.bayes_module.reset(),
+                /**
+                 * 重置贝叶斯
+                 * @param {number} mode
+                 * @returns {null}
+                 */
+                reset: (mode = 0) => this.bayes_module.reset(mode),
+                help: () => {
+                    const helps = [
+                        ['configs', 'bayes.configs; show the configs; bayes.configs = {};, setup configs'],
+                        ['reset', 'bayes.reset(0); reset the bayes, default 0, will clear all data; 1 reset configs; 2 clear words data and keep configs.'],
+                        ['deatail', 'bayes.detail; show the detail of bayes model.'],
+                        ['test', 'test("content"); will return the result of test content.']
+                        ['help', 'show the info of help.']
+                    ], i = helps.reduce((acc, e) => {
+                        const a = e[0].length;
+                        if (a > acc) acc = a;
+                        return acc;
+                    }, 0) + 2;
+                    console.log(helps.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
+                }
             }, {
                 get: (target, prop) => {
-                    if (prop === 'detail') target[prop]();
+                    if (prop === 'detail' || prop === 'help') target[prop]();
                     else if (prop === 'configs') return this.bayes_module.configs;
                     else return target[prop];
                 },
@@ -1677,8 +1730,7 @@
     // 静态数据管理 ---------
 
     // 展示帮助以及其他内部存储数据 -------
-    Object.defineProperties(
-        GM_Objects.window, {
+    Object.defineProperties(GM_Objects.window, {
         'show_shortcuts': {
             get: () => {
                 const shortcuts = [
@@ -1724,6 +1776,10 @@
         'feedback': { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: true, active: true }); } },
         'support': { get() { Support_Me.main(); } },
         'manual': { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: true, active: true }); } },
+        'bayes': {
+            get() { return this._proxy_bayes ? this._proxy_bayes : Colorful_Console.print('bayes model is not running on current page'); },
+            set(val) { this._proxy_bayes = val; }
+        },
         'help': {
             get() {
                 const cmds = [
@@ -1735,8 +1791,7 @@
                     ['feedback', 'open the webpage of issues'],
                     ['manual', 'open the webpage of manual'],
                     ['help', 'show the info of help']
-                ];
-                const i = cmds.reduce((acc, e) => {
+                ], i = cmds.reduce((acc, e) => {
                     const a = e[0].length;
                     if (a > acc) acc = a;
                     return acc;
