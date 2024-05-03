@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.5
+// @version      1.6.6
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -128,7 +128,7 @@
         weibo_ico: 'https://files.superbed.cn/store/images/dc/0c/6630afa60ea9cb140356dc0c.webp',
         weibo_url: 'https://files.superbed.cn/store/images/b9/2a/6630af950ea9cb140356b92a.png',
         tea_ico: 'https://files.superbed.cn/store/images/72/8c/6630af710ea9cb140356728c.png',
-        support: 'https://i.postimg.cc/g0Y7BJfb/payme.webp',
+        support: 'https://www.freeimg.cn/i/2024/04/30/6630b0568bb99.webp',
         install: 'https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js',
         feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
@@ -157,7 +157,7 @@
                     // 请求头得到的内容是字符串, 需要转换为对象
                     code === 200 && this._convert_dic(response.responseHeaders)['content-length'] > 0 ? resolve(true) : reject('request code: ' + code + `, : ${url}`);
                 },
-                onerror: (_response) => reject('error: ' + url),
+                onerror: (response) => (console.error(response), reject('error: ' + url)),
                 ontimeout: (_response) => reject('timeout: ' + url)
             }));
         },
@@ -305,7 +305,7 @@
                         </div>
                     </div>
                     <div class="timeout" style="font-size: 12px; padding: 3%">
-                        ${this.timeout}s, ${this.tips_text}.
+                        ${this._timeout}s, ${this._tips_text}.
                     </div>
                     <a
                         href=${Constants_URLs.blog}
@@ -749,14 +749,17 @@
          * @param {number} lower
          * @param {number} upupper
          * @param {function} func
-         * @param {number} val
+         * @param {number} old_val
+         * @param {number} new_val
          * @returns {number}
          */
-        #adjust_config_val(key, lower, upupper, func, val) {
-            val = func(val);
-            const r = (lower < val && val < upupper) ? [`successfully adjust ${key} : ${val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
+        #adjust_config_val(key, lower, upupper, func, old_val, new_val) {
+            new_val = func(new_val);
+            // 浮点数的比较, 精度为10^-5
+            if (Math.abs(old_val - new_val < 1e-5)) return 0;
+            const r = (lower < new_val && new_val < upupper) ? [`successfully adjust ${key} : from ${old_val} to ${new_val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
             Colorful_Console.print(...r);
-            return r.length === 1 ? val : 0;
+            return r.length === 1 ? new_val : 0;
         }
         // 初始化模型
         #init_module() {
@@ -871,13 +874,13 @@
             try {
                 if (typeof configs === 'object') {
                     let f = [['threshold', 0.029, 0.31, Number, 1], ['single_weight', 0.009, 1.1, Number, 1], ['feature_length_limit', 2, 10, parseInt, 10], ['alpha', 0.009, 1.1, Number, 10]].reduce((b, e) => {
-                        const val = configs[e[0]];
-                        if (val) {
-                            const i = e.pop();
-                            e.push(val);
-                            const v = this.#adjust_config_val(...e);
-                            if (v > 0) {
-                                this.#configs[e[0]] = v;
+                        const key = e[0], new_val = configs[key];
+                        if (new_val) {
+                            const i = e.pop(), old_val = this.#configs[key] || 0;
+                            e.push(old_val, new_val);
+                            const nv = this.#adjust_config_val(...e);
+                            if (nv > 0) {
+                                this.#configs[key] = nv;
                                 return b + i;
                             }
                             return b;
