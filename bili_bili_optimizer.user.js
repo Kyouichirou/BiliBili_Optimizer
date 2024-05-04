@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.6
+// @version      1.6.7
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -650,7 +650,7 @@
             // 临界值, 当w和b的概率的差距大于临界值时，执行判断
             threshold: 0.15,
             // 单个字的权重
-            single_weight: 0.618,
+            single_weight: 1,
             // 特征值个数限制
             feature_length_limit: 5,
             // 模型名称
@@ -754,9 +754,10 @@
          * @returns {number}
          */
         #adjust_config_val(key, lower, upupper, func, old_val, new_val) {
+            // 确保输入内容为数字
             new_val = func(new_val);
             // 浮点数的比较, 精度为10^-5
-            if (Math.abs(old_val - new_val < 1e-5)) return 0;
+            if (Math.abs(old_val - new_val) < 1e-5) return 0;
             const r = (lower < new_val && new_val < upupper) ? [`successfully adjust ${key} : from ${old_val} to ${new_val}`] : [`${key} must be between ${lower} and ${upupper}`, 'warning'];
             Colorful_Console.print(...r);
             return r.length === 1 ? new_val : 0;
@@ -873,7 +874,7 @@
         adjust_configs(configs) {
             try {
                 if (typeof configs === 'object') {
-                    let f = [['threshold', 0.029, 0.31, Number, 1], ['single_weight', 0.009, 1.1, Number, 1], ['feature_length_limit', 2, 10, parseInt, 10], ['alpha', 0.009, 1.1, Number, 10]].reduce((b, e) => {
+                    let f = [['threshold', 0.029, 0.31, Number, 1], ['single_weight', 0.79, 2.1, Number, 1], ['feature_length_limit', 2, 10, parseInt, 10], ['alpha', 0.009, 1.1, Number, 10]].reduce((b, e) => {
                         const key = e[0], new_val = configs[key];
                         if (new_val) {
                             const i = e.pop(), old_val = this.#configs[key] || 0;
@@ -886,8 +887,7 @@
                             return b;
                         }
                         return b;
-                    }, 0);
-                    let name = configs.name;
+                    }, 0), name = configs.name;
                     if (name) {
                         name = name.toLowerCase();
                         if (name !== this.#configs.name) {
