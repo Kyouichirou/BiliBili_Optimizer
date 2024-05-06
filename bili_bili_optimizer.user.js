@@ -2600,7 +2600,7 @@
                 run_in: [1],
                 css: `
                 .video-page-special-card-small,
-                .pop-live-small-mode.part-undefined{
+                .pop-live-small-mode.part-1{
                     display: none !important;
                 }`
             },
