@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      1.6.7
+// @version      2.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -14,8 +14,11 @@
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
 // @connect      files.superbed.cn
-// @connect      i.postimg.cc
+// @connect      8.z.wiki
 // @grant        GM_info
+// @grant        GM_getTab
+// @grant        GM_getTabs
+// @grant        GM_saveTab
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -29,6 +32,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
 // @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
 // @noframes
 // @run-at       document-start
 // ==/UserScript==
@@ -94,6 +98,12 @@
          */
         addvaluechangeistener(key_name, callback_func) { return GM_addValueChangeListener(key_name, this._check_from_remote(callback_func)); },
         /**
+         * 移除键值监听
+         * @param {number} cid
+         * @returns {null}
+         */
+        removevaluechangeistener(cid) { return GM_removeValueChangeListener(cid); },
+        /**
          * 打开链接
          * @param {string} url
          * @param {object} configs
@@ -110,6 +120,29 @@
         copy_to_clipboard: (content, type, func) => GM_setClipboard(content, type, func),
         // 关闭标签页
         window_close: () => window.close(),
+        /**
+         * 设置标签
+         * @param {string} key
+         * @param {any} val
+         */
+        set_tab(key, val) {
+            this.get_tab((tab) => {
+                tab[key] = val;
+                GM_saveTab(tab);
+            });
+        },
+        /**
+         * 读取多个标签
+         * @param {Function} func
+         * @returns {undefined}
+         */
+        get_tabs: (func) => GM_getTabs(func),
+        /**
+         * 读取单个标签
+         * @param {Function} func
+         * @returns {undefined}
+         */
+        get_tab: (func) => GM_getTab(func),
         // 脚本信息
         info: GM_info,
         // 宿主页面window
@@ -128,7 +161,7 @@
         weibo_ico: 'https://files.superbed.cn/store/images/dc/0c/6630afa60ea9cb140356dc0c.webp',
         weibo_url: 'https://files.superbed.cn/store/images/b9/2a/6630af950ea9cb140356b92a.png',
         tea_ico: 'https://files.superbed.cn/store/images/72/8c/6630af710ea9cb140356728c.png',
-        support: 'https://www.freeimg.cn/i/2024/04/30/6630b0568bb99.webp',
+        support: 'https://8.z.wiki/autoupload/20240518/nodV/payme.webp',
         install: 'https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js',
         feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
@@ -166,7 +199,7 @@
             const xmls = [];
             for (const k in this) {
                 const url = (k === 'main' || k.startsWith('_')) ? '' : this[k];
-                ['i.postimg.cc', 'files.superbed.cn'].some((e) => url.includes(e)) && xmls.push(this._http(url));
+                ['8.z.wiki', 'files.superbed.cn'].some((e) => url.includes(e)) && xmls.push(this._http(url));
             }
             Promise.allSettled(xmls).then(res => {
                 const error_urls = res.filter(item => item.status === 'rejected').map(item => item.reason);
@@ -178,6 +211,10 @@
     };
     // 链接常量 ---------------
 
+    const Reserved_Words = [
+        ''
+    ];
+
     // --------------- 通用函数
     // 自定义打印内容
     const Colorful_Console = {
@@ -185,6 +222,7 @@
             warning: "#F73E3E",
             debug: "#327662",
             info: "#1475b2",
+            crash: "#FF0000"
         },
         /**
          * 执行打印
@@ -201,6 +239,7 @@
                 `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
             ];
             console.log(...params), mode && GM_Objects.notification(content, type);
+            type === this._colors.crash && Statics_Variant_Manager.crash_log(content);
         }
     };
     // 基本信息匹配
@@ -370,6 +409,9 @@
 
     // Bayes_Module ----------
     class Bayes_Module {
+        // 启用状态
+        enable_state = true;
+        #module_monitor_id = null;
         // 分词器
         #segmenter = null;
         // 提取英文单词
@@ -472,7 +514,7 @@
             '「Python」基础教程函数有什么作用？如何定义函数',
             '「Python」进阶教程什么是模块？如何创建导入和使用模块',
             '「Python」进阶教程类有什么作用？如何定义和使用类',
-            '「Python」进阶教程什么是构造方法？构造方法__init__以及参数self的作用',
+            '「Python」进阶教程什么是构造方法？构造方法__initial__以及参数self的作用',
             '「Python」进阶教程类的方法有什么作用？如何定义和调用类的方法',
             '「Python」进阶教程什么是类的继承？继承的作用，如何实现类的继承',
             '「Python」进阶教程方法重写有什么用？如何实现类的方法重写？使用super访问父类',
@@ -763,7 +805,9 @@
             return r.length === 1 ? new_val : 0;
         }
         // 初始化模型
-        #init_module() {
+        #initial_module() {
+            this.enable_state = GM_Objects.get_value('bayes_enable_state', true);
+            if (!this.enable_state) return;
             let bayes_white_len = GM_Objects.get_value('bayes_white_len', 0), bayes_black_len = 0;
             if (bayes_white_len) {
                 bayes_black_len = GM_Objects.get_value('bayes_black_len', 0);
@@ -785,18 +829,29 @@
             this.#update_paramters();
             this.#get_module();
         }
+        // 取消模型监听
+        #cancel_monitor_module() {
+            GM_Objects.removevaluechangeistener(this.#module_monitor_id);
+            this.#module_monitor_id = null;
+        }
         // 监听判断是否需要重新载入/切换模型/更新参数
         #monitor_paramters_change() {
-            GM_Objects.addvaluechangeistener('bayes_reload', ((...args) => {
-                const a = args[2]['mode'];
-                if (a === 0) return;
-                else if (a === 1) this.#init_module();
-                else {
-                    this.#get_configs();
-                    if (a === 2) this.#update_paramters();
-                    else if (a === 3) this.#get_module(); // 切换先验概率
-                    else if (a === 4) this.#update_paramters(), this.#get_module();
-                }
+            this.#module_monitor_id = GM_Objects.addvaluechangeistener('bayes_reload', ((...args) => {
+                const funcs = {
+                    0: (_id) => null,
+                    1: (_id) => this.#initial_module(),
+                    5: (_id) => {
+                        this.#cancel_monitor_module();
+                        this.enable_state = false;
+                    },
+                    other: (id) => {
+                        this.#get_configs();
+                        if (id === 2) this.#update_paramters();
+                        else if (id === 3) this.#get_module(); // 切换先验概率
+                        else if (id === 4) this.#update_paramters(), this.#get_module();
+                    }
+                }, id = args[2]['mode'], f = funcs[id] || funcs.other;
+                f && f(id);
             }).bind(this));
         }
         /**
@@ -863,7 +918,7 @@
             if (mode === 0 && !confirm('reset bayes? it will clear current settings and words data to restore default settings, continue?')) return;
             const config_names = ['bayes_black_counter', 'bayes_black_len', 'bayes_white_counter', 'bayes_white_len', 'bayes_configs'], i = config_names.length;
             config_names.slice(...[[0, i], [0, i - 1], [-1, i]][mode]).forEach(e => GM_Objects.set_value(e, null));
-            this.#init_module();
+            this.#initial_module();
             this.#trigger_reload(1);
             Colorful_Console.print('successfully reset bayes', 'info', true);
         }
@@ -934,11 +989,30 @@
             ];
             console.log(data.join('\n'));
         }
+        /**
+         * 启用/禁用模型
+         * @param {boolean} state
+         */
+        set_enable_state(state) {
+            const s = typeof state;
+            if (s !== 'boolean' || (s === 'number' && state !== 0 || state !== 1)) {
+                Colorful_Console.print('enable state must be a boolean or a number: 0 | 1', 'warning');
+                return;
+            }
+            if (state == this.enable_state) return;
+            Colorful_Console.print(`setup bayes to ${state} from ${this.enable_state}; enable will take effect after reload; disable will take effect now.`, 'info');
+            if (!state) {
+                this.#cancel_monitor_module();
+                this.#trigger_reload(5);
+            }
+            this.enable_state = state;
+            GM_Objects.set_value('bayes_enable_state', state);
+        }
         get configs() { return this.#configs; }
         get test_result() { return this.#result_detail; }
         constructor() {
             this.#segmenter = new Intl.Segmenter('cn', { granularity: 'word' });
-            this.#init_module();
+            this.#initial_module();
             this.#monitor_paramters_change();
         }
     }
@@ -1370,6 +1444,7 @@
         rate_videos: null,
         // 自动, 历史访问视频, 动态, 限制数量[]
         visited_videos: null,
+        session_visited_videos: [],
         // 自动, 累积拦截次数, 跨标签通信
         accumulative_total: GM_Objects.get_value('accumulative_total', 0),
         accumulative_bayes: GM_Objects.get_value('accumulative_bayes', 0),
@@ -1418,6 +1493,7 @@
             return true;
         },
         // 创建贝叶斯辅助函数
+        _stop_bayes() { this.bayes_module = { bayes: (_content) => 0 }; },
         _create_bayes_funcs() {
             GM_Objects.window.bayes = new Proxy({
                 /**
@@ -1426,6 +1502,7 @@
                  * @returns {object}
                  */
                 configs: (configs) => this.bayes_module.adjust_configs(configs),
+                enable: (state) => this.bayes_module.set_enable_state(state),
                 /**
                  * 测试文本分类
                  * @param {string} content
@@ -1445,6 +1522,7 @@
                         ['reset', 'bayes.reset(0); reset the bayes, default 0, will clear all data; 1 reset configs; 2 clear words data and keep configs.'],
                         ['deatail', 'bayes.detail; show the detail of bayes model.'],
                         ['test', 'test("content"); will return the result of test content.'],
+                        ['enable', 'bayes default 1 enable, bayes.enable = 0; disable bayes'],
                         ['help', 'show the info of help.']
                     ], i = helps.reduce((acc, e) => {
                         const a = e[0].length;
@@ -1460,6 +1538,15 @@
                     else return target[prop];
                 },
                 set: (target, prop, value) => prop === 'configs' && target[prop](value),
+            });
+            // 用于监听bayes状态的改变, 修改包括脚本发起或者是远端发起的修改
+            let tmp_state = this.bayes_module.enable_state;
+            Object.defineProperty(this.bayes_module, 'enable_state', {
+                get: () => tmp_state,
+                set: (state) => {
+                    tmp_state = state;
+                    !state && this._stop_bayes();
+                }
             });
         },
         /**
@@ -1519,8 +1606,13 @@
                     f: (...args) => (this.accumulative_bayes = args[2])
                 },
                 visited_video_sync: {
-                    run_in: [2],
-                    f: (...args) => this.visited_videos.push(args[2])
+                    run_in: [0, 2],
+                    f: (...args) => {
+                        const id = args[2];
+                        this.visited_videos.push(id);
+                        this.session_visited_videos.push(id);
+                        GM_Objects.set_tab('session_visited_videos', this.session_visited_videos);
+                    }
                 },
                 rate_video_sync: {
                     run_in: [2],
@@ -1546,7 +1638,8 @@
                         const data = args[2];
                         (data.type === 'up' ? this.block_ups : this.rate_videos).update_active_status(data.value);
                     }
-                }
+                },
+
             };
             for (const k in configs) {
                 const item = configs[k];
@@ -1599,7 +1692,7 @@
         // 初始化视频评分数据
         rate_visited_data_sync(data) { GM_Objects.set_value(typeof data === 'string' ? 'visited_video_sync' : 'rate_video_sync', data); },
         // 初始化视频评分数据
-        init_rate_videos() {
+        initial_rate_videos() {
             const o = new Dic_Array(GM_Objects.get_value('rate_videos', []), 'video_id');
             // 检查评分函数
             o.check_rate = function (id) { return this.includes_r(id, true)?.rate || 0; };
@@ -1617,9 +1710,12 @@
             return o;
         },
         // 初始化拦截up数据
-        init_block_ups: () => new Dic_Array(GM_Objects.get_value('block_ups', []), 'up_id'),
+        initial_block_ups: () => new Dic_Array(GM_Objects.get_value('block_ups', []), 'up_id'),
         // 初始化历史访问数据
-        init_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
+        initial_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
+        // 当前浏览器会话播放的历史视频
+        initial_session_visited_videos() { GM_Objects.get_tabs(((tabs) => Object.values(tabs).some(tab => (this.session_visited_videos = tab.session_visited_videos) ? true : false)).bind(this)); },
+        check_visited_video(video_id) { return this.session_visited_videos.includes(video_id) ? 1 : this.visited_videos.includes(video_id) ? 2 : 0; },
         // 展示数据状态
         show_status: () => null,
         /**
@@ -1633,15 +1729,19 @@
             if (site_id > 2) return;
             this.cache_block_ups = [], this.cache_block_ups.includes_r = includes_r.call(this.cache_block_ups, true, 'up_id');
             this.cache_block_videos = [], this.cache_block_videos.includes_r = includes_r.call(this.cache_block_videos, true);
-            this.block_ups = this.init_block_ups();
+            this.block_ups = this.initial_block_ups();
             this.block_videos = new Block_Video_Array(GM_Objects.get_value('block_videos', []), 0);
-            // 仅在搜索的页面启用, 播放页不需要
-            if (site_id === 2) this.rate_videos = this.init_rate_videos(), this.visited_videos = this.init_visited_videos();
+            // 评分信息仅在搜索的页面启用, 播放页不需要, 播放页只需要执行一次, 放置于静态数据管理模块
+            if (site_id === 2) this.rate_videos = this.initial_rate_videos();
+            if (site_id !== 1) {
+                this.visited_videos = this.initial_visited_videos();
+                this.initial_session_visited_videos();
+            }
             this._data_sync_monitor(site_id);
             this._rate_up_status_write_monitor();
             this.show_status = this._show_data_status;
             this.bayes_module = new Bayes_Module();
-            this._create_bayes_funcs();
+            this.bayes_module.enable_state ? this._create_bayes_funcs() : '';
         },
     };
     // 动态数据管理 ---------
@@ -1653,7 +1753,7 @@
             /**
              * @returns {Array}
              */
-            get _data() { return Dynamic_Variants_Manager.init_block_ups(); },
+            get _data() { return Dynamic_Variants_Manager.initial_block_ups(); },
             /**
              * 检查up是否被拦截
              * @param {string} up_id
@@ -1687,7 +1787,7 @@
             /**
              * @returns {Array}
              */
-            get _data() { return Dynamic_Variants_Manager.init_rate_videos(); },
+            get _data() { return Dynamic_Variants_Manager.initial_rate_videos(); },
             /**
              * 检查视频的评分
              * @param {string} video_id
@@ -1723,12 +1823,22 @@
          * @param {string} video_id
          */
         add_visited_video(video_id) {
-            const arr = Dynamic_Variants_Manager.init_visited_videos();
+            const arr = Dynamic_Variants_Manager.initial_visited_videos();
             arr.push(video_id);
             GM_Objects.set_value('visited_videos', arr);
             Dynamic_Variants_Manager.rate_visited_data_sync(video_id);
             Colorful_Console.print('play record has been writed');
         },
+        /**
+         * 异常日志记录
+         * @param {string} content
+         */
+        crash_log(content) {
+            const data = GM_Objects.get_value('crash_log', []);
+            data.unshift({ 'reason': content, 'time': new Date().toLocaleString() });
+            while (data.length > 50) data.pop();
+            GM_Objects.set_value('crash_log', data);
+        }
     };
     // 静态数据管理 ---------
 
@@ -1764,8 +1874,8 @@
                 const data = GM_Objects.get_value('rate_videos', []);
                 data.sort((a, b) => a.add_date - b.add_date);
                 data.forEach(e => {
-                    e['last_active_date'] = new Date(e['last_active_date']).toDateString();
-                    e['add_date'] = new Date(e['add_date']).toDateString();
+                    e.last_active_date = new Date(e.last_active_date).toDateString();
+                    e.add_date = new Date(e.add_date).toDateString();
                 });
                 console.table(data);
             }
@@ -1827,11 +1937,11 @@
             is_collection: false
         };
         // 初始化是否成功
-        #init_flag = false;
+        #initial_flag = false;
         /**
          * @returns {boolean}
          */
-        get is_init_success() { return this.#init_flag; }
+        get is_initial_success() { return this.#initial_flag; }
         /**
          * @returns {object}
          */
@@ -1851,7 +1961,7 @@
                 if (video.length > 0) return video[0];
             };
             const video = document.getElementsByClassName('bwp-video');
-            return video.length > 0 ? video[0] : Colorful_Console.print('no video element of bwp-video', 'warning', true);
+            return video.length > 0 ? video[0] : Colorful_Console.print('no video element of bwp-video', 'crash', true);
         }
         #get_up_id() {
             const nodes = document.getElementsByClassName('staff-name');
@@ -1864,7 +1974,7 @@
             this.#video_info.video_id = Base_Info_Match.get_video_id(location.href);
             const node = document.getElementsByClassName('up-name');
             this.#video_info.up_id = node.length > 0 ? Base_Info_Match.get_up_id(node[0].href) : this.#get_up_id();
-            this.#video_info.duration = this.#video.duration;
+            this.#video_info.duration = this.#video.duration || unsafeWindow.player.getDuration();;
             // 检查获取的内容是否完整
             for (const key in this.#video_info) key !== 'is_collection' && !this.#video_info[key] && Colorful_Console.print(`video_info: lack of value: ${key}`, 'debug');
         }
@@ -1935,9 +2045,9 @@
                 this.#record_id = null;
             }
             const duration = parseInt(this.#video_info.duration * 500);
-            if (duration === 0) Colorful_Console.print('video duration exceptions', 'warning');
-            else this.#record_id = setTimeout(() => {
-                Statics_Variant_Manager.add_visited_video(this.#video_info.video_id);
+            duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
+                const id = this.#video_info.video_id;
+                Statics_Variant_Manager.add_visited_video(id);
                 this.#record_id = null;
             }, duration);
         }
@@ -2126,6 +2236,7 @@
             this.#download_flag = r;
         }
         video_change_id = null;
+        url_has_changed = false;
         // 监听视频播放发生变化
         #reset_menus(select, h) {
             let tmp = null;
@@ -2144,15 +2255,18 @@
         #url_change_monitor() {
             // 判断浏览器是否支持url change
             if (GM_Objects.supportonurlchange === null) {
-                window.addEventListener('urlchange', (info) => setTimeout(() => {
+                window.addEventListener('urlchange', (info) => {
                     const video_id = Base_Info_Match.get_video_id(info.url);
                     if (video_id === this.#video_info.video_id) return;
                     this.video_change_id = video_id;
+                    this.url_has_changed = true;
                     this.#add_bayes_flag = false;
-                    this.#load_video_info();
-                    this.#visited_record();
-                    this.#update_download_status(true);
-                }, 600));
+                    setTimeout(() => {
+                        this.#load_video_info();
+                        this.#visited_record();
+                        this.#update_download_status(true);
+                    }, 300);
+                });
                 return true;
             } else Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true);
         }
@@ -2200,7 +2314,7 @@
         theatre_mode() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-wide'); }
         constructor() {
             this.#video = this.#video_elemment;
-            if (this.#video) this.#init_flag = true;
+            if (this.#video) this.#initial_flag = true;
         }
         main() {
             // 先载入视频信息
@@ -2223,16 +2337,20 @@
 
     // ----------- 优化器主体
     class Bili_Optimizer {
+        // 是否登录账号
+        #user_is_login = false;
         // 执行配置
         #configs = null;
-        // 搜索页面初始化数据保存
-        #init_data = null;
-        // 搜索页面的fetch数据保存
+        // 页面初始化数据
+        #initial_data = null;
+        // 搜索页面的fetch数据
         #search_page_results = null;
         // 视频模块
         #video_instance = null;
+        // 视频侧边栏请求数据缓存
+        #video_data_cache = null;
         // 视频模块成功加载标志
-        #video_module_init_flag = false;
+        #video_module_initial_flag = false;
         // 需要等待页面加载完成后加载的函数
         #end_load_funcs = [];
         // 启动时需要启动的函数
@@ -2240,137 +2358,254 @@
         // 不同站点的配置
         #site_configs = {
             home: {
-                // 站点所在
+                // 站点所在id
                 id: 0,
-                // 初始化时需要检查的元素的class_name
-                init_class: 'feed-card',
-                // 之后需要检查的目标元素的class_name
+                // 目标元素的class_name
                 target_class: 'bili-video-card is-rcmd',
                 // api url 后缀
-                api_suffix: 'wbi/index/top/feed/rcmd',
-                // 处理api返回的数据
-                handle_data_func(data) {
-                    // 存在有空数据返回, 注意
-                    const info = {
-                        video_id: data.bvid,
-                        up_id: data.owner?.mid || '',
-                        up_name: data.owner?.name || '',
-                        title: data.title
-                    };
-                    // 确保数据都是字符串类型
-                    for (const k in info) info[k] += '';
-                    // data.business_info, 广告信息
-                    return data.business_info ? true : (!info.video_id && data.arcurl?.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info);
+                interpose_api_suffix: 'wbi/index/top/feed/rcmd',
+                // 初始化数据的键名
+                initial_data_name: '__pinia',
+                /**
+                 * html第一次载入时携带的数据的处理
+                 * @param {object} val
+                 * @returns {Array}
+                 */
+                initial_data_handler: (val) => {
+                    // 初始化的数据中包含了用户是否登录的数据
+                    // this.#user_is_login = val.feed?.data?.recommend.mid ? true: false;
+                    const data = val.feed?.data?.recommend?.item;
+                    return data ? data.map(e => {
+                        if (this.#configs.pre_data_check(e)) {
+                            this.#utilities_module.clear_data(e);
+                            return true;
+                        } else if (e.track_id) e.track_id = '';
+                        const v = Dynamic_Variants_Manager.check_visited_video(e.bvid);
+                        return v > 0 ? v : null;
+                    }) : Colorful_Console.print('initial_data object api has changed in home page.', 'crash', true);
                 },
-                // 读取目标元素的视频标题和up的名称
-                get_title_up_name(node, info) {
+                /**
+                 * 处理api返回的数据
+                 * @param {Array} data
+                 */
+                request_data_handler: (data, clear_data) => data.forEach(e => {
+                    if ((e.business_info || this.#configs.pre_data_check(e))) clear_data(e);
+                    else {
+                        const v = Dynamic_Variants_Manager.check_visited_video(e.bvid);
+                        if (v) e.title = `[H-${v}]${e.title}`;
+                    }
+                }),
+                /**
+                 * 判断发起请求数据api url是否需要进行拦截操作, 返回一个函数用于提取响应数据
+                 * @param {string} url
+                 * @returns {Function}
+                 */
+                handle_fetch_url: (url) => url.startsWith(this.#configs.interpose_api_prefix + this.#configs.interpose_api_suffix) ? (data) => data.data?.item : null,
+                /**
+                 * 添加数据到节点标题, 注意不是title
+                 * @param {HTMLElement} node
+                 * @param {string} val
+                 */
+                add_info_to_node_title(node, val) {
+                    const h = node.getElementsByTagName('h3')[0];
+                    h ? h.innerText = val + h.innerText : Colorful_Console.print('title element miss', 'crash');
+                },
+                // 读取目标节点元素的视频标题和up名称
+                /**
+                 *
+                 * @param {HTMLElement} node
+                 * @returns {object} { up_name: '', title: '' }
+                 */
+                get_title_up_name(node) {
+                    const info = { up_name: '', title: '' };
+                    // 由于上面的添加信息到节点的操作, 不能直接读取标题的内容而是悬浮时显示的title
                     info.title = node.getElementsByTagName('h3')[0]?.title.trim() || '';
                     info.up_name = node.getElementsByClassName('bili-video-card__info--author')[0]?.innerHTML.trim() || '';
+                    return info;
                 },
-                // 如何处理节点的方式
-                hide_node: (node) => (node.style.visibility = 'hidden'),
-                // 判断发起请求数据api url是否需要进行拦截操作
-                handle_fetch_url: (url) => url.startsWith(this.#configs.api_prefix) ? (data) => data.data?.item : null,
-                // 用于处理节点名称的匹配方式
-                contextmenu_handle: (classname, target_name) => classname.startsWith(target_name)
+                /**
+                 * 用于处理节点名称的匹配方式
+                 * @param {string} classname
+                 * @param {string} target_name
+                 * @returns {boolean}
+                 */
+                contextmenu_handle: (classname, target_name) => classname.startsWith(target_name),
+                check_is_login: (val) => val.feed?.data?.recommend.mid ? true : false,
             },
             video: {
                 id: 1,
-                // 视频部分的内容, 上层的classname无法覆盖全部的视频, 需要使用下一层的classname
-                init_class: 'card-box',
                 target_class: 'card-box',
-                api_suffix: 'archive/related',
-                handle_data_func(data) {
-                    const info = {
-                        video_id: data.bvid,
-                        up_id: data.owner?.mid || data.mid || '',
-                        up_name: data.owner?.name || data.author || '',
-                        title: data.title
-                    };
-                    for (const k in info) info[k] += '';
-                    return (!info.video_id && data.arcurl?.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info);
+                initial_data_name: '__INITIAL_STATE__',
+                interpose_api_suffix: ['archive/related', 'wbi/view/detail?aid=', 'wbi/view/detail?platform='],
+                initial_data_handler: (val) => {
+                    const data = val.related;
+                    const m = [{ "aid": 461236586, "cid": 357129641, "bvid": "BV1P5411T71D", "duration": 749, "pic": "http:\u002F\u002Fi1.hdslb.com\u002Fbfs\u002Farchive\u002Fc826072903444fd12e62de3b4cfec319399c547f.jpg", "title": "【漫漫说】推理小说中最震撼的杀人诡计！恐怖诡异宛如恶魔降临！", "owner": { "name": "汉森白JW", "mid": 98666360 }, "stat": { "danmaku": 2683, "view": 843076, "vt": 0 }, "season_id": 0, "season_type": 0, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 461236586 } }, { "aid": 878995844, "cid": 1411596744, "bvid": "BV1xN4y1n7fe", "duration": 1449, "pic": "http:\u002F\u002Fi1.hdslb.com\u002Fbfs\u002Farchive\u002F606da4b5643bf06a338245f21e7ed2fcc953a2e0.jpg", "title": "爆肝9262字！漫改东野圭吾最强推理《恶意》！【漫化经典#30】", "owner": { "name": "动机俱乐部", "mid": 128688586 }, "stat": { "danmaku": 799, "view": 376678, "vt": 0 }, "season_id": 1206933, "season_type": 1, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 878995844 } }, { "aid": 1951242765, "cid": 1449516213, "bvid": "BV1jC411p7eG", "duration": 779, "pic": "http:\u002F\u002Fi2.hdslb.com\u002Fbfs\u002Farchive\u002Fde57fbfde797baf28c7a4c182aa46cf402d4ee49.jpg", "title": "完美犯罪！跨越25年的缜密计谋，日本三大推理漫画之一《Q.E.D.证明终了》", "owner": { "name": "兽医杜立德", "mid": 9295953 }, "stat": { "danmaku": 281, "view": 240060, "vt": 0 }, "season_id": 2253399, "season_type": 1, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 1951242765 } }, { "aid": 398968754, "cid": 1138348074, "bvid": "BV1Ro4y1G7YN", "duration": 682, "pic": "http:\u002F\u002Fi0.hdslb.com\u002Fbfs\u002Farchive\u002Fc343525612249f1439a19cbf5ad2fb30d6ea1920.jpg", "title": "物理教授vs高科技犯罪者手绘东野圭吾推理短篇《坏死》", "owner": { "name": "绽放的金针菇", "mid": 16648984 }, "stat": { "danmaku": 610, "view": 398981, "vt": 0 }, "season_id": 1266365, "season_type": 1, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 398968754 } }, { "aid": 656751262, "cid": 1148533066, "bvid": "BV1gh4y1d75c", "duration": 597, "pic": "http:\u002F\u002Fi0.hdslb.com\u002Fbfs\u002Farchive\u002F309842b10b314b6f5b70dee3af9b49b997b0d7dd.jpg", "title": "他把杀人当作游戏，残害100人却是完美犯罪？江户川乱步经典短篇《红色房间》【漫漫说】", "owner": { "name": "汉森白JW", "mid": 98666360 }, "stat": { "danmaku": 1658, "view": 581580, "vt": 0 }, "season_id": 0, "season_type": 0, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 656751262 } }, ...new Array(15).fill({})];
+                    if (data) {
+                        const tmp = data.map(e => this.#configs.pre_data_check(e) ? (this.#utilities_module.clear_data(e), true) : null),
+                            n = data.filter((_v, i) => !tmp[i]),
+                            new_arr = n.length < 20 ? [...n, ...m].slice(0, 20) : n;
+                        val.related = new_arr;
+                        this.#video_data_cache = new_arr;
+                        return tmp;
+                    } else Colorful_Console.print('initial_data object api has changed in video page.', 'crash', true);
                 },
-                get_title_up_name(node, info) { [['title', 'title'], ['up_name', 'name']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.innerText.trim() || '')); },
-                hide_node: (node) => (node.style.display = 'none'),
-                handle_fetch_url: (url) => url.startsWith(this.#configs.api_prefix) ? (data) => data.data : null,
-                contextmenu_handle: (classname, target_name) => classname === target_name
+                clear_a_link: (node) => {
+                    const links = node.getElementsByTagName('a');
+                    for (const a of links) {
+                        const href = a.href;
+                        if (href) a.href = href.split('?spm_id_from')[0];
+                    }
+                },
+                add_date_to_node_title(node, val) {
+                    const t = node.getElementsByClassName('title')[0];
+                    t ? t.innerText = val + t.innerText : Colorful_Console.print('title element miss', 'crash');
+                },
+                // 侧边栏不知何故, 分别向连个不同的api请求两次数据, 返回的数据结构也不一样
+                // 视频播放页的相关视频数据请求了多次, 能够获得数据的api有3个
+                // 应该是和连续播放以及侧边栏插入内容分开造成的
+                // 不能采用清空数据的策略, 在视频播放页面该操作会导致侧边栏添加html元素时出现错误
+                // 筛选掉被过滤的内容, 重新生成新的数组
+                request_data_handler: (data, pre_data_check) => data.filter(e => !pre_data_check(e)),
+                get_title_up_name(node) {
+                    const info = {};
+                    [['title', 'title', 'title'], ['up_name', 'name', 'innerText']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.e[2].trim() || ''));
+                    return info;
+                },
+                /**
+                 * 视频页面的数据请求会发生两种情况: 1. 第一次载入, 请求一次, 因为html上的数据
+                 * B站在视频播放页这里的操作很迷
+                 * 请求的数据分别存放在不同的位置
+                 * @param {string} url
+                 * @returns {Function}
+                 */
+                handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.startsWith(this.#configs.interpose_api_prefix + e)) ? (response_content, pre_data_check) => {
+                    const data = response_content.data;
+                    if (!data) {
+                        Colorful_Console.print("the api of video data has change", 'crash', true);
+                        return;
+                    }
+                    let results = null;
+                    // 缓存的数据
+                    const cache_results = this.#video_data_cache;
+                    // 已经取得目标数组
+                    if (Array.isArray(data)) {
+                        if (cache_results) {
+                            response_content.data = cache_results;
+                            return;
+                        }
+                        results = this.#configs.request_data_handler(response_content.data, pre_data_check);
+                        response_content.data = results;
+                    } else {
+                        if (cache_results) {
+                            response_content.data.Related = cache_results;
+                            return;
+                        }
+                        results = this.#configs.request_data_handler(data.Related, pre_data_check);
+                        response_content.data.Related = results;
+                    }
+                    this.#video_data_cache = results;
+                } : null,
+                contextmenu_handle: (classname, target_name) => classname === target_name,
+                check_is_login: (val) => val.user?.isLogin ? true : false
             },
             search: {
                 id: 2,
                 parent_class: 'video-list row',
-                init_class: 'bili-video-card',
                 target_class: 'bili-video-card',
-                api_suffix: 'wbi/search/',
-                fetch_flag: false,
-                handle_data_func: (data) => {
-                    const info = {
-                        video_id: data.bvid,
-                        up_id: data.mid || data.owner?.mid || '',
-                        up_name: data.author || data.owner?.name || '',
-                        title: data.title
-                    };
-                    for (const k in info) info[k] += '';
-                    if (!info.video_id && data.arcurl?.includes('/cheese')) {
-                        this.#search_page_results.push(null);
-                        return true;
-                    }
-                    // 内容带有标签信息
-                    ['<em class=\"keyword\">', '</em>', '<em class="keyword">'].forEach(e => (info.title = info.title.replaceAll(e, '')));
-                    const r = Dynamic_Variants_Manager.completed_check(info);
-                    if (r) this.#search_page_results.push(null);
-                    else {
-                        const v_r = { v: 0, r: 0 };
-                        if (Dynamic_Variants_Manager.visited_videos.includes(info.video_id)) v_r.v = 1;
-                        v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(info.video_id);
-                        this.#search_page_results.push(((v_r.r !== 0 || v_r.v !== 0) ? v_r : null));
-                    }
-                    return r;
+                interpose_api_suffix: 'wbi/search/',
+                initial_data_name: '__pinia',
+                initial_data_handler: (val) => {
+                    // 需要注意访问的首页不是第一页的时候, 存在cookie, B站也可以直接以html返回数据, 而不是访问api
+                    // 这个是否两组数组都存在, 优先读取后者searchTypeResponse
+                    const { searchTypeResponse, searchResponse, searchAllResponse } = val.index ? val.index : val,
+                        data = searchTypeResponse?.searchTypeResponse?.result || (searchResponse || searchAllResponse)?.searchAllResponse?.result[11]?.data;
+                    return data ? data.map(e => {
+                        if (this.#configs.pre_data_check(e)) {
+                            this.#utilities_module.clear_data(e);
+                            return true;
+                        }
+                        const v_r = { v: 0, r: 0 }, vid = e.bvid;
+                        v_r.v = Dynamic_Variants_Manager.check_visited_video(vid);
+                        v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(vid);
+                        return ((v_r.r !== 0 || v_r.v !== 0) ? v_r : null);
+                    }) : Colorful_Console.print('initial_data object api has changed in search page.', 'crash', true);
                 },
-                get_title_up_name: (node, info) => this.#site_configs.home.get_title_up_name(node, info),
-                hide_node: (node) => (node.style.display = 'none'),
+                add_info_to_node_title(node, val) {
+                    const t = node.getElementsByClassName('title')[0];
+                    t ? t.innerText = val + t.innerText : Colorful_Console.print('title element miss', 'crash');
+                },
+                add_state_to_node(node, v_r) {
+                    const html = `
+                        <span class="bili-video-card__stats--item" data-v-62f526a6="">
+                            <span data-v-62f526a6="">r: ${v_r.r} | v: ${v_r.v}</span>
+                        </span>`;
+                    const ele = node.getElementsByClassName('bili-video-card__stats--left');
+                    ele.length > 0 ? ele[0].insertAdjacentHTML('beforeend', html) : Colorful_Console.print('fail to insert element to video card', 'crash');
+                },
+                fetch_flag: false,
+                /**
+                 *
+                 * @param {Array} data
+                 * @param {Function} clear_data
+                 */
+                request_data_handler: (data, clear_data) => {
+                    const lost_pic = this.#configs.lost_pic;
+                    this.#search_page_results = data.map(e => {
+                        if (this.#configs.pre_data_check(e)) {
+                            clear_data(e);
+                            e.pic = lost_pic;
+                            return false;
+                        }
+                        const v_r = { v: 0, r: 0 }, vid = e.bvid;
+                        v_r.v = Dynamic_Variants_Manager.check_visited_video(vid);
+                        v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(vid);
+                        return ((v_r.r !== 0 || v_r.v !== 0) ? v_r : null);
+                    });
+                },
+                get_title_up_name: (node) => this.#site_configs.home.get_title_up_name(node),
                 handle_fetch_url: (url) => {
-                    const a = (data) => {
-                        this.#search_page_results = [];
-                        if (data.data?.page === 1) {
-                            const r = data.data.result;
+                    // 第一页的处理
+                    const a = (response_content) => {
+                        if (response_content.data?.page === 1) {
+                            const r = response_content.data.result;
                             this.#configs.fetch_flag = true;
                             return r[r.length - 1].data;
                         }
-                        return data.data?.result;
-                    };
-                    const b = (data) => (this.#search_page_results = [], data.data?.result);
-                    const pref = this.#configs.api_prefix;
-                    const index = [
-                        ['all/v2?__refresh__=true'],
-                        ['type?category_id=&search_type=video'],
-                        ['type?__refresh__=true', 'search_type=video']
-                    ].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
+                        return response_content.data?.result;
+                    },
+                        b = (response_content) => (response_content.data?.result),
+                        pref = this.#configs.interpose_api_prefix + this.#configs.interpose_api_suffix,
+                        index = [
+                            ['all/v2?__refresh__=true'],
+                            ['type?category_id=&search_type=video'],
+                            ['type?__refresh__=true', 'search_type=video']
+                        ].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
                     return index < 0 ? null : index === 0 ? a : b;
                 },
                 contextmenu_handle: (classname, target_name) => classname === target_name,
+                // 检查搜索链接是否包含黑名单关键词
                 check_search: (href) => {
                     const c = decodeURIComponent(href.slice(32)), { a, b } = Dynamic_Variants_Manager.black_keys, r = a.find(e => c.includes(e)) || b.find(e => c.includes(e));
                     return r && (alert(`hey, bro, don't waste time on rubbish: "${r}"; there will be closed the page after this alert.`), GM_Objects.window_close(), true);
                 },
-                insert_blocked_element(node) {
-                    const html = `
-                    <div class="bili-video-cards blocked"
-                        style="position: absolute;background-color: rgba(60, 60, 60, 0.85);display: flex;justify-content: center;align-items: center;z-index: 10;backdrop-filter: blur(6px);border-radius: 6px;height: 100%;width: 100%;">
-                        <div style="color: rgb(250, 250, 250);">blocked</div>
-                    </div>`;
-                    node.insertAdjacentHTML('afterbegin', html);
-                }
+                // 搜索播放页面的初始化数据没有用户是否登录
+                check_is_login: () => document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false
             },
             space: { id: 3 },
             other: { id: 4 },
-            play: { id: 5 }
+            play: { id: 5 },
+            read: {
+                id: 6,
+                // 阻止复制内容添加来源声明
+                end_load_func: () => setTimeout(document.getElementById('article-content')?.addEventListener('copy', (e) => e.stopPropagation(), true), 1000)
+            }
         };
         // 通用工具函数
         #utilities_module = {
             /**
              * 获取节点的up, video的信息
              * @param {HTMLElement} node
-             * @returns {object}
+             * @returns {object | number}
              */
             get_up_video_info: (node) => {
                 const links = node.getElementsByTagName('a');
@@ -2379,36 +2614,28 @@
                     'up_name': '',
                     'video_id': '',
                     'title': '',
-                    'is_video': true // 清除掉课堂的内容
                 };
                 for (const a of links) {
                     const href = a.href;
+                    // 广告
                     if (href?.includes('cm.bilibili.com')) {
                         Colorful_Console.print(`advertisement clear: ${href}`);
-                        info.is_video = false;
-                        return info;
-                    }
-                    if (!info.video_id) {
+                        return null;
+                    } else if (!info.video_id) {
                         // 小课堂的内容清除掉
                         if (href.includes('/cheese')) {
                             Colorful_Console.print(`cheese clear: ${href}`);
-                            info.is_video = false;
-                            return info;
+                            return null;
                         }
                         info.video_id = Base_Info_Match.get_video_id(href);
                     }
                     else if (!info.up_id) info.up_id = Base_Info_Match.get_up_id(href);
                     else break;
                 }
-                this.#configs.get_title_up_name(node, info);
-                let i = 0, j = 0;
-                for (const k in info) {
-                    if (!info[k]) {
-                        j > 0 && Colorful_Console.print(`less data: ${k}`, 'debug');
-                        i++;
-                    } else j++;
-                }
-                return i > 1 ? null : (['up_name', 'title'].forEach(e => (info[e] = info[e].toLowerCase())), info);
+                const data = this.#configs.get_title_up_name(node);
+                ['title', 'up_name'].forEach(e => info[e] = data[e].toLowerCase());
+                // 检查是否存在空的数据, 假如为空, 则表明内容可能不是视频
+                return Object.values(info).every(e => e ? true : Colorful_Console.print(`less data: ${e}`, 'debug')) ? info : null;
             },
             /**
              * 将拦截对象的数据设置为空
@@ -2425,7 +2652,7 @@
                 }
             }
         };
-        // 代理拦截函数
+        // 代理, 各类拦截函数
         #proxy_module = {
             /**
              * 代理设置
@@ -2498,28 +2725,81 @@
                 Function.prototype.bind = new Proxy(Function.prototype.bind, {
                     apply: (...args) => {
                         if (args[1]?.name === 'fetch') {
-                            // 填充拦截之后的空白图片
-                            const lost_pic = '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg';
                             // 返回自定义的fetch函数替换掉fetch.bind(window)生成的函数
                             args[1] = async (...args) => {
-                                const [url, config] = args;
-                                const response = await fetch(url, config);
-                                // 根据配置的函数, 决定是否需要干预返回的结果
-                                const hfu = this.#configs.handle_fetch_url(url);
-                                // response, 只允许访问一次, clone一份, 在复制上进行操作
+                                const [url, config] = args,
+                                    response = await fetch(url, config),
+                                    // 根据配置的函数, 决定是否需要干预, 返回一个处理后续数据的函数
+                                    hfu = this.#configs.handle_fetch_url(url),
+                                    clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module);
                                 // 然后拦截json函数的返回内容, 从而实现对返回结果的拦截
-                                if (hfu) response.json = () => response.clone().json().then((data) => {
-                                    const results = hfu(data), hdf = this.#configs.handle_data_func;
-                                    // 假如拦截内容, 则清空该组内容, 图片填充
-                                    results ? results.forEach(e => hdf(e) && (this.#utilities_module.clear_data(e), (e.pic = lost_pic))) : Colorful_Console.print('url no match rule: ' + url, 'debug');
-                                    return data;
-                                });
+                                if (hfu) {
+                                    // response, 只允许访问一次, clone一份, 在复制上进行操作
+                                    response.json = () => response.clone().json().then((response_content) => {
+                                        const results = hfu(response_content),
+                                            spec = response_content.Spec;
+                                        // 清除掉这个广告内容
+                                        if (spec) clear_data(spec);
+                                        results ? this.#configs.request_data_handler(results, clear_data) : Colorful_Console.print('url no match rule: ' + url, 'debug');
+                                        return response_content;
+                                    });
+                                }
                                 return response;
                             };
                         }
                         return Reflect.apply(...args);
                     }
                 });
+            },
+            _xmlrequest: () => {
+                // B站视频播放页相关视频的数据请求, 从fetch改回xmlrequest
+                // 首次载入, 加载一次数据, 在登录账户时
+                // 第二次加载相关视频推荐时, 会请求两次数据
+                const handle_fetch_url = this.#configs.handle_fetch_url,
+                    clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module),
+                    pre_data_check = this.#configs.pre_data_check,
+                    check_user_login_api = this.#configs.check_user_login_api,
+                    user_is_login = this.#user_is_login,
+                    site_id = this.#configs.id;
+                // 不登陆的状态下, 会发起可能多达3次的请求, 也可能不请求数据, 非常诡异...
+                GM_Objects.window.XMLHttpRequest = class extends GM_Objects.window.XMLHttpRequest {
+                    constructor() {
+                        super();
+                        this.addEventListener('readystatechange', () => {
+                            if (this.readyState === 4 && this.status === 200) {
+                                let json = null;
+                                // 拦截首页的登录弹窗
+                                if (site_id === 0 && !user_is_login && this.responseURL === check_user_login_api) {
+                                    json = {
+                                        "code": 0,
+                                        "message": "0",
+                                        "ttl": 1,
+                                        "data": {
+                                            "isLogin": true,
+                                            "face": "https://i0.hdslb.com/bfs/face/67ceb14021cfbc0b2a9e40b4b254b0a3be428b46.jpg",
+                                            "face_nft": 0,
+                                            "face_nft_type": 0,
+                                            "wbi_img": {
+                                                "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                                                "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png"
+                                            }
+                                        }
+                                    };
+                                } else {
+                                    const url = this.responseURL, func = handle_fetch_url(url);
+                                    if (func) {
+                                        json = JSON.parse(this.responseText);
+                                        const spec = json.Spec;
+                                        func(json, pre_data_check);
+                                        // 清除掉这个广告内容
+                                        if (spec) clear_data(spec);
+                                    }
+                                }
+                                json && Object.defineProperty(this, 'responseText', { get() { return JSON.stringify(json); }, set(_val) { } });
+                            }
+                        });
+                    }
+                };
             },
             /**
              * 获得配置函数
@@ -2531,7 +2811,8 @@
                 const run_configs = {
                     _disable_body_contextmenu_event: { run_at: 0, run_in: Array.from({ length: 5 }, (_val, index) => index), type: 1 },
                     _fetch: { run_at: 0, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
-                    _search_box_clear: { run_at: 0, run_in: [0, 1, 3, 4, 5], type: 1 },
+                    _xmlrequest: { run_at: 0, run_in: [0, 1], type: 0 },
+                    _search_box_clear: { run_at: 0, run_in: [0, 1, 3, 4, 5, 6], type: 1 },
                     _addeventlistener: { run_at: 0, run_in: [2], type: 1 },
                     _setattribute: { run_at: 1, run_in: [1], type: 1 },
                     _history_replacestate: { run_at: 0, run_in: [1, 5], type: 1 },
@@ -2563,6 +2844,7 @@
                 li.v-popover-wrap.left-loc-entry{
                     visibility: hidden !important;
                 }
+                .login-tip,
                 .trending{
                     display: none !important;
                 }
@@ -2583,16 +2865,19 @@
                 .bili-live-card.is-rcmd{
                     visibility: hidden !important;
                 }
-                .bili-header .animated-banner,
-                section.channel-floor.bili-grid.no-margin,
-                picture#bili-header-banner-img,
+                .carousel,
                 .adblock-tips,
+                .vip-login-tip,
                 .recommended-swipe,
                 .channel-items__left,
+                .login-panel-popover,
+                .desktop-download-tip,
                 .channel-items__right,
-                a.channel-icons__item:nth-of-type(2),
                 .header-channel-fixed,
-                .carousel{
+                .bili-header .animated-banner,
+                picture#bili-header-banner-img,
+                a.channel-icons__item:nth-of-type(2),
+                section.channel-floor.bili-grid.no-margin{
                     display: none !important;
                 }`
             },
@@ -2627,19 +2912,18 @@
                     if (!(shift || ctrl)) return;
                     event.preventDefault();
                     event.stopPropagation();
-                    const target_name = this.#configs.target_class;
+                    const target_name = this.#configs.target_class, cfunc = this.#configs.contextmenu_handle;
                     let i = 0;
-                    const cfunc = this.#configs.contextmenu_handle;
                     try {
                         for (const p of event.composedPath()) {
                             const clname = p.className;
                             if (cfunc(clname, target_name)) {
-                                if (p.style.visibility !== 'hidden' && p.style.display !== 'none') {
-                                    this.#configs.hide_node(p);
-                                    const info = this.#utilities_module.get_up_video_info(p);
-                                    if (!info.is_video) break;
-                                    info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false)));
-                                }
+                                if (p.dataset.is_hidden) return;
+                                this.#configs.hide_node(p);
+                                this.#configs.add_info_to_node.dataset(p, 'is_hidden', 1);
+                                const info = this.#utilities_module.get_up_video_info(p);
+                                if (!info) break;
+                                info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false)));
                                 break;
                             }
                             if (++i > 6) break;
@@ -2652,8 +2936,8 @@
             },
             // 点击链接事件
             _click: () => {
-                const cure_href_reg = /[&\?](live|spm|from)[\w]+=\d+/;
-                const get_cure_href = (href) => href?.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href;
+                const cure_href_reg = /[&\?](live|spm|from)[\w]+=\d+/,
+                    get_cure_href = (href) => href?.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href;
                 document.addEventListener('click', (event) => {
                     const path = event.composedPath();
                     let i = 0;
@@ -2729,68 +3013,69 @@
                         }
                         return false;
                     }
-                };
-                // 视频控制
-                const video_control = {
-                    p: () => this.#video_instance.play_control(),
-                    l: () => this.#video_instance.light_control(),
-                    t: () => this.#video_instance.theatre_mode(),
-                    u: () => this.#video_instance.wide_screen(),
-                    '=': () => this.#video_instance.voice_control(true),
-                    '-': () => this.#video_instance.voice_control(false),
-                    main(key) { this[key]?.(); }
-                };
-                // 关键词黑名单管理
-                const manage_black_key = {
-                    _func: (data) => {
-                        const nodes = document.getElementsByClassName(this.#configs.target_class);
-                        for (const node of nodes) {
-                            const info = this.#utilities_module.get_up_video_info(node);
-                            if (info) {
-                                const { title, up_name } = info;
-                                (!info.is_video || data.some(e => title.includes(e) || up_name.includes(e))) && this.#configs.hide_node(node);
+                },
+                    // 视频控制
+                    video_control = {
+                        p: () => this.#video_instance.play_control(),
+                        l: () => this.#video_instance.light_control(),
+                        t: () => this.#video_instance.theatre_mode(),
+                        u: () => this.#video_instance.wide_screen(),
+                        '=': () => this.#video_instance.voice_control(true),
+                        '-': () => this.#video_instance.voice_control(false),
+                        main(key) { this[key]?.(); }
+                    },
+                    // 关键词黑名单管理
+                    manage_black_key = {
+                        _func: (data) => {
+                            const nodes = document.getElementsByClassName(this.#configs.target_class);
+                            for (const node of nodes) {
+                                if (node.dataset.is_hidden) continue;
+                                const info = this.#utilities_module.get_up_video_info(node);
+                                if (info) {
+                                    const { title, up_name } = info;
+                                    data.some(e => title.includes(e) || up_name.includes(e)) && this.#configs.hide_node(node);
+                                }
                             }
+                        },
+                        a: { title: 'add', mode: true },
+                        r: { title: 'remove', mode: false },
+                        main(key) {
+                            const c = this[key];
+                            if (c) {
+                                const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
+                                const s = prompt(title).trim();
+                                if (s) {
+                                    const a = s.split(' ').map(e => e.trim()).filter(e => !e?.includes("_")).map(e => e.toLowerCase());
+                                    a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
+                                }
+                                return true;
+                            }
+                            return false;
                         }
                     },
-                    a: { title: 'add', mode: true },
-                    r: { title: 'remove', mode: false },
-                    main(key) {
-                        const c = this[key];
-                        if (c) {
-                            const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
-                            const s = prompt(title).trim();
-                            if (s) {
-                                const a = s.split(' ').map(e => e.trim()).filter(e => !e?.includes("_")).map(e => e.toLowerCase());
-                                a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
-                            }
-                            return true;
-                        }
+                    // 管理贝叶斯
+                    manage_bayes = {
+                        _add_white() {
+                            const s = prompt('add content to bayes white list').trim();
+                            return s && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true), true;
+                        },
+                        main(key) { return key === 'w' && this._add_white(); }
+                    },
+                    // 文本标签, 需要排除输入
+                    local_tags = ["textarea", "input"], class_tags = ['input', 'text', 'editor'],
+                    check_is_input = (target) => {
+                        const localname = (target.localName || '').toLowerCase();
+                        if (localname && local_tags.includes(localname)) return true;
+                        const classname = (target.className || '').toLowerCase();
+                        if (classname && class_tags.some(e => classname.includes(e))) return true;
                         return false;
-                    }
-                };
-                // 管理贝叶斯
-                const manage_bayes = {
-                    _add_white() {
-                        const s = prompt('add content to bayes white list').trim();
-                        return s && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true), true;
-                    },
-                    main(key) { return key === 'w' && this._add_white(); }
-                };
-                // 文本标签, 需要排除输入
-                const local_tags = ["textarea", "input"], class_tags = ['input', 'text', 'editor'];
-                const check_is_input = (target) => {
-                    const localname = (target.localName || '').toLowerCase();
-                    if (localname && local_tags.includes(localname)) return true;
-                    const classname = (target.className || '').toLowerCase();
-                    if (classname && class_tags.some(e => classname.includes(e))) return true;
-                    return false;
-                };
+                    };
                 document.addEventListener('keydown', (event) => {
                     if (event.shiftKey || event.ctrlKey || event.altKey) return;
                     if (check_is_input(event.target)) return;
                     const key = event.key.toLowerCase();
                     const id = this.#configs.id;
-                    !search.main(key) && (this.#video_module_init_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key));
+                    !search.main(key) && (this.#video_module_initial_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key));
                 });
             },
             /**
@@ -2800,8 +3085,100 @@
              */
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
         };
-        // 特定页面执行函数
+        // 特定页面执行函数, 由于内容比较多, 不放在 #configs
         #page_modules = {
+            /**
+             * 遍历视频卡片
+             * @param {HTMLElement} target
+             * @param {Array} datalist
+             * @returns {null}
+             */
+            _traversal_video_card: (target, datalist) => datalist && setTimeout(() => {
+                if (datalist.length === 0) return;
+                const parent_class = this.#configs.parent_class;
+                if (parent_class) {
+                    const parent_nodes = document.getElementsByClassName(parent_class), i = parent_nodes.length;
+                    if (i > 0) target = parent_nodes[i - 1];
+                    else {
+                        Colorful_Console.print('without traversable nodes.', 'debug');
+                        return;
+                    }
+                }
+                const nodes = target.getElementsByClassName(this.#configs.target_class);
+                if (nodes.length === 0) {
+                    Colorful_Console.print('no initial elements', 'debug');
+                    return;
+                }
+                const hide_node = this.#configs.hide_node,
+                    add_info_to_node_title = this.#configs.add_info_to_node_title,
+                    add_data_to_node_dataset = this.#configs.add_data_to_node_dataset,
+                    add_state_to_node = this.#configs.add_state_to_node,
+                    clear_a_link = this.#configs.clear_a_link || ((_node) => null);
+                let i = 0;
+                // 首页, api请求的数据被清空, 则在html上是不会创建节点的, 搜索页和播放页上, 假如清空还是会创建节点, 当还创建节点就添加dataset
+                for (const node of nodes) {
+                    const info = datalist[i];
+                    let f = true;
+                    if (info) {
+                        const type = typeof info;
+                        if (type === 'boolean') {
+                            add_data_to_node_dataset(node, 'is_hidden', 1);
+                            info && hide_node(node);
+                            f = false;
+                        } else if (type === 'number') add_info_to_node_title(node, `[Visited(${info})]`);
+                        else if (type === 'object') add_state_to_node(node, info);
+                    }
+                    f && clear_a_link(node);
+                    i++;
+                }
+
+            }, 100),
+            // 监听拦截up或者视频的变化, 对整个页面遍历, 检查是否需要拦截
+            _block_video_up_data_sync_monitor: () => {
+                // 监听同步数据的改变
+                // 搜索页, 播放页, 首页
+                // add or Remove
+                const clear_all_card = (data) => {
+                    // 同步数据, 执行清除的操作
+                    // 拦截up, 要全部执行, 拦截视频, 则挑出
+                    const val = data.value,
+                        [name, id] = typeof val === 'string' ? ['video_id', val] : ['up_id', val.up_id],
+                        hide_node = this.#configs.hide_node,
+                        add_data_to_node_dataset = this.#configs.add_data_to_node_dataset,
+                        get_up_video_info = this.#utilities_module.get_up_video_info,
+                        nodes = document.getElementsByClassName(this.#configs.target_class);
+                    for (const node of nodes) {
+                        if (node.dataset.is_hidden) continue;
+                        const info = get_up_video_info(node);
+                        if (info) {
+                            if (info[name] === id) {
+                                hide_node(node);
+                                add_data_to_node_dataset(node, 'is_hidden', 1);
+                                // 如果拦截的是视频, 则跳出, 如果是up, 继续遍历
+                                if (name === 'video_id') break;
+                            }
+                        }
+                    }
+                };
+                let tmp = null;
+                Object.defineProperty(Dynamic_Variants_Manager, 'up_video_data_sync_info', { set: (v) => { clear_all_card(v), tmp = v; }, get: () => tmp });
+            },
+            // 初始化页面数据的清理
+            _initial_data_intercept: (id, href) => {
+                if (id === 1 && !['com/video', 'com/all'].some(e => href.includes(e))) return;
+                let initial_data = null;
+                const initial_data_handler = this.#configs.initial_data_handler.bind(this);
+                Object.defineProperty(GM_Objects.window, this.#configs.initial_data_name, {
+                    set: (val) => {
+                        if (val) {
+                            this.#initial_data = initial_data_handler(val);
+                            initial_data = val;
+                        }
+                    },
+                    get: () => initial_data
+                });
+            },
+            _initial_filter: () => this.#page_modules._traversal_video_card(document, this.#initial_data),
             // space页面
             _space_module: {
                 _create_button(mode) {
@@ -2856,122 +3233,116 @@
             },
             // 搜索页面
             _search_module: {
-                init: (href) => {
-                    // B站页面改变, 非all首次访问的数据也被整合到html
-                    if (!['com/video', 'com/all'].some(e => href.includes(e))) return;
-                    let init_data = null;
-                    Object.defineProperty(GM_Objects.window, '__pinia', {
-                        set: (val) => {
-                            // 记录, => 标签也写
-                            this.#init_data = [];
-                            if (val) {
-                                const { searchResponse, searchAllResponse } = val.index ? val.index : val;
-                                const data = (searchResponse || searchAllResponse)?.searchAllResponse?.result[11]?.data;
-                                data ? data.forEach(e => {
-                                    const info = {
-                                        up_id: e.mid,
-                                        up_name: e.author,
-                                        title: e.title,
-                                        video_id: e.bvid
-                                    };
-                                    for (const k in info) info[k] = info[k] + ''; // 确保所有的数据都是字符串
-                                    ['<em class=\"keyword\">', '</em>', '<em class="keyword">'].forEach(e => (info.title = info.title.replaceAll(e, '')));
-                                    if ((!info.video_id && e.arcurl.includes('/cheese')) || Dynamic_Variants_Manager.completed_check(info)) {
-                                        this.#utilities_module.clear_data(e);
-                                        this.#init_data.push('hide');
-                                    } else {
-                                        const v_r = { v: 0, r: 0 };
-                                        if (Dynamic_Variants_Manager.visited_videos.includes(info.video_id)) v_r.v = 1;
-                                        v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(info.video_id);
-                                        this.#init_data.push(((v_r.r !== 0 || v_r.v !== 0) ? v_r : null));
-                                    }
-                                }) : Colorful_Console.print('init data info object api has changed', 'warning', true);
-                            }
-                            if (this.#init_data.length === 0) this.#init_data = null;
-                            init_data = val;
-                        },
-                        get() { return init_data; }
-                    });
-                },
-                main: () => {
-                    // 插入视频播放, 评分信息
-                    const insert_video_stat = (node, v_r) => {
-                        const html = `
-                        <span class="bili-video-card__stats--item" data-v-62f526a6="">
-                            <span data-v-62f526a6="">r: ${v_r.r} | v: ${v_r.v}</span>
-                        </span>`;
-                        const ele = node.getElementsByClassName('bili-video-card__stats--left');
-                        ele.length > 0 ? ele[0].insertAdjacentHTML('beforeend', html) : Colorful_Console.print('fail to insert element to video card', 'debug');
-                    };
-                    // 执行遍历html元素
-                    const clear_all_card = (target, data) => {
-                        if (!data || data.length === 0) {
-                            Colorful_Console.print('search clear card no data', 'debug');
-                            return;
-                        }
-                        const p = target.getElementsByClassName(this.#configs.parent_class);
-                        const k = p.length;
-                        if (k === 0) {
-                            Colorful_Console.print('search clear card no node', 'debug');
-                            return;
-                        }
-                        const nodes = p[k - 1].getElementsByClassName(this.#configs.target_class);
-                        const hd = this.#configs.hide_node;
-                        for (const node of nodes) {
-                            const v_r = data.shift();
-                            v_r && (v_r === 'hide' ? hd(node) : insert_video_stat(node, v_r));
-                        }
-                    };
+                main: () => setTimeout(() => {
                     // 节点变化监, 用于精确执行操作html元素操作
-                    const node_monitor = () => {
-                        const wrapper = document.getElementsByClassName('search-page-wrapper');
-                        wrapper.length > 0 ? new MutationObserver((records) => {
+                    const wrapper = document.getElementsByClassName('search-page-wrapper');
+                    wrapper.length > 0 ? new MutationObserver((records) => {
+                        let f = false;
+                        for (const r of records) {
+                            for (const node of r.addedNodes) {
+                                f = (node.className || '').startsWith('search-page');
+                                if (f) {
+                                    this.#page_modules._traversal_video_card(node, this.#search_page_results);
+                                    break;
+                                }
+                            }
+                            if (f) break;
+                        }
+                    }).observe(wrapper[0], { childList: true }) : Colorful_Console.print('search page monitor no target node', 'crash', true);
+                    // 第一页的插入节点和请求数据的先后和其他的页面不一样, 所以这里额外处理
+                    // 由于首页插入的节点的操作在请求数据之前, 需要额外监听等待数据请求后才执行操作.
+                    const configs = this.#configs;
+                    // 私有属性无法直接拦截
+                    let tmp = null;
+                    Object.defineProperty(configs, 'fetch_flag', {
+                        set: (v) => (tmp = v) && this.#page_modules._traversal_video_card(document, this.#search_page_results),
+                        get: () => tmp
+                    });
+                }, 300)
+            },
+            // 视频播放页面
+            // 稍微等待一下视频的加载, 这里的这种方式不是很靠谱, 但是懒得监听元素来实现加载, 因为这里的操作对时间不是很敏感.
+            _video_module: {
+                // b站的用户登录检测统一向: https://api.bilibili.com/x/web-interface/nav 发起请求, 得到最终的数据用于验证登录状态, 每个页面都会发起这个请求
+                anti_login: {
+                    _trial_btn_click() {
+                        // 有时会有两组节点的出现
+                        const node = document.getElementsByClassName('bpx-player-toast-wrap');
+                        node.length > 0 ? new MutationObserver((records) => {
                             let f = false;
                             for (const r of records) {
                                 for (const node of r.addedNodes) {
-                                    f = (node.className || '').startsWith('search-page');
-                                    if (f) {
-                                        setTimeout(() => clear_all_card(node, this.#search_page_results), 100);
-                                        break;
+                                    const b = node.getElementsByClassName('bpx-player-toast-confirm-login');
+                                    if (b.length > 0) {
+                                        if (b[0].innerHTML.includes('试看')) {
+                                            f = true;
+                                            setTimeout(() => b[0].click());
+                                            break;
+                                        }
                                     }
                                 }
                                 if (f) break;
                             }
-                            !f && Colorful_Console.print('search-page monitior records no target', 'debug');
-                        }).observe(wrapper[0], { childList: true }) : Colorful_Console.print('search page monitor no target node', 'debug');
-                    };
-                    this.#init_data ? setTimeout(() => (clear_all_card(document, this.#init_data), this.#init_data = null, node_monitor()), 300) : node_monitor();
-                    const configs = this.#configs;
-                    let tmp = null;
-                    // 由于首页插入的节点的操作在请求数据之前, 需要额外监听等待数据请求后才执行操作.
-                    Object.defineProperty(configs, 'fetch_flag', {
-                        set: (v) => { tmp = v, v && setTimeout(() => clear_all_card(document, this.#search_page_results), 300); },
-                        get: () => tmp
-                    });
-                }
-            },
-            // 视频播放页面
-            _video_module: {
-                main: () => {
-                    // 遍历html元素, 同时清除url的追踪参数
-                    const clear_all_card = () => {
-                        const nodes = document.getElementsByClassName(this.#configs.target_class);
-                        for (const node of nodes) {
-                            const links = node.getElementsByTagName('a');
-                            for (const a of links) {
-                                const href = a.href;
-                                if (href) a.href = href.split('?spm_id_from')[0];
-                            }
-                        }
-                    };
-                    // 稍微等待一下视频的加载, 这里的这种方式不是很靠谱, 但是懒得监听元素来实现加载, 因为这里的操作对时间不是很敏感.
-                    setTimeout(() => {
-                        // 页面中相关的信息已经集成在html上
-                        clear_all_card();
-                        this.#video_instance = new Video_Module();
-                        (this.#video_module_init_flag = this.#video_instance.is_init_success) && this.#video_instance.main();
-                    }, 3000);
-                }
+                        }).observe(node[0], { childList: true, subtree: true }) : Colorful_Console.print('anti login monitor no target node', 'crash', true);
+                    },
+                    init() {
+                        const proxy = (target, target_name, handle) => (target[target_name] = new Proxy(target[target_name], handle));
+                        [
+                            // 干预settimeout, 试用高清是通过一般的计时器来实现超时的
+                            [
+                                unsafeWindow,
+                                'setTimeout',
+                                {
+                                    apply(target, thisArg, argArray) {
+                                        const [fn, time] = argArray;
+                                        return target.apply(thisArg, [fn, time === 30000 ? 1e8 : time]);
+                                    }
+                                }
+                            ],
+                            // 干预试用次数, 一天播放到一定次数就会不显示试用
+                            [
+                                Object,
+                                'defineProperty',
+                                {
+                                    apply(target, thisArg, args) {
+                                        let [obj, prop, descriptor] = args;
+                                        if (prop === 'isViewToday' || prop === 'isVideoAble') {
+                                            descriptor = {
+                                                get: () => true,
+                                                enumerable: false,
+                                                configurable: true
+                                            };
+                                        }
+                                        return Reflect.apply(target, thisArg, [obj, prop, descriptor]);
+                                    }
+                                }
+                            ],
+                            // 干预定时登录弹窗和暂停视频, 由于弹窗的计时不是通过固定的数值settimeout或者setinterval来实现的, 这里间接通过拦截相关html元素的创建来实现操作
+                            // 这里不采用干预上述的api的登录状态请求来干预弹窗, 因为干预api的方式会导致页面出现非登录的小弹窗提醒
+                            [
+                                Node.prototype,
+                                'appendChild',
+                                {
+                                    apply(target, thisArg, args) {
+                                        const node = args[0];
+                                        node.tagName?.toLowerCase() === 'script' && node.src.includes('miniLogin') ? setTimeout(() => unsafeWindow.player.play(), 100) : target.apply(thisArg, args);
+                                    }
+                                }
+                            ]
+                        ].forEach(e => proxy(...e));
+                    },
+                    main() { this._trial_btn_click(); }
+                },
+                main: () => setTimeout(() => {
+                    this.#video_instance = new Video_Module();
+                    if (this.#video_module_initial_flag = this.#video_instance.is_initial_success) {
+                        this.#video_instance.main();
+                        Object.defineProperty(this.#video_instance, 'url_has_changed', {
+                            set: (_val) => this.#video_data_cache = null,
+                            get: () => null
+                        });
+                    }
+                }, 3000)
             },
             // 首页
             _home_module: {
@@ -3001,78 +3372,44 @@
                 },
                 main() { GM_Objects.registermenucommand('maintain', this._maintain.bind(this)); }
             },
-            // 监听拦截up或者视频的变化, 对整个页面遍历, 检查是否是否被拦截
-            _block_video_up_data_sync_monitor: () => {
-                // 监听同步数据的改变
-                // 搜索页, 播放页, 首页
-                // add or Remove
-                const clear_all_card = (data) => {
-                    // 同步数据, 执行清除的操作
-                    // 拦截up, 要全部执行, 拦截视频, 则挑出
-                    const val = data.value;
-                    const [name, id] = typeof val === 'string' ? ['video_id', val] : ['up_id', val['up_id']];
-                    const func = this.#configs.hide_node;
-                    const nodes = document.getElementsByClassName(this.#configs.target_class);
-                    for (const node of nodes) {
-                        const info = this.#utilities_module.get_up_video_info(node);
-                        if (info) {
-                            if (info[name] === id) {
-                                func(node);
-                                // 如果拦截的是视频, 则跳出, 如果是up, 继续遍历
-                                if (name === 'video_id') break;
-                            } else if (!info.is_video) func(node);
-                        }
-                    }
-                };
-                let tmp = null;
-                Object.defineProperty(Dynamic_Variants_Manager, 'up_video_data_sync_info', { set: (v) => { clear_all_card(v), tmp = v; }, get: () => tmp });
-            },
-            // 主页, 视频播放的初始化过滤
-            _init_filter: () => {
-                setTimeout(() => {
-                    const nodes = document.getElementsByClassName(this.#configs.init_class);
-                    if (nodes.length === 0) {
-                        Colorful_Console.print('no initial elements', 'debug', true);
-                        return;
-                    }
-                    const hd = this.#configs.hide_node, guvi = this.#utilities_module.get_up_video_info;
-                    for (const node of nodes) {
-                        const info = guvi(node);
-                        info && (!info.is_video || Dynamic_Variants_Manager.completed_check(info)) && hd(node);
-                    }
-                }, 100);
-            },
             /**
              * 配置执行函数
              * @param {number} id
              * @param {string} href
              * @returns {Array}
              */
-            get_funcs(id, href) {
-                const data = [];
-                if (id > 3) return data;
-                else if (id !== 3) {
-                    if (id !== 2) this._init_filter.start = 1, data.push(this._init_filter);
-                    this._block_video_up_data_sync_monitor.start = 0;
-                    data.push(this._block_video_up_data_sync_monitor);
-                }
-                let a = null;
-                switch (id) {
-                    case 0:
-                        a = this._home_module.main.bind(this._home_module), a.type = 1, a.start = 1, data.push(a);
-                        break;
-                    case 1:
-                        this._video_module.main.start = 1, data.push(this._video_module.main);
-                        break;
-                    case 2:
-                        a = this._search_module.init.bind(null, href), a.start = 0, a.type = 0, data.push(a);
-                        this._search_module.main.start = 1, data.push(this._search_module.main);
-                        break;
-                    case 3:
-                        a = this._space_module.main.bind(this._space_module), a.start = 1, a.type = 1, data.push(a);
-                        break;
-                    default:
-                        break;
+            get_funcs(id, href, is_login = true) {
+                const run_configs = {
+                    _initial_data_intercept: { run_at: 0, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0, is_args: true },
+                    _block_video_up_data_sync_monitor: { run_at: 1, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
+                    _initial_filter: { run_at: 1, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
+                    _home_module: { run_at: 1, run_in: [0], type: 1 },
+                    _search_module: { run_at: 1, run_in: [2], type: 0 },
+                    _video_module: { run_at: 1, run_in: [1], type: 1 },
+                    _space_module: { run_at: 1, run_in: [3], type: 1 }
+                }, data = [];
+                for (const k in run_configs) {
+                    const { run_at, run_in, type, is_args } = run_configs[k];
+                    if (run_in.includes(id)) {
+                        const m = this[k];
+                        let f = null;
+                        if (k.endsWith('_module')) {
+                            if (id === 1 && !is_login) {
+                                const anti_login = m.anti_login,
+                                    a = anti_login.main.bind(anti_login),
+                                    b = anti_login.init;
+                                a.start = 1, a.type = 1;
+                                b.start = 0, b.type = 1;
+                                data.push(a, b);
+                            }
+                            f = type ? m.main.bind(m) : m.main;
+                            f.start = run_at, f.type = type;
+                        } else {
+                            f = is_args ? m.bind(type ? this : null, id, href) : type ? m.bind(this) : m;
+                            f.start = run_at, f.type = type;
+                        }
+                        data.push(f);
+                    }
                 }
                 return data;
             }
@@ -3179,35 +3516,117 @@
                 return [f];
             }
         };
+        // 获取过滤配置
+        #load_filter_configs(id) {
+            // 预先检查数据是否满足要求
+            if (id > 2) return;
+            // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
+            const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [],
+                // 视频持续的时间(s)
+                duration_convertor = (duration) => [0, ...duration.replaceAll(' ', '').split(':')].slice(-3).reduce((units, cur, index) => {
+                    units[index] = units[index] * parseInt(cur);
+                    return units;
+                }, [3600, 60, 1]).reduce((ic, cur) => ic + cur, 0);
+            // 预检查数据是否满足要求
+            this.#configs.pre_data_check = (e) => {
+                const duration = e.duration;
+                if (duration) {
+                    const s = typeof duration,
+                        d = s === 'string' && duration.includes(':') ? duration_convertor(duration) : s === 'number' ? duration : 1e8;
+                    if (d < 120) {
+                        Dynamic_Variants_Manager.accumulative_func();
+                        Colorful_Console.print(`the duration of video ${e.bvid} is less than 2min(120s): ${d}s, skip it.`);
+                        return true;
+                    }
+                }
+                const info = {
+                    up_id: e.mid || e.owner?.mid || '',
+                    up_name: e.author || e.owner?.name || '',
+                    title: e.title,
+                    video_id: e.bvid
+                };
+                for (const k in info) {
+                    const t = info[k];
+                    if (!t) return true;
+                    // 确保所有的数据都是字符串
+                    info[k] = t + '';
+                }
+                search_tags.forEach(e => (info.title = info.title.replaceAll(e, '')));
+                return Dynamic_Variants_Manager.completed_check(info);
+            };
+            // 图片填充
+            this.#configs.lost_pic = '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg';
+            // 拦截请求数据的api前缀
+            this.#configs.interpose_api_prefix = 'https://api.bilibili.com/x/web-interface/';
+            // B站中每个页面都会发起的请求, 用于获取用户信息, 双重验证, 本地cookie & 服务器信息校检
+            this.#configs.check_user_login_api = 'https://api.bilibili.com/x/web-interface/nav';
+            // 如何隐藏节点的方式
+            this.#configs.hide_node = id == 1 ? (node) => node.style.display = 'none' : (node) => node.style.visibility = 'hidden';
+            this.#configs.add_data_to_node_dataset = (node, key, val) => node.dataset[key] = val;
+            // 判断用户登录, 函数备用, 作为后面引入api数据请求时使用, 这里暂时统一采用cookie的方式验证, 这里判断登录只用于干预视频的播放
+            this.#configs.check_is_login = () => document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
+            // 插入拦截信息, 此函数备用, 用于拦截了视频之后的处理, 假如不隐藏卡片, 就创建遮罩覆盖在上面
+            this.#configs.insert_blocked_element = (node) => {
+                // css可以独立出来放置的css注入模块
+                const html = `
+                <div class="bili-video-cards blocked"
+                    style="position: absolute;background-color: rgba(60, 60, 60, 0.85);display: flex;justify-content: center;align-items: center;z-index: 10;backdrop-filter: blur(6px);border-radius: 6px;height: 100%;width: 100%;">
+                    <div style="color: rgb(250, 250, 250);">Blocked</div>
+                </div>`;
+                node.insertAdjacentHTML('afterbegin', html);
+            };
+        }
         /**
          * 构造函数
          * @param {string} href
          */
         constructor(href) {
+            // 判断当前链接所处的站点
             // 确定配置参数
-            const site = ['search', 'space', 'video', 'play'].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
+            const site = [
+                'search',
+                'space',
+                'video',
+                'play',
+                'read'
+            ].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
             // 载入配置
             this.#configs = this.#site_configs[site];
             // 检查搜索链接是否包含垃圾
             if (this.#configs.check_search?.(href)) {
-                // window_close()无法关闭最后一个标签, 所以这里还需要拦截后续的操作
+                confirm("hey, bro, don't waste your time on rubbish, close current page?") && GM_Objects.window_close();
+                // 无法关闭浏览器的最后一个标签, 所以这里还需要拦截后续的操作
                 Colorful_Console.print('you are accessing a rubbish page and the script will not run properly.', 'warning', true);
                 return;
             }
-            this.#configs['api_suffix'] && (this.#configs['api_prefix'] = 'https://api.bilibili.com/x/web-interface/' + this.#configs['api_suffix']);
-            // 根据id生成执行函数
+            // 根据id生成配置
             const id = this.#configs.id;
             // 注入css, 尽快执行
             this.#css_module.inject_css(id);
             // 初始化动态数据管理模块
             Dynamic_Variants_Manager.init(id);
+            // 载入过滤模块的配置
+            this.#load_filter_configs(id);
+            this.#user_is_login = this.#configs.check_is_login?.();
             // 配置启动函数
-            [[this.#proxy_module], [this.#page_modules, href], [this.#event_module], [this.#html_modules]].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
+            // init, 表示该函数需要在html载入前执行
+            // main, 表示该函数需要在html载入后执行
+            // 本脚本中的所有上述两种函数均遵循此规则
+            [
+                [this.#proxy_module],
+                [this.#page_modules, [href, this.#user_is_login]],
+                [this.#event_module],
+                [this.#html_modules]
+            ].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, ...e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
+            // 复杂的部分放到pages_module中, 简单的函数放在配置中
+            const ef = this.#configs.end_load_func, sf = this.#configs.start_load_func;
+            ef && this.#end_load_funcs.push(ef);
+            sf && this.#start_load_funcs.push(sf);
         }
         // 启动整个程序
         start() {
             /**
-             * 执行函数, call(this), 即使用当前optimizer这整个对象的this, 其他的自定义this
+             * 执行函数, type: 0, 使用当前optimizer整个对象的this; 1, 其他的自定义this
              * @param {Array} funcs
              */
             const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
