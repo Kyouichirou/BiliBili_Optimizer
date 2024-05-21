@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      2.0
+// @version      2.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -211,9 +211,34 @@
     };
     // 链接常量 ---------------
 
+    // 暂未启用部分 -----------
+    // 保留词
     const Reserved_Words = [
         ''
     ];
+    // api数据请求部分
+    class Web_Request {
+        // 需要注意登录与否
+        // 携带请求信息
+        constructor() { }
+        #request(url, method = 'GET', data = null, headers = {}) {
+            fetch(url, {
+                method: method,
+                headers: headers,
+                body: data
+            }).then(res => res.json()).then(res => {
+                console.log(res);
+                return res;
+            });
+        }
+        // 评分的视频将用于获取数据作为过滤内容的填充
+        get_related_videos(video_id) {
+            const api = ``;
+        }
+    }
+    // 数据导出导入管理
+    const Data_Manager = {};
+    // ------------- 暂未启用部分
 
     // --------------- 通用函数
     // 自定义打印内容
@@ -1537,7 +1562,7 @@
                     else if (prop === 'configs') return this.bayes_module.configs;
                     else return target[prop];
                 },
-                set: (target, prop, value) => prop === 'configs' && target[prop](value),
+                set: (target, prop, value) => prop === 'configs' || prop === 'enable' && target[prop](value),
             });
             // 用于监听bayes状态的改变, 修改包括脚本发起或者是远端发起的修改
             let tmp_state = this.bayes_module.enable_state;
@@ -1886,6 +1911,12 @@
                 console.log(`black keys(${a.length}):\n_________\n`, a);
             }
         },
+        'show_crash_log': {
+            get() {
+                const data = GM_Objects.get_value('crash_log', []);
+                data.length > 0 ? console.table(data) : Colorful_Console.print('no crash log');
+            }
+        },
         'feedback': { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: true, active: true }); } },
         'support': { get() { Support_Me.main(); } },
         'manual': { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: true, active: true }); } },
@@ -1903,6 +1934,7 @@
                     ['support', 'show the popup of support me'],
                     ['feedback', 'open the webpage of issues'],
                     ['manual', 'open the webpage of manual'],
+                    ['show_crash_log', 'show the log of crash'],
                     ['help', 'show the info of help']
                 ], i = cmds.reduce((acc, e) => {
                     const a = e[0].length;
@@ -2355,7 +2387,7 @@
         #end_load_funcs = [];
         // 启动时需要启动的函数
         #start_load_funcs = [];
-        // 不同站点的配置
+        // 不同站点的基础配置信息
         #site_configs = {
             home: {
                 // 站点所在id
@@ -2600,7 +2632,7 @@
                 end_load_func: () => setTimeout(document.getElementById('article-content')?.addEventListener('copy', (e) => e.stopPropagation(), true), 1000)
             }
         };
-        // 通用工具函数
+        // 通用工具函数模块
         #utilities_module = {
             /**
              * 获取节点的up, video的信息
@@ -2652,7 +2684,7 @@
                 }
             }
         };
-        // 代理, 各类拦截函数
+        // 代理, 各类拦截函数模块
         #proxy_module = {
             /**
              * 代理设置
@@ -2759,8 +2791,7 @@
                     clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module),
                     pre_data_check = this.#configs.pre_data_check,
                     check_user_login_api = this.#configs.check_user_login_api,
-                    user_is_login = this.#user_is_login,
-                    site_id = this.#configs.id;
+                    user_is_login = this.#user_is_login;
                 // 不登陆的状态下, 会发起可能多达3次的请求, 也可能不请求数据, 非常诡异...
                 GM_Objects.window.XMLHttpRequest = class extends GM_Objects.window.XMLHttpRequest {
                     constructor() {
@@ -2769,13 +2800,15 @@
                             if (this.readyState === 4 && this.status === 200) {
                                 let json = null;
                                 // 拦截首页的登录弹窗
-                                if (site_id === 0 && !user_is_login && this.responseURL === check_user_login_api) {
+                                if (!user_is_login && this.responseURL === check_user_login_api) {
                                     json = {
                                         "code": 0,
                                         "message": "0",
                                         "ttl": 1,
                                         "data": {
                                             "isLogin": true,
+                                            "mid": 441644010,
+                                            "uname": "打着手电筒看书",
                                             "face": "https://i0.hdslb.com/bfs/face/67ceb14021cfbc0b2a9e40b4b254b0a3be428b46.jpg",
                                             "face_nft": 0,
                                             "face_nft_type": 0,
@@ -2845,6 +2878,7 @@
                     visibility: hidden !important;
                 }
                 .login-tip,
+                .van-message.van-message-error,
                 .trending{
                     display: none !important;
                 }
@@ -2883,7 +2917,9 @@
             },
             _video: {
                 run_in: [1],
+                // .bpx-player-toast-item这部分用于隐藏显示的高清试用相关的信息, 但是不影响click操作
                 css: `
+                .bpx-player-toast-item{opacity: 0.01 !important;}
                 .video-page-special-card-small,
                 .pop-live-small-mode.part-1{
                     display: none !important;
@@ -2902,7 +2938,7 @@
                 arr.length > 0 && GM_Objects.addstyle(arr.join(''));
             }
         };
-        // 事件函数
+        // 事件函数模块
         #event_module = {
             // 右键菜单事件
             _contextmenu: () => {
@@ -3085,7 +3121,7 @@
              */
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
         };
-        // 特定页面执行函数, 由于内容比较多, 不放在 #configs
+        // 特定页面执行函数模块, 由于内容比较多, 不放在 #configs
         #page_modules = {
             /**
              * 遍历视频卡片
@@ -3265,37 +3301,69 @@
             _video_module: {
                 // b站的用户登录检测统一向: https://api.bilibili.com/x/web-interface/nav 发起请求, 得到最终的数据用于验证登录状态, 每个页面都会发起这个请求
                 anti_login: {
-                    _trial_btn_click() {
-                        // 有时会有两组节点的出现
-                        const node = document.getElementsByClassName('bpx-player-toast-wrap');
-                        node.length > 0 ? new MutationObserver((records) => {
+                    _is_click: false,
+                    _timeout_id: null,
+                    // 监听试看按钮的点击事件所导致的节点内容变化, 用于判断执行的进度
+                    _monitor_trial(node) {
+                        new MutationObserver((records) => {
                             let f = false;
                             for (const r of records) {
                                 for (const node of r.addedNodes) {
-                                    const b = node.getElementsByClassName('bpx-player-toast-confirm-login');
-                                    if (b.length > 0) {
-                                        if (b[0].innerHTML.includes('试看')) {
-                                            f = true;
-                                            setTimeout(() => b[0].click());
-                                            break;
-                                        }
+                                    if (!this._is_click && this._trial_btn_click(node)) {
+                                        f = true;
+                                        break;
+                                    } else if (this._is_click && this._check_switch_finished(node)) {
+                                        this._is_click = false;
+                                        f = true;
+                                        this._timeout_id && clearTimeout(this._timeout_id);
+                                        this._replay_video();
+                                        break;
                                     }
                                 }
                                 if (f) break;
                             }
-                        }).observe(node[0], { childList: true, subtree: true }) : Colorful_Console.print('anti login monitor no target node', 'crash', true);
+                        }).observe(node, { childList: true, subtree: true });
                     },
+                    // 超时不触发上面的事件监听则主动播放
+                    _wait_switch() {
+                        this._timeout_id = setTimeout(() => {
+                            const qs = unsafeWindow.player.getQuality();
+                            if (qs.newQ > 16) unsafeWindow.player.play();
+                            this._timeout_id = null;
+                        }, 1500);
+                    },
+                    // 判断视频是否已经切换到高清
+                    _check_switch_finished(node) { return node.innerText?.includes('试用中'); },
+                    _trial_btn_click(node) {
+                        const b = node.getElementsByClassName('bpx-player-toast-confirm-login');
+                        return this._is_click = b.length > 0 && b[0].innerHTML.includes('试看') ? (setTimeout(() => {
+                            const qs = unsafeWindow.player.getSupportedQualityList();
+                            if (qs && qs.some(e => e > 16)) {
+                                unsafeWindow.player.pause();
+                                this._wait_switch();
+                            }
+                            b[0].click();
+                        }, 100), true) : false;
+                    },
+                    _replay_video() { setTimeout(() => unsafeWindow.player.play()); },
                     init() {
-                        const proxy = (target, target_name, handle) => (target[target_name] = new Proxy(target[target_name], handle));
+                        // 拦截弹窗和暂停视频播放的情况:
+                        // 1. 没有任何操作
+                        // 2. 点击了试用按钮 3. 点击了试用按钮, 同时全屏或者是进行其他扩屏的操作 4. 不点击试用按钮, 但是全屏了
+                        // 需要多个层级拦截操作而不是单个点
+                        const proxy = (target, target_name, handler) => (target[target_name] = new Proxy(target[target_name], handler)),
+                            proxy_revocable = (target, target_name, handler) => Proxy.revocable(target[target_name], handler),
+                            get_proxy = (target, target_name, proxy_obj) => (target[target_name] = proxy_obj.proxy),
+                            restore_target = (target, target_name, origin_obj) => (target[target_name] = origin_obj);
                         [
-                            // 干预settimeout, 试用高清是通过一般的计时器来实现超时的
+                            // 干预settimeout, 试用高清是通过固定时间的计时器来实现超时,4000ms用于暂停和退出视频; 30000用于终止试用=== 4000 || time === 30000 || time  === 1500
                             [
                                 unsafeWindow,
                                 'setTimeout',
                                 {
                                     apply(target, thisArg, argArray) {
                                         const [fn, time] = argArray;
-                                        return target.apply(thisArg, [fn, time === 30000 ? 1e8 : time]);
+                                        return target.apply(thisArg, [fn, [4000, 30000].includes(time) ? 1e8 : time]);
                                     }
                                 }
                             ],
@@ -3325,13 +3393,75 @@
                                 {
                                     apply(target, thisArg, args) {
                                         const node = args[0];
-                                        node.tagName?.toLowerCase() === 'script' && node.src.includes('miniLogin') ? setTimeout(() => unsafeWindow.player.play(), 100) : target.apply(thisArg, args);
+                                        node.tagName?.toLowerCase() === 'script' && node.src.toLowerCase().includes('minilogin') ? setTimeout(() => unsafeWindow.player.play(), 100) : target.apply(thisArg, args);
                                     }
                                 }
                             ]
                         ].forEach(e => proxy(...e));
-                    },
-                    main() { this._trial_btn_click(); }
+                        // 可撤销代理创建, 以下函数只在首次载入页面时使用
+                        [
+                            // 每次重启浏览器后, 弹幕都默认开启, localstorage中的bpx_player_profile都会被修改, dmSwitch都会被设置为true
+                            [
+                                localStorage,
+                                'setItem',
+                                (...args) => {
+                                    if (args[3][0] === 'bpx_player_profile') {
+                                        const json = JSON.parse(args[3][1]);
+                                        if (json.dmSetting?.dmSwitch) {
+                                            args[0][2].revoke();
+                                            restore_target(...args[0][1], args[0][0]);
+                                            json.dmSetting.dmSwitch = false;
+                                            args[3][1] = JSON.stringify(json);
+                                        }
+                                    }
+                                    return Reflect.apply(...args.slice(1));
+                                }
+                            ],
+                            // 由于需要精确监听节点的生成, 所以这里采用代理的方式来拦截某个插入节点的操作, 从而精确获得该节点生成的时间
+                            [
+                                HTMLElement.prototype,
+                                'insertAdjacentElement',
+                                (...args) => {
+                                    let node = args[3][1];
+                                    if (args[3][0] === 'afterbegin' && node.tagName === 'SPAN' && node.className === 'bpx-player-toast-confirm') {
+                                        // 撤销掉代理即可
+                                        args[0][2].revoke();
+                                        restore_target(...args[0][1], args[0][0]);
+                                        // 必须采用回调的方式实现, 因为这个时候插入节点函数尚未执行, 所以当前插入的节点的父节点尚未生成
+                                        setTimeout(() => {
+                                            while (true) {
+                                                let pnode = node.parentNode;
+                                                if (!pnode) {
+                                                    Colorful_Console.print('trial button monitor no target node', 'warning');
+                                                    break;
+                                                }
+                                                if (pnode.className === 'bpx-player-toast-auto') {
+                                                    // 先创建节点变化的监听
+                                                    this._monitor_trial(pnode);
+                                                    // 直接模拟点击, 而不是等待上面的节点监听触发, 因为创建监听时, 相对应的节点已经创建好了, 无法监听到
+                                                    !this._is_click && this._trial_btn_click(pnode);
+                                                    break;
+                                                }
+                                                node = pnode;
+                                            }
+                                        });
+                                    }
+                                    return Reflect.apply(...args.slice(1));
+                                }
+                            ]
+                        ].forEach(e => {
+                            const [target, target_name, handler] = e, args = [];
+                            // 原对象方法
+                            args.push(target[target_name]);
+                            // 原对象和对象方法名称
+                            args.push([target, target_name]);
+                            // 可撤销代理对象
+                            // 这里巧妙利用数组的引用是基于地址引用, 修改数组的内容, 引用的函数也同样发生变化
+                            // 即实现, 函数需要引用一个函数创建的对象作为参数(先后问题, 即引用一个尚未初始化的变量作为参数, 数组的按地址引用实现了这个矛盾的问题)
+                            args.push(proxy_revocable(target, target_name, { apply: handler.bind(this, args) }));
+                            get_proxy(target, target_name, args[2]);
+                        });
+                    }
                 },
                 main: () => setTimeout(() => {
                     this.#video_instance = new Video_Module();
@@ -3396,11 +3526,9 @@
                         if (k.endsWith('_module')) {
                             if (id === 1 && !is_login) {
                                 const anti_login = m.anti_login,
-                                    a = anti_login.main.bind(anti_login),
-                                    b = anti_login.init;
-                                a.start = 1, a.type = 1;
+                                    b = anti_login.init.bind(anti_login);
                                 b.start = 0, b.type = 1;
-                                data.push(a, b);
+                                data.push(b);
                             }
                             f = type ? m.main.bind(m) : m.main;
                             f.start = run_at, f.type = type;
@@ -3414,7 +3542,7 @@
                 return data;
             }
         };
-        // 添加html元素
+        // 添加html元素模块
         #html_modules = {
             // 遮罩
             _shade: {
@@ -3522,7 +3650,7 @@
             if (id > 2) return;
             // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
             const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [],
-                // 视频持续的时间(s)
+                // 视频持续的时间(s), 将09:01这种格式的时间转为秒
                 duration_convertor = (duration) => [0, ...duration.replaceAll(' ', '').split(':')].slice(-3).reduce((units, cur, index) => {
                     units[index] = units[index] * parseInt(cur);
                     return units;
@@ -3530,6 +3658,7 @@
             // 预检查数据是否满足要求
             this.#configs.pre_data_check = (e) => {
                 const duration = e.duration;
+                // 过滤掉2分钟以下的视频
                 if (duration) {
                     const s = typeof duration,
                         d = s === 'string' && duration.includes(':') ? duration_convertor(duration) : s === 'number' ? duration : 1e8;
@@ -3539,6 +3668,7 @@
                         return true;
                     }
                 }
+                // 读取基本的四个元素信息
                 const info = {
                     up_id: e.mid || e.owner?.mid || '',
                     up_name: e.author || e.owner?.name || '',
@@ -3551,6 +3681,7 @@
                     // 确保所有的数据都是字符串
                     info[k] = t + '';
                 }
+                // 搜索页的title需要去掉多余的标签
                 search_tags.forEach(e => (info.title = info.title.replaceAll(e, '')));
                 return Dynamic_Variants_Manager.completed_check(info);
             };
@@ -3582,7 +3713,6 @@
          */
         constructor(href) {
             // 判断当前链接所处的站点
-            // 确定配置参数
             const site = [
                 'search',
                 'space',
@@ -3590,7 +3720,7 @@
                 'play',
                 'read'
             ].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
-            // 载入配置
+            // 确定配置参数, 载入配置
             this.#configs = this.#site_configs[site];
             // 检查搜索链接是否包含垃圾
             if (this.#configs.check_search?.(href)) {
@@ -3607,6 +3737,7 @@
             Dynamic_Variants_Manager.init(id);
             // 载入过滤模块的配置
             this.#load_filter_configs(id);
+            // 检查用户是否登录
             this.#user_is_login = this.#configs.check_is_login?.();
             // 配置启动函数
             // init, 表示该函数需要在html载入前执行
