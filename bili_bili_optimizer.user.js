@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      2.1
+// @version      2.2
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -14,7 +14,7 @@
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
 // @connect      files.superbed.cn
-// @connect      8.z.wiki
+// @connect      i.postimg.cc
 // @grant        GM_info
 // @grant        GM_getTab
 // @grant        GM_getTabs
@@ -43,78 +43,78 @@
     const GM_Objects = {
         /**
          * 提示信息
-         * @param {string} content
-         * @param {string} title
-         * @param {number} duration
-         * @param {Function} cfunc
-         * @param {Function} ofunc
+         * @param {string} content 
+         * @param {string} title 
+         * @param {number} duration 
+         * @param {Function} cfunc 
+         * @param {Function} ofunc 
          * @returns {null}
          */
         notification: (content = "", title = "info", duration = 3500, cfunc, ofunc) => GM_notification({ text: content, title: title, timeout: duration, onclick: cfunc, ondone: ofunc }),
         /**
          * 读取值
-         * @param {string} key_name
+         * @param {string} key_name 
          * @param {any} default_value
          * @returns {any}
          */
         get_value: (key_name, default_value = null) => GM_getValue(key_name, default_value),
         /**
          * 设置值
-         * @param {string} key_name
-         * @param {any} value
+         * @param {string} key_name 
+         * @param {any} value 
          * @returns {null}
          */
         set_value: (key_name, value) => GM_setValue(key_name, value),
         /**
          * 注入css, 返回注入的css节点
-         * @param {string} css
+         * @param {string} css 
          * @returns {HTMLElement}
          */
         addstyle: (css) => GM_addStyle(css),
         /**
          * 注册菜单事件, 返回注册id
-         * @param {string} name
-         * @param {Function} callback_func
+         * @param {string} name 
+         * @param {Function} callback_func 
          * @returns {number}
          */
         registermenucommand: (name, callback_func) => GM_registerMenuCommand(name, callback_func),
         /**
          * 解除菜单注册, 接受参数, 注册的id
-         * @param {number} cid
+         * @param {number} cid 
          * @returns {null}
          */
         unregistermenucommand: (cid) => GM_unregisterMenuCommand(cid),
         /**
          * 判断监听值的修改是否来自非当前页面
-         * @param {Function} func
+         * @param {Function} func 
          * @returns {Function}
          */
         _check_from_remote: (func) => (...args) => args[3] && func(...args),
         /**
          * 监听键值的变化, 返回监听id
-         * @param {string} key_name
-         * @param {Function} func
+         * @param {string} key_name 
+         * @param {Function} func 
          * @returns {number}
          */
         addvaluechangeistener(key_name, callback_func) { return GM_addValueChangeListener(key_name, this._check_from_remote(callback_func)); },
         /**
          * 移除键值监听
-         * @param {number} cid
+         * @param {number} cid 
          * @returns {null}
          */
         removevaluechangeistener(cid) { return GM_removeValueChangeListener(cid); },
         /**
          * 打开链接
-         * @param {string} url
-         * @param {object} configs
+         * @param {string} url 
+         * @param {object} configs 
          * @returns {null}
          */
         openintab: (url, configs) => GM_openInTab(url, configs),
         /**
          * 复制内容到剪切板
-         * @param {string} content
-         * @param {string} type
-         * @param {Function} func
+         * @param {string} content 
+         * @param {string} type 
+         * @param {Function} func 
          * @returns {null}
          */
         copy_to_clipboard: (content, type, func) => GM_setClipboard(content, type, func),
@@ -122,8 +122,8 @@
         window_close: () => window.close(),
         /**
          * 设置标签
-         * @param {string} key
-         * @param {any} val
+         * @param {string} key 
+         * @param {any} val 
          */
         set_tab(key, val) {
             this.get_tab((tab) => {
@@ -133,13 +133,13 @@
         },
         /**
          * 读取多个标签
-         * @param {Function} func
+         * @param {Function} func 
          * @returns {undefined}
          */
         get_tabs: (func) => GM_getTabs(func),
         /**
          * 读取单个标签
-         * @param {Function} func
+         * @param {Function} func 
          * @returns {undefined}
          */
         get_tab: (func) => GM_getTab(func),
@@ -166,7 +166,7 @@
         feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
          * 将字符串响应头转为字典
-         * @param {string} content
+         * @param {string} content 
          * @returns {object}
          */
         _convert_dic(content) {
@@ -177,7 +177,7 @@
         },
         /**
          * 发起请求
-         * @param {string} url
+         * @param {string} url 
          * @returns {Promise}
          */
         _http(url) {
@@ -251,9 +251,9 @@
         },
         /**
          * 执行打印
-         * @param {string} content
-         * @param {string} type
-         * @param {boolean} mode
+         * @param {string} content 
+         * @param {string} type 
+         * @param {boolean} mode 
          */
         print(content, type = 'info', mode = false) {
             const bc = this._colors[type];
@@ -275,8 +275,8 @@
         _up_id_reg: /(?<=com\/)\d+/,
         /**
          * 匹配执行
-         * @param {RegExp} reg
-         * @param {string} href
+         * @param {RegExp} reg 
+         * @param {string} href 
          * @returns {string}
          */
         _match(reg, href) { return href.match(reg)?.[0] || ''; },
@@ -383,7 +383,7 @@
         },
         /**
          * 更变透明度
-         * @param {number} opacity
+         * @param {number} opacity 
          */
         _opacity_change(opacity) {
             const target = document.getElementById("screen_shade_cover");
@@ -734,20 +734,20 @@
         };
         /**
          * 分词
-         * @param {string} content
-         * @param {number} exclude_length
+         * @param {string} content 
+         * @param {number} exclude_length 
          * @returns {Array}
          */
         #seg(content, exclude_length = 1) { return [...this.#segmenter.segment(content)].map(e => e.segment).filter(e => e.length > exclude_length); }
         /**
          * 统计词频
-         * @param {Array} words_list
+         * @param {Array} words_list 
          * @returns {object}
          */
         #word_counter(words_list) { return words_list.reduce((counter, val) => (counter[val] ? ++counter[val] : (counter[val] = 1), counter), {}); }
         /**
          * 手动规则取词
-         * @param {string} content
+         * @param {string} content 
          */
         #seg_word(content) {
             const words = [];
@@ -786,9 +786,9 @@
         #update_content_len_limit() { this.#content_len_limit = (this.#configs.feature_length_limit - 1) * 1 + 2; }
         /**
          * 计算先验概率
-         * @param {number} bayes_black_len
-         * @param {number} bayes_white_len
-         * @param {number} bayes_total_len
+         * @param {number} bayes_black_len 
+         * @param {number} bayes_white_len 
+         * @param {number} bayes_total_len 
          */
         #update_prior_probability(bayes_black_len, bayes_white_len, bayes_total_len) {
             this.#black_p = bayes_black_len > 0 ? Math.log(bayes_black_len) - Math.log(bayes_total_len) : Math.log(this.#configs.alpha / (bayes_total_len + 2 * this.#configs.alpha));
@@ -796,7 +796,7 @@
         }
         /**
          * 更新模型使用的参数
-         * @param {boolean} mode
+         * @param {boolean} mode 
          */
         #update_paramters() {
             // 先验概率
@@ -812,13 +812,13 @@
         #get_module() { this.bayes = this.#cal_bayes.bind(this, ...(this.#configs.name !== 'multinomialnb' ? [0, 0] : [this.#white_p, this.#black_p])); }
         /**
          * 调整具体的数值
-         * @param {string} key
-         * @param {number} lower
+         * @param {string} key 
+         * @param {number} lower 
          * @param {number} upupper
          * @param {function} func
-         * @param {number} old_val
+         * @param {number} old_val 
          * @param {number} new_val
-         * @returns {number}
+         * @returns {number} 
          */
         #adjust_config_val(key, lower, upupper, func, old_val, new_val) {
             // 确保输入内容为数字
@@ -881,15 +881,15 @@
         }
         /**
          * 触发重新加载
-         * @param {number} mode
+         * @param {number} mode 
          */
         #trigger_reload(mode) { GM_Objects.set_value('bayes_reload', { 'mode': mode, 'update': Date.now() }); }
         /**
          * 计算概率
-         * @param {number} w_pro
+         * @param {number} w_pro 
          * @param {number} b_pro
          * @param {string} content
-         * @returns {number}
+         * @returns {number} 
          */
         #cal_bayes(w_pro, b_pro, content) {
             if (content.length < this.#content_len_limit) return -1;
@@ -908,14 +908,14 @@
         }
         /**
          * 贝叶斯判断
-         * @param {string} _content
+         * @param {string} _content 
          * @returns {number}
          */
         bayes(_content) { }
         /**
          * 添加新内容
-         * @param {string} content
-         * @param {boolean} mode
+         * @param {string} content 
+         * @param {boolean} mode 
          */
         add_new_content(content, mode) {
             if (content.length < this.#content_len_limit) {
@@ -949,7 +949,7 @@
         }
         /**
          * 调整模型配置
-         * @param {object} configs { threshold: number, alpha: number, name: string }
+         * @param {object} configs { threshold: number, alpha: number, name: string } 
          */
         adjust_configs(configs) {
             try {
@@ -1061,7 +1061,7 @@
         }
         /**
          * 检查是否存在和记录
-         * @param {string} id
+         * @param {string} id 
          * @returns {boolean || object}
          */
         includes_r(id, mode = false) {
@@ -1095,7 +1095,7 @@
         }
         /**
          * 更新活动的状态
-         * @param {object} info
+         * @param {object} info 
          */
         update_active_status(info) {
             const id = info.id;
@@ -1145,8 +1145,8 @@
 
     /**
      * 自定义的includes函数
-     * @param {boolean} mode
-     * @param {string} id_name
+     * @param {boolean} mode 
+     * @param {string} id_name 
      * @returns {Function}
      */
     function includes_r(mode, id_name = 'video_id') {
@@ -1421,7 +1421,7 @@
             ],
             /**
              * 添加拦截关键词
-             * @param {Array} data
+             * @param {Array} data 
              */
             add(data) {
                 const a = this._get_data();
@@ -1440,7 +1440,7 @@
             },
             /**
              * 移除拦截关键词
-             * @param {Array} data
+             * @param {Array} data 
              */
             remove(data) {
                 this.a = this.a.filter(e => !data.includes(e));
@@ -1530,14 +1530,14 @@
                 enable: (state) => this.bayes_module.set_enable_state(state),
                 /**
                  * 测试文本分类
-                 * @param {string} content
+                 * @param {string} content 
                  * @returns {null}
                  */
                 test: (content) => console.log(this.bayes_module.bayes(content) < 0 ? 'the length of content does not meet the requirements' : this.bayes_module.test_result),
                 detail: () => this.bayes_module.show_detail(),
                 /**
                  * 重置贝叶斯
-                 * @param {number} mode
+                 * @param {number} mode 
                  * @returns {null}
                  */
                 reset: (mode = 0) => this.bayes_module.reset(mode),
@@ -1576,8 +1576,8 @@
         },
         /**
          * 贝叶斯拦截记录
-         * @param {string} title
-         * @param {number} b_result
+         * @param {string} title 
+         * @param {number} b_result 
          */
         _bayes_accumulative(title, b_result) {
             this.accumulative_func(), GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
@@ -1694,12 +1694,12 @@
         },
         /**
          * 取消拦截视频
-         * @param {string} video_id
+         * @param {string} video_id 
          */
         unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
         /**
          * 拦截视频
-         * @param {string} video_id
+         * @param {string} video_id 
          */
         block_video(video_id) {
             this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos);
@@ -1745,7 +1745,7 @@
         show_status: () => null,
         /**
         * 数据初始化
-        * @param {number} site_id
+        * @param {number} site_id 
         */
         init(site_id) {
             // 全局启用, 关键词过滤
@@ -1797,7 +1797,7 @@
             },
             /**
              * 拦截up
-             * @param {object} info
+             * @param {object} info 
              * @returns {null}
              */
             block(info) {
@@ -1815,7 +1815,7 @@
             get _data() { return Dynamic_Variants_Manager.initial_rate_videos(); },
             /**
              * 检查视频的评分
-             * @param {string} video_id
+             * @param {string} video_id 
              * @returns {number}
              */
             check_video_rate(video_id) { return this._data.check_rate(video_id, false); },
@@ -1845,7 +1845,7 @@
         },
         /**
          * 历史访问记录, 只有添加, 没有删除
-         * @param {string} video_id
+         * @param {string} video_id 
          */
         add_visited_video(video_id) {
             const arr = Dynamic_Variants_Manager.initial_visited_videos();
@@ -1856,7 +1856,7 @@
         },
         /**
          * 异常日志记录
-         * @param {string} content
+         * @param {string} content 
          */
         crash_log(content) {
             const data = GM_Objects.get_value('crash_log', []);
@@ -2400,7 +2400,7 @@
                 initial_data_name: '__pinia',
                 /**
                  * html第一次载入时携带的数据的处理
-                 * @param {object} val
+                 * @param {object} val 
                  * @returns {Array}
                  */
                 initial_data_handler: (val) => {
@@ -2429,14 +2429,14 @@
                 }),
                 /**
                  * 判断发起请求数据api url是否需要进行拦截操作, 返回一个函数用于提取响应数据
-                 * @param {string} url
+                 * @param {string} url 
                  * @returns {Function}
                  */
                 handle_fetch_url: (url) => url.startsWith(this.#configs.interpose_api_prefix + this.#configs.interpose_api_suffix) ? (data) => data.data?.item : null,
                 /**
                  * 添加数据到节点标题, 注意不是title
-                 * @param {HTMLElement} node
-                 * @param {string} val
+                 * @param {HTMLElement} node 
+                 * @param {string} val 
                  */
                 add_info_to_node_title(node, val) {
                     const h = node.getElementsByTagName('h3')[0];
@@ -2444,8 +2444,8 @@
                 },
                 // 读取目标节点元素的视频标题和up名称
                 /**
-                 *
-                 * @param {HTMLElement} node
+                 * 
+                 * @param {HTMLElement} node 
                  * @returns {object} { up_name: '', title: '' }
                  */
                 get_title_up_name(node) {
@@ -2457,8 +2457,8 @@
                 },
                 /**
                  * 用于处理节点名称的匹配方式
-                 * @param {string} classname
-                 * @param {string} target_name
+                 * @param {string} classname 
+                 * @param {string} target_name 
                  * @returns {boolean}
                  */
                 contextmenu_handle: (classname, target_name) => classname.startsWith(target_name),
@@ -2471,11 +2471,39 @@
                 interpose_api_suffix: ['archive/related', 'wbi/view/detail?aid=', 'wbi/view/detail?platform='],
                 initial_data_handler: (val) => {
                     const data = val.related;
-                    const m = [{ "aid": 461236586, "cid": 357129641, "bvid": "BV1P5411T71D", "duration": 749, "pic": "http:\u002F\u002Fi1.hdslb.com\u002Fbfs\u002Farchive\u002Fc826072903444fd12e62de3b4cfec319399c547f.jpg", "title": "【漫漫说】推理小说中最震撼的杀人诡计！恐怖诡异宛如恶魔降临！", "owner": { "name": "汉森白JW", "mid": 98666360 }, "stat": { "danmaku": 2683, "view": 843076, "vt": 0 }, "season_id": 0, "season_type": 0, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 461236586 } }, { "aid": 878995844, "cid": 1411596744, "bvid": "BV1xN4y1n7fe", "duration": 1449, "pic": "http:\u002F\u002Fi1.hdslb.com\u002Fbfs\u002Farchive\u002F606da4b5643bf06a338245f21e7ed2fcc953a2e0.jpg", "title": "爆肝9262字！漫改东野圭吾最强推理《恶意》！【漫化经典#30】", "owner": { "name": "动机俱乐部", "mid": 128688586 }, "stat": { "danmaku": 799, "view": 376678, "vt": 0 }, "season_id": 1206933, "season_type": 1, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 878995844 } }, { "aid": 1951242765, "cid": 1449516213, "bvid": "BV1jC411p7eG", "duration": 779, "pic": "http:\u002F\u002Fi2.hdslb.com\u002Fbfs\u002Farchive\u002Fde57fbfde797baf28c7a4c182aa46cf402d4ee49.jpg", "title": "完美犯罪！跨越25年的缜密计谋，日本三大推理漫画之一《Q.E.D.证明终了》", "owner": { "name": "兽医杜立德", "mid": 9295953 }, "stat": { "danmaku": 281, "view": 240060, "vt": 0 }, "season_id": 2253399, "season_type": 1, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 1951242765 } }, { "aid": 398968754, "cid": 1138348074, "bvid": "BV1Ro4y1G7YN", "duration": 682, "pic": "http:\u002F\u002Fi0.hdslb.com\u002Fbfs\u002Farchive\u002Fc343525612249f1439a19cbf5ad2fb30d6ea1920.jpg", "title": "物理教授vs高科技犯罪者手绘东野圭吾推理短篇《坏死》", "owner": { "name": "绽放的金针菇", "mid": 16648984 }, "stat": { "danmaku": 610, "view": 398981, "vt": 0 }, "season_id": 1266365, "season_type": 1, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 398968754 } }, { "aid": 656751262, "cid": 1148533066, "bvid": "BV1gh4y1d75c", "duration": 597, "pic": "http:\u002F\u002Fi0.hdslb.com\u002Fbfs\u002Farchive\u002F309842b10b314b6f5b70dee3af9b49b997b0d7dd.jpg", "title": "他把杀人当作游戏，残害100人却是完美犯罪？江户川乱步经典短篇《红色房间》【漫漫说】", "owner": { "name": "汉森白JW", "mid": 98666360 }, "stat": { "danmaku": 1658, "view": 581580, "vt": 0 }, "season_id": 0, "season_type": 0, "redirect_url": "", "enable_vt": 0, "aiParameters": { "goto": "av", "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277", "uniq_id": "", "r_id": 656751262 } }, ...new Array(15).fill({})];
+                    const m = {
+                        "aid": 461236586,
+                        "cid": 357129641,
+                        "bvid": "BV1P5411T71D",
+                        "duration": 749,
+                        "pic": "http:\u002F\u002Fi1.hdslb.com\u002Fbfs\u002Farchive\u002Fc826072903444fd12e62de3b4cfec319399c547f.jpg",
+                        "title": "【漫漫说】推理小说中最震撼的杀人诡计！恐怖诡异宛如恶魔降临！",
+                        "owner": {
+                            "name": "汉森白JW",
+                            "mid": 98666360
+                        },
+                        "stat": {
+                            "danmaku": 2683,
+                            "view": 843076,
+                            "vt": 0
+                        },
+                        "season_id": 0,
+                        "season_type": 0,
+                        "redirect_url": "",
+                        "enable_vt": 0,
+                        "aiParameters": {
+                            "goto": "av",
+                            "trackid": "web_related_0.router-related-1502038-68784448d8-rbmml.1716122623906.277",
+                            "uniq_id": "",
+                            "r_id": 461236586
+                        }
+                    };
                     if (data) {
+                        // 数据的长度最好是和原数据一致, 并不是所有的视频都有40组视频
+                        // 少了或者多了均可能导致页面崩溃, 数据少于20的, 多了导致页面崩溃; 数据多于20, 少了会导致页面崩溃
                         const tmp = data.map(e => this.#configs.pre_data_check(e) ? (this.#utilities_module.clear_data(e), true) : null),
-                            n = data.filter((_v, i) => !tmp[i]),
-                            new_arr = n.length < 20 ? [...n, ...m].slice(0, 20) : n;
+                            n = data.filter((_v, i) => !tmp[i]), limit = data.length,
+                            new_arr = n.length < limit ? [...n, ...new Array(limit).fill(m)].slice(0, limit) : n;
                         val.related = new_arr;
                         this.#video_data_cache = new_arr;
                         return tmp;
@@ -2505,9 +2533,9 @@
                 },
                 /**
                  * 视频页面的数据请求会发生两种情况: 1. 第一次载入, 请求一次, 因为html上的数据
-                 * B站在视频播放页这里的操作很迷
+                 * B站在视频播放页这里的操作很迷, 最多可能产生3次数据请求, 一般为2次, 首次可能为1次
                  * 请求的数据分别存放在不同的位置
-                 * @param {string} url
+                 * @param {string} url 
                  * @returns {Function}
                  */
                 handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.startsWith(this.#configs.interpose_api_prefix + e)) ? (response_content, pre_data_check) => {
@@ -2576,9 +2604,9 @@
                 },
                 fetch_flag: false,
                 /**
-                 *
-                 * @param {Array} data
-                 * @param {Function} clear_data
+                 * 
+                 * @param {Array} data 
+                 * @param {Function} clear_data 
                  */
                 request_data_handler: (data, clear_data) => {
                     const lost_pic = this.#configs.lost_pic;
@@ -2636,7 +2664,7 @@
         #utilities_module = {
             /**
              * 获取节点的up, video的信息
-             * @param {HTMLElement} node
+             * @param {HTMLElement} node 
              * @returns {object | number}
              */
             get_up_video_info: (node) => {
@@ -2671,7 +2699,7 @@
             },
             /**
              * 将拦截对象的数据设置为空
-             * @param {object} data
+             * @param {object} data 
              */
             clear_data(data) {
                 // 递归调用, 遍历清空各层级的内容, 不涉及数组
@@ -2688,11 +2716,11 @@
         #proxy_module = {
             /**
              * 代理设置
-             * @param {object} target
-             * @param {string} name
-             * @param {object} handle
+             * @param {object} target 
+             * @param {string} name 
+             * @param {object} handler
              */
-            __proxy(target, name, handle) { target[name] = new Proxy(target[name], handle); },
+            __proxy(target, name, handler) { target[name] = new Proxy(target[name], handler); },
             // 在视频播放页面, 当视频被加载完成, 会载入url追踪参数
             _history_replacestate() {
                 this.__proxy(GM_Objects.window.history, 'replaceState', {
@@ -2727,7 +2755,9 @@
             _addeventlistener() { this.__proxy(document, 'addEventListener', { apply(...args) { !(args.length === 3 && args[2][0] === 'click' && args[2][1]?.name === 'handleDocumentInitActive') && Reflect.apply(...args); } }); },
             // 干预页面进行的href添加追踪参数的操作
             // 由于当前页面的元素已经添加了追踪参数, 所以拦截的操作可以在这里启动, 而不是在页面刚加载的时候启动
-            _setattribute() { this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } }); },
+            _setattribute() {
+                this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } });
+            },
             // 拦截document.body菜单事件
             // 由于事件是由于document.body所创建, 通过window/document无法直接拦截到
             // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦(无法准确及时进行)
@@ -2836,7 +2866,7 @@
             },
             /**
              * 获得配置函数
-             * @param {number} id
+             * @param {number} id 
              * @returns {Array}
              */
             get_funcs(id) {
@@ -2867,7 +2897,7 @@
             // 顶部位置广告, 搜索框广告
             _all: {
                 run_in: Array.from({ length: 6 }, (_val, index) => index),
-                css: `
+                css: (_user_is_login) => `
                 .bili-header .left-entry .default-entry,
                 a.download-entry.download-client-trigger,
                 .bili-header .loc-mc-box,
@@ -2894,7 +2924,7 @@
             },
             _home: {
                 run_in: [0],
-                css: `
+                css: (_user_is_login) => `
                 .floor-single-card,
                 .bili-live-card.is-rcmd{
                     visibility: hidden !important;
@@ -2917,23 +2947,23 @@
             },
             _video: {
                 run_in: [1],
-                // .bpx-player-toast-item这部分用于隐藏显示的高清试用相关的信息, 但是不影响click操作
-                css: `
-                .bpx-player-toast-item{opacity: 0.01 !important;}
-                .video-page-special-card-small,
-                .pop-live-small-mode.part-1{
-                    display: none !important;
-                }`
+                // .bpx-player-toast-item这部分用于隐藏显示的高清试用相关的信息, 但是不影响click操作 
+                css: (user_is_login) =>
+                    (user_is_login ? '' : '.bpx-player-subtitle-panel-text,') + `.video-page-special-card-small,
+                    .pop-live-small-mode.part-1{
+                        display: none !important;
+                    }
+                    .bpx-player-toast-item{opacity: 0.01 !important;}`
             },
             _search: {
                 run_in: [2],
-                css: '.activity-game-list.i_wrapper.search-all-list {display: none !important;}'
+                css: (_user_is_login) => '.activity-game-list.i_wrapper.search-all-list {display: none !important;}'
             },
-            inject_css(id) {
+            inject_css(id, user_is_login) {
                 const arr = [];
                 for (const k in this) {
                     const c = this[k];
-                    c.run_in?.includes(id) && arr.push(c.css);
+                    c.run_in?.includes(id) && arr.push(c.css(user_is_login));
                 }
                 arr.length > 0 && GM_Objects.addstyle(arr.join(''));
             }
@@ -2958,8 +2988,7 @@
                                 this.#configs.hide_node(p);
                                 this.#configs.add_info_to_node.dataset(p, 'is_hidden', 1);
                                 const info = this.#utilities_module.get_up_video_info(p);
-                                if (!info) break;
-                                info.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false)));
+                                info?.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false)));
                                 break;
                             }
                             if (++i > 6) break;
@@ -3014,7 +3043,7 @@
                     u = 宽屏
                     +, 声音 +
                     -, 声音 -
-
+         
                     f = fullscreen // 原生
                     m = mute // 原生
                 */
@@ -3116,7 +3145,7 @@
             },
             /**
              * 配置执行函数
-             * @param {number} id
+             * @param {number} id 
              * @returns {Array}
              */
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
@@ -3125,8 +3154,8 @@
         #page_modules = {
             /**
              * 遍历视频卡片
-             * @param {HTMLElement} target
-             * @param {Array} datalist
+             * @param {HTMLElement} target 
+             * @param {Array} datalist 
              * @returns {null}
              */
             _traversal_video_card: (target, datalist) => datalist && setTimeout(() => {
@@ -3303,6 +3332,10 @@
                 anti_login: {
                     _is_click: false,
                     _timeout_id: null,
+                    // 第一次载入页面
+                    _is_first_time: true,
+                    // 自定义弹幕是否开启
+                    _danmu_switch: GM_Objects.get_value('danmu_switch', false),
                     // 监听试看按钮的点击事件所导致的节点内容变化, 用于判断执行的进度
                     _monitor_trial(node) {
                         new MutationObserver((records) => {
@@ -3323,6 +3356,8 @@
                                 if (f) break;
                             }
                         }).observe(node, { childList: true, subtree: true });
+                        // 页面已经基本载入完成
+                        this._is_first_time = false;
                     },
                     // 超时不触发上面的事件监听则主动播放
                     _wait_switch() {
@@ -3342,7 +3377,7 @@
                                 unsafeWindow.player.pause();
                                 this._wait_switch();
                             }
-                            b[0].click();
+                            b[0]?.click();
                         }, 100), true) : false;
                     },
                     _replay_video() { setTimeout(() => unsafeWindow.player.play()); },
@@ -3393,7 +3428,29 @@
                                 {
                                     apply(target, thisArg, args) {
                                         const node = args[0];
-                                        node.tagName?.toLowerCase() === 'script' && node.src.toLowerCase().includes('minilogin') ? setTimeout(() => unsafeWindow.player.play(), 100) : target.apply(thisArg, args);
+                                        if (node.tagName?.toLowerCase() === 'script' && node.src.toLowerCase().includes('minilogin')) {
+                                            node.src = '';
+                                            setTimeout(() => unsafeWindow.player.play(), 100);
+                                        }
+                                        return target.apply(thisArg, args);
+                                    }
+                                }
+                            ],
+                            // 通过这种方式获得弹幕的开启关闭是由用户主动点击产生的
+                            // 这种方式不需要通过监听点击事件来完成
+                            [
+                                localStorage,
+                                'setItem',
+                                {
+                                    apply: (target, thisArg, args) => {
+                                        // 这里才执行拦截操作, 是因为初始化页面时, B站会有初始化的数据写入, 这部分内容先不干预
+                                        // 这里的拦截操作主要是后面用户主动打开或者关闭弹幕
+                                        // 这样就是先了弹幕开关的持久化存储而不是每次都是关闭或者开启
+                                        if (!this._is_first_time && args[0] === 'bpx_player_profile') {
+                                            this._danmu_switch = JSON.parse(args[1]).dmSetting?.dmSwitch || false;
+                                            GM_Objects.set_value('danmu_switch', this._danmu_switch);
+                                        }
+                                        return Reflect.apply(target, thisArg, args);
                                     }
                                 }
                             ]
@@ -3401,17 +3458,22 @@
                         // 可撤销代理创建, 以下函数只在首次载入页面时使用
                         [
                             // 每次重启浏览器后, 弹幕都默认开启, localstorage中的bpx_player_profile都会被修改, dmSwitch都会被设置为true
+                            // B站重写了这个特性, 改成反复写入
                             [
                                 localStorage,
-                                'setItem',
+                                'getItem',
                                 (...args) => {
                                     if (args[3][0] === 'bpx_player_profile') {
-                                        const json = JSON.parse(args[3][1]);
-                                        if (json.dmSetting?.dmSwitch) {
+                                        if (this._is_first_time) {
+                                            // 先将数据读取, 然后再修改
+                                            const json = JSON.parse(Reflect.apply(...args.slice(1)));
+                                            // 注意数据为空的情况
+                                            if (json?.dmSetting?.dmSwitch !== undefined) json.dmSetting.dmSwitch = this._danmu_switch;
+                                            return JSON.stringify(json);
+                                        } else {
+                                            // 初始化页面完成之后, 撤销掉这里的代理
                                             args[0][2].revoke();
                                             restore_target(...args[0][1], args[0][0]);
-                                            json.dmSetting.dmSwitch = false;
-                                            args[3][1] = JSON.stringify(json);
                                         }
                                     }
                                     return Reflect.apply(...args.slice(1));
@@ -3424,10 +3486,10 @@
                                 (...args) => {
                                     let node = args[3][1];
                                     if (args[3][0] === 'afterbegin' && node.tagName === 'SPAN' && node.className === 'bpx-player-toast-confirm') {
-                                        // 撤销掉代理即可
+                                        // 页面初始化完成, 撤销掉代理即可
                                         args[0][2].revoke();
                                         restore_target(...args[0][1], args[0][0]);
-                                        // 必须采用回调的方式实现, 因为这个时候插入节点函数尚未执行, 所以当前插入的节点的父节点尚未生成
+                                        // 必须采用回调的方式实现, 因为这个时候插入节点函数尚未执行, 所以当前插入的节点的父节点关系尚未创建
                                         setTimeout(() => {
                                             while (true) {
                                                 let pnode = node.parentNode;
@@ -3504,8 +3566,8 @@
             },
             /**
              * 配置执行函数
-             * @param {number} id
-             * @param {string} href
+             * @param {number} id 
+             * @param {string} href 
              * @returns {Array}
              */
             get_funcs(id, href, is_login = true) {
@@ -3575,8 +3637,8 @@
                 get shade_node() { return document.getElementById(this.id_name); },
                 /**
                  * 创建遮罩
-                 * @param {string} color
-                 * @param {number} opacity
+                 * @param {string} color 
+                 * @param {number} opacity 
                  */
                 create_cover(color, opacity = 0.5) {
                     const html = `
@@ -3633,7 +3695,7 @@
                 }
             },
             get_funcs(id) {
-                const f = (() => GM_Objects.registermenucommand('Support || Donation', Support_Me.main.bind(Support_Me)));
+                const f = () => GM_Objects.registermenucommand('Support || Donation', Support_Me.main.bind(Support_Me));
                 f.start = 1, f.type = 1;
                 if (this._shade.run_in.includes(id)) {
                     this._shade.init();
@@ -3731,14 +3793,14 @@
             }
             // 根据id生成配置
             const id = this.#configs.id;
-            // 注入css, 尽快执行
-            this.#css_module.inject_css(id);
-            // 初始化动态数据管理模块
-            Dynamic_Variants_Manager.init(id);
             // 载入过滤模块的配置
             this.#load_filter_configs(id);
             // 检查用户是否登录
             this.#user_is_login = this.#configs.check_is_login?.();
+            // 注入css, 尽快执行
+            this.#css_module.inject_css(id, this.#user_is_login);
+            // 初始化动态数据管理模块
+            Dynamic_Variants_Manager.init(id);
             // 配置启动函数
             // init, 表示该函数需要在html载入前执行
             // main, 表示该函数需要在html载入后执行
@@ -3760,7 +3822,9 @@
              * 执行函数, type: 0, 使用当前optimizer整个对象的this; 1, 其他的自定义this
              * @param {Array} funcs
              */
-            const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
+            const load_func = (funcs) => funcs.forEach(e => {
+                e.type ? e() : e.call(this);
+            });
             load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started'));
         }
     }
