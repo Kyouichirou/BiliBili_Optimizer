@@ -14,7 +14,7 @@
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
 // @connect      files.superbed.cn
-// @connect      i.postimg.cc
+// @connect      8.z.wiki
 // @grant        GM_info
 // @grant        GM_getTab
 // @grant        GM_getTabs
