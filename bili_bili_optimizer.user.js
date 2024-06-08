@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         bili_bili_optimizer
+// @name         bili_bili_optimizer_x
 // @namespace    https://github.com/Kyouichirou
-// @version      2.2
+// @version      2.5
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -43,78 +43,79 @@
     const GM_Objects = {
         /**
          * 提示信息
-         * @param {string} content 
-         * @param {string} title 
-         * @param {number} duration 
-         * @param {Function} cfunc 
-         * @param {Function} ofunc 
+         * @param {string} content
+         * @param {string} title
+         * @param {number} duration
+         * @param {Function} cfunc
+         * @param {Function} ofunc
          * @returns {null}
          */
         notification: (content = "", title = "info", duration = 3500, cfunc, ofunc) => GM_notification({ text: content, title: title, timeout: duration, onclick: cfunc, ondone: ofunc }),
         /**
          * 读取值
-         * @param {string} key_name 
+         * @param {string} key_name
          * @param {any} default_value
          * @returns {any}
          */
         get_value: (key_name, default_value = null) => GM_getValue(key_name, default_value),
         /**
          * 设置值
-         * @param {string} key_name 
-         * @param {any} value 
+         * @param {string} key_name
+         * @param {any} value
+         * @param {boolean} mode true, 检查值是否为空, 默认false
          * @returns {null}
          */
-        set_value: (key_name, value) => GM_setValue(key_name, value),
+        set_value: (key_name, value, mode = false) => mode ? value && GM_setValue(key_name, value) : GM_setValue(key_name, value),
         /**
          * 注入css, 返回注入的css节点
-         * @param {string} css 
+         * @param {string} css
          * @returns {HTMLElement}
          */
         addstyle: (css) => GM_addStyle(css),
         /**
          * 注册菜单事件, 返回注册id
-         * @param {string} name 
-         * @param {Function} callback_func 
+         * @param {string} name
+         * @param {Function} callback_func
          * @returns {number}
          */
         registermenucommand: (name, callback_func) => GM_registerMenuCommand(name, callback_func),
         /**
          * 解除菜单注册, 接受参数, 注册的id
-         * @param {number} cid 
+         * @param {number} cid
          * @returns {null}
          */
         unregistermenucommand: (cid) => GM_unregisterMenuCommand(cid),
         /**
          * 判断监听值的修改是否来自非当前页面
-         * @param {Function} func 
+         * @param {Function} func
          * @returns {Function}
          */
         _check_from_remote: (func) => (...args) => args[3] && func(...args),
         /**
          * 监听键值的变化, 返回监听id
-         * @param {string} key_name 
-         * @param {Function} func 
+         * @param {string} key_name
+         * @param {Function} func
          * @returns {number}
          */
         addvaluechangeistener(key_name, callback_func) { return GM_addValueChangeListener(key_name, this._check_from_remote(callback_func)); },
         /**
          * 移除键值监听
-         * @param {number} cid 
+         * @param {number} cid
          * @returns {null}
          */
         removevaluechangeistener(cid) { return GM_removeValueChangeListener(cid); },
         /**
          * 打开链接
-         * @param {string} url 
-         * @param {object} configs 
+         * @param {string} url
+         * @param {object} configs
          * @returns {null}
          */
         openintab: (url, configs) => GM_openInTab(url, configs),
         /**
          * 复制内容到剪切板
-         * @param {string} content 
-         * @param {string} type 
-         * @param {Function} func 
+         * @param {string} content
+         * @param {string} type
+         * @param {Function} func
          * @returns {null}
          */
         copy_to_clipboard: (content, type, func) => GM_setClipboard(content, type, func),
@@ -122,24 +123,24 @@
         window_close: () => window.close(),
         /**
          * 设置标签
-         * @param {string} key 
-         * @param {any} val 
+         * @param {string} key
+         * @param {any} val
          */
         set_tab(key, val) {
             this.get_tab((tab) => {
-                tab[key] = val;
+                tab[key] = Array.isArray(val) ? Array.from(val) : val;
                 GM_saveTab(tab);
             });
         },
         /**
          * 读取多个标签
-         * @param {Function} func 
+         * @param {Function} func
          * @returns {undefined}
          */
         get_tabs: (func) => GM_getTabs(func),
         /**
          * 读取单个标签
-         * @param {Function} func 
+         * @param {Function} func
          * @returns {undefined}
          */
         get_tab: (func) => GM_getTab(func),
@@ -166,7 +167,7 @@
         feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
          * 将字符串响应头转为字典
-         * @param {string} content 
+         * @param {string} content
          * @returns {object}
          */
         _convert_dic(content) {
@@ -177,7 +178,7 @@
         },
         /**
          * 发起请求
-         * @param {string} url 
+         * @param {string} url
          * @returns {Promise}
          */
         _http(url) {
@@ -251,9 +252,9 @@
         },
         /**
          * 执行打印
-         * @param {string} content 
-         * @param {string} type 
-         * @param {boolean} mode 
+         * @param {string} content
+         * @param {string} type
+         * @param {boolean} mode
          */
         print(content, type = 'info', mode = false) {
             const bc = this._colors[type];
@@ -264,7 +265,7 @@
                 `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
             ];
             console.log(...params), mode && GM_Objects.notification(content, type);
-            type === this._colors.crash && Statics_Variant_Manager.crash_log(content);
+            bc === this._colors.crash && Statics_Variant_Manager.add_crash_log(content);
         }
     };
     // 基本信息匹配
@@ -275,8 +276,8 @@
         _up_id_reg: /(?<=com\/)\d+/,
         /**
          * 匹配执行
-         * @param {RegExp} reg 
-         * @param {string} href 
+         * @param {RegExp} reg
+         * @param {string} href
          * @returns {string}
          */
         _match(reg, href) { return href.match(reg)?.[0] || ''; },
@@ -383,7 +384,7 @@
         },
         /**
          * 更变透明度
-         * @param {number} opacity 
+         * @param {number} opacity
          */
         _opacity_change(opacity) {
             const target = document.getElementById("screen_shade_cover");
@@ -406,6 +407,8 @@
         _click_event() { this._support.onclick = (e) => e.target.localName === "i" ? this._share_weibo() : e.target.localName !== "a" && setTimeout(() => this._remove(), 300); },
         // 创建弹窗
         _creat_popup() {
+            // 假如是视频播放页面就暂停播放
+            unsafeWindow.player?.pause();
             // 先将遮罩设置为透明
             this._opacity_change(0);
             document.documentElement.insertAdjacentHTML("beforeend", this._html);
@@ -427,6 +430,7 @@
             this._support.remove();
             this._support = null;
             this._tips = null;
+            unsafeWindow.player?.play();
         },
         main() { this._support ? this._remove() : this._creat_popup(); },
     };
@@ -734,20 +738,20 @@
         };
         /**
          * 分词
-         * @param {string} content 
-         * @param {number} exclude_length 
+         * @param {string} content
+         * @param {number} exclude_length
          * @returns {Array}
          */
         #seg(content, exclude_length = 1) { return [...this.#segmenter.segment(content)].map(e => e.segment).filter(e => e.length > exclude_length); }
         /**
          * 统计词频
-         * @param {Array} words_list 
+         * @param {Array} words_list
          * @returns {object}
          */
         #word_counter(words_list) { return words_list.reduce((counter, val) => (counter[val] ? ++counter[val] : (counter[val] = 1), counter), {}); }
         /**
          * 手动规则取词
-         * @param {string} content 
+         * @param {string} content
          */
         #seg_word(content) {
             const words = [];
@@ -786,9 +790,9 @@
         #update_content_len_limit() { this.#content_len_limit = (this.#configs.feature_length_limit - 1) * 1 + 2; }
         /**
          * 计算先验概率
-         * @param {number} bayes_black_len 
-         * @param {number} bayes_white_len 
-         * @param {number} bayes_total_len 
+         * @param {number} bayes_black_len
+         * @param {number} bayes_white_len
+         * @param {number} bayes_total_len
          */
         #update_prior_probability(bayes_black_len, bayes_white_len, bayes_total_len) {
             this.#black_p = bayes_black_len > 0 ? Math.log(bayes_black_len) - Math.log(bayes_total_len) : Math.log(this.#configs.alpha / (bayes_total_len + 2 * this.#configs.alpha));
@@ -796,7 +800,7 @@
         }
         /**
          * 更新模型使用的参数
-         * @param {boolean} mode 
+         * @param {boolean} mode
          */
         #update_paramters() {
             // 先验概率
@@ -812,13 +816,13 @@
         #get_module() { this.bayes = this.#cal_bayes.bind(this, ...(this.#configs.name !== 'multinomialnb' ? [0, 0] : [this.#white_p, this.#black_p])); }
         /**
          * 调整具体的数值
-         * @param {string} key 
-         * @param {number} lower 
+         * @param {string} key
+         * @param {number} lower
          * @param {number} upupper
          * @param {function} func
-         * @param {number} old_val 
+         * @param {number} old_val
          * @param {number} new_val
-         * @returns {number} 
+         * @returns {number}
          */
         #adjust_config_val(key, lower, upupper, func, old_val, new_val) {
             // 确保输入内容为数字
@@ -881,15 +885,15 @@
         }
         /**
          * 触发重新加载
-         * @param {number} mode 
+         * @param {number} mode
          */
         #trigger_reload(mode) { GM_Objects.set_value('bayes_reload', { 'mode': mode, 'update': Date.now() }); }
         /**
          * 计算概率
-         * @param {number} w_pro 
+         * @param {number} w_pro
          * @param {number} b_pro
          * @param {string} content
-         * @returns {number} 
+         * @returns {number}
          */
         #cal_bayes(w_pro, b_pro, content) {
             if (content.length < this.#content_len_limit) return -1;
@@ -908,14 +912,14 @@
         }
         /**
          * 贝叶斯判断
-         * @param {string} _content 
+         * @param {string} _content
          * @returns {number}
          */
         bayes(_content) { }
         /**
          * 添加新内容
-         * @param {string} content 
-         * @param {boolean} mode 
+         * @param {string} content
+         * @param {boolean} mode
          */
         add_new_content(content, mode) {
             if (content.length < this.#content_len_limit) {
@@ -949,7 +953,7 @@
         }
         /**
          * 调整模型配置
-         * @param {object} configs { threshold: number, alpha: number, name: string } 
+         * @param {object} configs { threshold: number, alpha: number, name: string }
          */
         adjust_configs(configs) {
             try {
@@ -1045,7 +1049,8 @@
 
     // ------------- 数据结构, 统一使用数组作为数据的载体
     class Dic_Array extends Array {
-        #id_name;
+        #id_name = null;
+        #func = null;
         /**
          * 数组 - 字典结构
          * @param {Array} data
@@ -1057,30 +1062,33 @@
                 // 继承, 必须先调用父类, 才能使用this
                 super(...data);
                 this.#id_name = id_name;
+                const funcs = {
+                    up_id: (id) => {
+                        Dynamic_Variants_Manager.accumulative_func();
+                        Colorful_Console.print(`block ${this.#id_name}: ${id}`);
+                        return true;
+                    },
+                    video_id: (_id) => true
+                };
+                this.#func = funcs[id_name];
             }
         }
         /**
          * 检查是否存在和记录
-         * @param {string} id 
-         * @returns {boolean || object}
+         * @param {string} id
+         * @returns {boolean | object}
          */
-        includes_r(id, mode = false) {
-            if (!id) return null;
-            const id_name = this.#id_name;
-            const target = super.find(e => e[id_name] === id);
-            // 更新访问的数据
-            let f = false;
-            if (target) {
-                f = true;
-                const now = Date.now();
-                target.last_active_date = now;
-                target.visited_times += 1;
-                // 更新访问状态, 以便后面清理数据时作为指标
-                Dynamic_Variants_Manager.rate_up_status_sync(id_name, id, now, target.visited_times);
-                id_name === 'up_id' && Dynamic_Variants_Manager.accumulative_func();
-                Colorful_Console.print(`block ${this.#id_name}: ${id}`);
-            }
-            return mode ? target : f;
+        includes_r(id) {
+            return id ? super.find(e => {
+                if (e[this.#id_name] === id) {
+                    const now = Date.now();
+                    e.last_active_date = now;
+                    e.visited_times += 1;
+                    Dynamic_Variants_Manager.rate_up_status_sync(this.#id_name, id, now, e.visited_times);
+                    return this.#func(id);
+                }
+                return false;
+            }) : null;
         }
         /**
          * 移除id
@@ -1094,14 +1102,19 @@
             return index > -1 && (super.splice(index, 1), true);
         }
         /**
-         * 更新活动的状态
-         * @param {object} info 
+         * 更新访问状态, 数据同步过来使用
+         * @param {object} info
          */
         update_active_status(info) {
             const id = info.id;
-            if (!id) return;
-            const target = super.find(e => e[this.#id_name] === id);
-            if (target) target.last_active_date = info.date, target.visited_times = info.visited_times;
+            id && super.some(e => {
+                if (e[this.#id_name] === id) {
+                    e.last_active_date = info.date;
+                    e.visited_times = info.visited_times;
+                    return true;
+                }
+                return false;
+            });
         }
     }
 
@@ -1145,8 +1158,8 @@
 
     /**
      * 自定义的includes函数
-     * @param {boolean} mode 
-     * @param {string} id_name 
+     * @param {boolean} mode
+     * @param {string} id_name
      * @returns {Function}
      */
     function includes_r(mode, id_name = 'video_id') {
@@ -1172,6 +1185,8 @@
             a: [
                 '\u4f20\u5a92\u5b66\u9662',
                 '\u53f8\u51e4',
+                '\u65b0\u534e\u7f51',
+                '\u4eba\u6c11\u7f51',
                 '\u9a6c\u7763\u5de5',
                 '\u79e6\u660a',
                 '\u738b\u9a81',
@@ -1368,7 +1383,6 @@
                 '\u4e13\u5347\u672c',
                 '\u7a7f\u8d8a\u706b\u7ebf',
                 '\u81ea\u5b66\u7ecf\u9a8c',
-                '\u9ad8\u8003',
                 '\u5fe0\u544a',
                 '\u6234\u5efa\u4e1a',
                 '\u5f20\u4e1c\u5347',
@@ -1376,7 +1390,6 @@
                 '\u91cd\u542f',
                 '\u592e\u89c6',
                 '\u7f8e\u5986',
-                '\u665a\u4f1a',
                 '\u85aa\u916c',
                 '\u85aa\u8d44',
                 '\u5f85\u9047',
@@ -1416,12 +1429,11 @@
                 '\u534e\u6668\u5b87',
                 '\u4e0a\u6d77\u5821\u5792',
                 '\u90ed\u656c\u660e',
-                '\u6bd5\u4e1a\u5b63',
                 '\u9ec4\u6653\u660e'
             ],
             /**
              * 添加拦截关键词
-             * @param {Array} data 
+             * @param {Array} data
              */
             add(data) {
                 const a = this._get_data();
@@ -1440,7 +1452,7 @@
             },
             /**
              * 移除拦截关键词
-             * @param {Array} data 
+             * @param {Array} data
              */
             remove(data) {
                 this.a = this.a.filter(e => !data.includes(e));
@@ -1469,7 +1481,7 @@
         rate_videos: null,
         // 自动, 历史访问视频, 动态, 限制数量[]
         visited_videos: null,
-        session_visited_videos: [],
+        session_visited_videos: null,
         // 自动, 累积拦截次数, 跨标签通信
         accumulative_total: GM_Objects.get_value('accumulative_total', 0),
         accumulative_bayes: GM_Objects.get_value('accumulative_bayes', 0),
@@ -1530,14 +1542,14 @@
                 enable: (state) => this.bayes_module.set_enable_state(state),
                 /**
                  * 测试文本分类
-                 * @param {string} content 
+                 * @param {string} content
                  * @returns {null}
                  */
                 test: (content) => console.log(this.bayes_module.bayes(content) < 0 ? 'the length of content does not meet the requirements' : this.bayes_module.test_result),
                 detail: () => this.bayes_module.show_detail(),
                 /**
                  * 重置贝叶斯
-                 * @param {number} mode 
+                 * @param {number} mode
                  * @returns {null}
                  */
                 reset: (mode = 0) => this.bayes_module.reset(mode),
@@ -1576,31 +1588,32 @@
         },
         /**
          * 贝叶斯拦截记录
-         * @param {string} title 
-         * @param {number} b_result 
+         * @param {string} title
+         * @param {number} b_result
          */
         _bayes_accumulative(title, b_result) {
             this.accumulative_func(), GM_Objects.set_value('accumulative_bayes', ++this.accumulative_bayes);
             Colorful_Console.print(`bayes block(${b_result.toFixed(4)}): ${title}`, 'debug');
         },
         // up, 评分, 状态更新写入, 假如频繁写入, 相对影响性能的, 当数据累积到一定数量才写入, 或者定时写入, 而不是一变化就写入
+        // 这部分数据作为粗略统计
         _rate_up_status_write_monitor() {
             let up_times = 0, rate_times = 0, tmp = null;
             const write_data = (mode = false) => {
-                const i = mode ? 1 : 5;
+                const i = mode ? 0 : 4;
                 const x = up_times > i ? rate_times > i ? 3 : 1 : rate_times > i ? 2 : 0;
                 switch (x) {
                     case 3:
-                        GM_Objects.set_value('block_ups', this.block_ups);
-                        GM_Objects.set_value('rate_videos', this.rate_videos);
+                        GM_Objects.set_value('block_ups', this.block_ups, true);
+                        GM_Objects.set_value('rate_videos', this.rate_videos, true);
                         up_times = 0, rate_times = 0;
                         break;
                     case 2:
-                        GM_Objects.set_value('rate_videos', this.rate_videos);
+                        GM_Objects.set_value('rate_videos', this.rate_videos, true);
                         rate_times = 0;
                         break;
                     case 1:
-                        GM_Objects.set_value('block_ups', this.block_ups);
+                        GM_Objects.set_value('block_ups', this.block_ups, true);
                         up_times = 0;
                         break;
                     default:
@@ -1615,8 +1628,8 @@
                 },
                 get: () => tmp
             });
-            // 每5秒检查数据的状态, 假如数据变化则写入
-            setInterval(() => write_data(true), 5000);
+            // 每6秒检查数据的状态, 假如数据变化则写入
+            setInterval(() => write_data(true), 6666);
         },
         up_video_data_sync_info: null,
         // 数据同步监听
@@ -1624,7 +1637,7 @@
             const configs = {
                 accumulative_total: {
                     run_in: Array.from({ length: 5 }, (_val, index) => index),
-                    f: (..._args) => (this.accumulative_total = args[2])
+                    f: (...args) => (this.accumulative_total = args[2])
                 },
                 accumulative_bayes: {
                     run_in: Array.from({ length: 3 }, (_val, index) => index),
@@ -1635,8 +1648,7 @@
                     f: (...args) => {
                         const id = args[2];
                         this.visited_videos.push(id);
-                        this.session_visited_videos.push(id);
-                        GM_Objects.set_tab('session_visited_videos', this.session_visited_videos);
+                        this.session_visited_videos.push_and_settab(id);
                     }
                 },
                 rate_video_sync: {
@@ -1694,12 +1706,12 @@
         },
         /**
          * 取消拦截视频
-         * @param {string} video_id 
+         * @param {string} video_id
          */
         unblock_video(video_id) { this.block_videos.remove(video_id) && (GM_Objects.set_value('block_videos', this.block_videos), this.up_video_sync('unblock', 'video', video_id)); },
         /**
          * 拦截视频
-         * @param {string} video_id 
+         * @param {string} video_id
          */
         block_video(video_id) {
             this.block_videos.push(video_id), GM_Objects.set_value('block_videos', this.block_videos);
@@ -1720,11 +1732,10 @@
         initial_rate_videos() {
             const o = new Dic_Array(GM_Objects.get_value('rate_videos', []), 'video_id');
             // 检查评分函数
-            o.check_rate = function (id) { return this.includes_r(id, true)?.rate || 0; };
+            o.check_rate = function (id) { return this.includes_r(id)?.rate || 0; };
             // 添加函数
             o.add = function (info) {
-                const video_id = info.video_id;
-                const data = this.find(e => e.video_id === video_id);
+                const video_id = info.video_id, data = this.find(e => e.video_id === video_id);
                 if (data && data.rate !== info.rate) {
                     data.rate = info.rate;
                     this.push(data);
@@ -1739,13 +1750,13 @@
         // 初始化历史访问数据
         initial_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
         // 当前浏览器会话播放的历史视频
-        initial_session_visited_videos() { GM_Objects.get_tabs(((tabs) => Object.values(tabs).some(tab => (this.session_visited_videos = tab.session_visited_videos) ? true : false)).bind(this)); },
+        initial_session_visited_videos() { return new Promise((resolve, _reject) => GM_Objects.get_tabs((tabs) => resolve(Object.values(tabs).find(tab => tab.session_visited_videos)))); },
         check_visited_video(video_id) { return this.session_visited_videos.includes(video_id) ? 1 : this.visited_videos.includes(video_id) ? 2 : 0; },
         // 展示数据状态
         show_status: () => null,
         /**
         * 数据初始化
-        * @param {number} site_id 
+        * @param {number} site_id
         */
         init(site_id) {
             // 全局启用, 关键词过滤
@@ -1758,10 +1769,15 @@
             this.block_videos = new Block_Video_Array(GM_Objects.get_value('block_videos', []), 0);
             // 评分信息仅在搜索的页面启用, 播放页不需要, 播放页只需要执行一次, 放置于静态数据管理模块
             if (site_id === 2) this.rate_videos = this.initial_rate_videos();
-            if (site_id !== 1) {
-                this.visited_videos = this.initial_visited_videos();
-                this.initial_session_visited_videos();
-            }
+            if (site_id !== 1) this.visited_videos = this.initial_visited_videos();
+            this.initial_session_visited_videos().then((tab) => {
+                this.session_visited_videos = tab?.session_visited_videos || [];
+                this.session_visited_videos.push_and_settab = function (video_id) {
+                    if (this.includes(video_id)) return false;
+                    this.push(video_id);
+                    return GM_Objects.set_tab('session_visited_videos', this), true;
+                };
+            });
             this._data_sync_monitor(site_id);
             this._rate_up_status_write_monitor();
             this.show_status = this._show_data_status;
@@ -1797,12 +1813,11 @@
             },
             /**
              * 拦截up
-             * @param {object} info 
+             * @param {object} info
              * @returns {null}
              */
             block(info) {
-                const data = this._data;
-                const up_id = info.up_id;
+                const data = this._data, up_id = info.up_id;
                 if (data.some(e => e.up_id === up_id)) return;
                 data.push(info), this._info_write(data, up_id, true), Dynamic_Variants_Manager.up_video_sync('block', 'up', info);
             },
@@ -1815,10 +1830,14 @@
             get _data() { return Dynamic_Variants_Manager.initial_rate_videos(); },
             /**
              * 检查视频的评分
-             * @param {string} video_id 
+             * @param {string} video_id
              * @returns {number}
              */
-            check_video_rate(video_id) { return this._data.check_rate(video_id, false); },
+            check_video_rate(video_id) {
+                const arr = this._data, r = arr?.check_rate(video_id);
+                r > 0 && this._info_write(arr);
+                return r;
+            },
             /**
              * 更新, 全新添加
              * @param {object} info
@@ -1826,11 +1845,10 @@
             add(info) { this._handle(info, true); },
             remove(video_id) { this._handle(video_id, false); },
             _handle(data, mode) {
-                const arr = this._data;
-                const s_type = mode ? 'add' : 'remove';
+                const arr = this._data, s_type = mode ? 'add' : 'remove';
                 arr[s_type](data) && (this._info_write(arr), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
-            _info_write(data) { GM_Objects.set_value('rate_videos', data), Colorful_Console.print('update_rate_video_info'); }
+            _info_write(data) { GM_Objects.set_value('rate_videos', data, true), Colorful_Console.print('update_rate_video_info'); }
         },
         // 管理标记的下载视频记录
         mark_download_video: {
@@ -1845,20 +1863,21 @@
         },
         /**
          * 历史访问记录, 只有添加, 没有删除
-         * @param {string} video_id 
+         * @param {string} video_id
          */
         add_visited_video(video_id) {
             const arr = Dynamic_Variants_Manager.initial_visited_videos();
             arr.push(video_id);
+            Dynamic_Variants_Manager.session_visited_videos.push_and_settab(video_id);
             GM_Objects.set_value('visited_videos', arr);
             Dynamic_Variants_Manager.rate_visited_data_sync(video_id);
             Colorful_Console.print('play record has been writed');
         },
         /**
          * 异常日志记录
-         * @param {string} content 
+         * @param {string} content
          */
-        crash_log(content) {
+        add_crash_log(content) {
             const data = GM_Objects.get_value('crash_log', []);
             data.unshift({ 'reason': content, 'time': new Date().toLocaleString() });
             while (data.length > 50) data.pop();
@@ -1941,78 +1960,65 @@
                     if (a > acc) acc = a;
                     return acc;
                 }, 0) + 2;
+                // 找出最长的字符串, 其他的填充空格
                 console.log(cmds.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
             }
         }
     });
     // -------- 展示帮助以及其他内部存储数据
 
-    // --------- 视频控制模块
+    // 视频控制模块 ---------
     class Video_Module {
         // 贝叶斯添加标记
+        #initial_flag = false;
         #add_bayes_flag = false;
+        // 标记视频已下载
         #download_flag = false;
+        // 下载音频的路径
+        #download_audio_path = 'E:\\Audio\\voice book';
+        // 下载视频的路径
+        #download_video_path = 'E:\\videos';
         // 菜单控制速度
         #is_first = true;
         #video_speed = 2;
-        // 视频元素
-        #video = null;
+        // 视频控制组件
+        #video_player = null;
         // 历史访问settimeout id
         #record_id = null;
+        // 自动速度控制标记
         #auto_speed_mode = false;
         // 视频基本信息
-        #video_info = {
-            video_id: '',
-            title: '',
-            up_id: '',
-            duration: 0,
-            is_collection: false
-        };
-        // 初始化是否成功
-        #initial_flag = false;
+        #video_info = null;
         /**
-         * @returns {boolean}
-         */
-        get is_initial_success() { return this.#initial_flag; }
-        /**
+         * 视频基础信息
          * @returns {object}
          */
         get video_base_info() { return this.#video_info; }
+        // 更新视频基础信息
+        update_essential_info(user_data, video_data) {
+            return !Object.entries(this.#video_info = {
+                video_id: video_data.bvid,
+                title: video_data.title,
+                up_id: user_data.mid,
+                duration: video_data.duration,
+                is_collection: video_data.videos > 1 ? true : false
+            }).some((k, v) => v === undefined ? (Colorful_Console.print(`failed to obtain basic video information: ${k}`, 'crash', true), true) : false);
+        }
+        // 初始化成功标记
+        get initial_flag() { return this.#initial_flag; }
         /**
-         * 判断视频是否为合集
-         * @returns {boolean}
+         * 设置下载音频路径
+         * @param {string} path
          */
-        get #check_is_collection() { return document.getElementsByTagName('h3')[0]?.innerText === '视频选集' || false; }
+        set download_audio_path(path) { this.#download_audio_path = path; }
         /**
-         * 获取视频元素
-         * @returns {HTMLElement | null}
+         * 设置下载视频路径
+         * @param {string} path
          */
-        get #video_elemment() {
-            for (const e of ['video', 'bwp-video']) {
-                const video = document.getElementsByTagName(e);
-                if (video.length > 0) return video[0];
-            };
-            const video = document.getElementsByClassName('bwp-video');
-            return video.length > 0 ? video[0] : Colorful_Console.print('no video element of bwp-video', 'crash', true);
-        }
-        #get_up_id() {
-            const nodes = document.getElementsByClassName('staff-name');
-            return nodes.length > 0 ? Base_Info_Match.get_up_id(nodes[0].href) : null;
-        }
-        // 读取视频的基本信息
-        #load_video_info() {
-            this.#video_info.is_collection = this.#check_is_collection;
-            this.#video_info.title = document.getElementsByTagName('h1')[0].title.trim();
-            this.#video_info.video_id = Base_Info_Match.get_video_id(location.href);
-            const node = document.getElementsByClassName('up-name');
-            this.#video_info.up_id = node.length > 0 ? Base_Info_Match.get_up_id(node[0].href) : this.#get_up_id();
-            this.#video_info.duration = this.#video.duration || unsafeWindow.player.getDuration();;
-            // 检查获取的内容是否完整
-            for (const key in this.#video_info) key !== 'is_collection' && !this.#video_info[key] && Colorful_Console.print(`video_info: lack of value: ${key}`, 'debug');
-        }
+        set download_video_path(path) { this.#download_video_path = path; }
         // 播放事件
         #create_video_event() {
-            this.#video.oncanplay = (e) => {
+            this.#video_player.mediaElement().oncanplay = (e) => {
                 // 只有当手动更改之后, 才会自动变速
                 if (this.#is_first) return;
                 const target = e.target;
@@ -2021,54 +2027,36 @@
             };
         }
         /**
-         * 速度控制
+         * 播放速度控制
          * @param {boolean} mode
          */
         #speed_control(mode) {
             this.#is_first = false;
-            this.#video_speed += (mode ? 0.5 : -0.5);
+            // 假如手动设置速度, 则取消自动变速
             this.#auto_speed_mode = false;
-            if (0 < this.#video_speed && this.#video_speed < 5) this.#video.playbackRate = this.#video_speed, this.#is_first = this.#video_speed < 2;
-        }
-        #auto_light = {
-            _light_off: false,
-            _mode: GM_Objects.get_value('auto_light', 0),
-            _names: ['auto_light_off', 'always_light_off', 'disable_light_off'],
-            _mid: null,
-            _create_menus() { this._mid = GM_Objects.registermenucommand(this._names[this._mode === 2 ? 0 : this._mode + 1], this._func.bind(this)); },
-            _func() {
-                this._mid && GM_Objects.unregistermenucommand(this._mid);
-                this._mode === 2 ? (this._mode = 0) : ++this._mode;
-                if (this._mode !== 0) this._light_off = this._mode === 1;
-                GM_Objects.set_value('auto_light', this._mode);
-                this._create_menus();
-            },
-            _monitor: () => {
-                let tmp = null;
-                Object.defineProperty(this.#auto_light, '_light_off', {
-                    set: (val) => {
-                        tmp = val;
-                        this.light_control(val ? 1 : 2);
-                    },
-                    get: () => tmp
-                });
-            },
-            main() {
-                let flag = false;
-                if (this._mode === 0) {
-                    const date = new Date();
-                    const m = date.getMonth() + 1;
-                    const h = date.getHours();
-                    flag = h > (m > 8 ? 16 : 17);
-                } else if (this._mode === 1) flag = true;
-                this._create_menus();
-                this._monitor();
-                return flag;
+            this.#video_speed += (mode ? 0.5 : -0.5);
+            if (0 < this.#video_speed && this.#video_speed < 5) {
+                this.#video_player.setPlaybackRate(this.#video_speed);
+                // 当速度调节小于2时, 重新恢复第一次的标记
+                this.#is_first = this.#video_speed < 2;
             }
-        };
+        }
+        // 自动速度控制, 用于快速观看视频
+        #auto_speed_up() {
+            this.#auto_speed_mode = true;
+            const ids = [[15000, 1.25], [75000, 1.5], [125000, 2], [155000, 2.5], [185000, 3]].map((e, i) => setTimeout(() => {
+                // 当自动调速停止, 则清除所有settimeout
+                if (!this.#auto_speed_mode) {
+                    ids.forEach(id => id && clearTimeout(id));
+                    return;
+                }
+                this.#video_player.setPlaybackRate(e[1]);
+                ids[i] = null;
+            }, e[0]));
+            GM_Objects.set_value('speed_up_video', false);
+        }
         // 速度控制, 菜单函数
         #regist_menus_command() { [['speedup', true], ['slow', false]].forEach(e => GM_Objects.registermenucommand(e[0], this.#speed_control.bind(this, e[1]))); }
-        // 访问视频记录
         #visited_record() {
             // 连续的内容不记录 ?
             // if (this.#video_info.is_collection) return;
@@ -2147,6 +2135,7 @@
                 } else !this.#download_flag && confirm('mark video as downloaded?') && this.#rate_funcs['8'](true);
                 const params = [];
                 // 只有当页面的视频为合集的状态才会生成相应的参数
+                let f = false;
                 if (this.#video_info.is_collection) {
                     params.push('-p ALL');
                     const nodes = document.getElementsByClassName('title');
@@ -2157,11 +2146,12 @@
                         ic += (voices.some(e => t.includes(e)) ? 1 : 0);
                         if (ic > 4) {
                             params.push('--audio-only');
+                            f = true;
                             break;
                         }
                     }
                 }
-                const cm = `BBDown -mt --work-dir "E:\\video" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
+                const cm = `BBDown -mt --work-dir "${f ? this.#download_audio_path : this.#download_video_path}" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
                 GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.print("bbdown commandline: " + cm));
                 return title;
             },
@@ -2255,7 +2245,7 @@
                 // 这个函数不会返回插入生成的节点, 返回空值
                 toolbar[0].insertAdjacentHTML('beforeend', html);
                 this.#video_rate_event();
-            } else Colorful_Console.print('fail to insert rate element', 'warning', true);
+            } else Colorful_Console.print('fail to insert rate element', 'crash', true);
         }
         #update_download_status(mode) {
             const f = this.#download_flag, r = Statics_Variant_Manager.mark_download_video.check(this.#video_info.video_id);
@@ -2283,89 +2273,123 @@
                 get: () => tmp
             });
         }
-        // 监听页面播放发生变化
-        #url_change_monitor() {
-            // 判断浏览器是否支持url change
-            if (GM_Objects.supportonurlchange === null) {
-                window.addEventListener('urlchange', (info) => {
-                    const video_id = Base_Info_Match.get_video_id(info.url);
-                    if (video_id === this.#video_info.video_id) return;
-                    this.video_change_id = video_id;
-                    this.url_has_changed = true;
-                    this.#add_bayes_flag = false;
-                    setTimeout(() => {
-                        this.#load_video_info();
-                        this.#visited_record();
-                        this.#update_download_status(true);
-                    }, 300);
-                });
-                return true;
-            } else Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true);
-        }
+        // 点击执行
         #click_target(classname) { document.getElementsByClassName(classname)[0]?.click(); }
-        // 自动速度控制, 用于快速观看视频
-        #auto_speed_up() {
-            this.#auto_speed_mode = true;
-            const ids = [[15000, 1.25], [75000, 1.5], [125000, 2], [155000, 2.5], [185000, 3]].map((e, i) => setTimeout(() => {
-                if (!this.#auto_speed_mode) {
-                    ids.forEach(id => id && clearTimeout(id));
-                    return;
-                }
-                this.#video.playbackRate = e[1];
-                ids[i] = null;
-            }, e[0]));
-            GM_Objects.set_value('speed_up_video', false);
-        }
+        // 全屏
+        wide_screen() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-web'); }
+        // 影院宽屏模式
+        theatre_mode() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-wide'); }
         /**
          * 声音控制
          * @param {boolean} mode
          */
         voice_control(mode) {
-            let vx = this.#video.volume, v = vx;
-            if (v !== (vx = mode ? (vx += 0.1) > 1 ? 1 : vx : (vx -= 0.1) < 0 ? 0 : vx)) this.#video.volume = vx;
+            let vx = this.#video_player.getVolume(), v = vx;
+            if (v !== (vx = mode ? (vx += 0.1) > 1 ? 1 : vx : (vx -= 0.1) < 0 ? 0 : vx)) this.#video_player.setVolume(vx);
         }
         // 播放控制
-        play_control() { this.#video.paused ? this.#video.play() : this.#video.pause(); }
-        // 灯光控制
+        play_control() { this.#video_player.isPaused() ? this.#video_player.play() : this.#video_player.pause(); }
+        /**
+         * 自动关灯控制控制
+         * @param {*} mode 0, 默认状态; 1, 根据时间自动调节 2. 取消自动关灯灯光
+         */
         light_control(mode = 0) {
-            if (mode > 0) {
-                const i = document.getElementsByClassName('bpx-docker bpx-docker-major bpx-state-light-off').length;
-                if ((mode === 1 && i > 0) || (mode === 2 && i === 0)) return;
-            }
-            const nodes = document.getElementsByClassName('bui-checkbox-input');
-            for (const node of nodes) {
-                if (node.ariaLabel === '关灯模式') {
-                    node.click();
-                    return;
-                }
-            }
-            Colorful_Console.print('light off element miss', 'debug', true);
+            const is_lightoff = this.#video_player.getLightOff();
+            !((mode === 1 && is_lightoff) || (mode === 2 && !is_lightoff)) && this.#video_player.setLightOff(!is_lightoff);
         }
-        wide_screen() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-web'); }
-        // 影院宽屏模式
-        theatre_mode() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-wide'); }
-        constructor() {
-            this.#video = this.#video_elemment;
-            if (this.#video) this.#initial_flag = true;
+        //自动关灯
+        #auto_light = {
+            _light_off: false,
+            _mode: GM_Objects.get_value('auto_light', 0),
+            _names: ['auto_light_off', 'always_light_off', 'disable_light_off'],
+            _mid: null,
+            _create_menus() { this._mid = GM_Objects.registermenucommand(this._names[this._mode === 2 ? 0 : this._mode + 1], this._func.bind(this)); },
+            _func() {
+                this._mid && GM_Objects.unregistermenucommand(this._mid);
+                this._mode === 2 ? (this._mode = 0) : ++this._mode;
+                if (this._mode !== 0) this._light_off = this._mode === 1;
+                GM_Objects.set_value('auto_light', this._mode);
+                this._create_menus();
+            },
+            _monitor: () => {
+                let tmp = null;
+                Object.defineProperty(this.#auto_light, '_light_off', {
+                    set: (val) => {
+                        tmp = val;
+                        this.light_control(val ? 1 : 2);
+                    },
+                    get: () => tmp
+                });
+            },
+            main() {
+                let flag = false;
+                if (this._mode === 0) {
+                    const date = new Date();
+                    const m = date.getMonth() + 1;
+                    const h = date.getHours();
+                    flag = h > (m > 8 && m < 4 ? 16 : 17) || h < 7;
+                } else if (this._mode === 1) flag = true;
+                this._monitor();
+                this._create_menus();
+                return flag;
+            }
+        };
+        // 判断浏览器是否支持urlchange事件
+        #check_support_urlchange() { return GM_Objects.supportonurlchange === null || (Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true), false); }
+        // 监听页面播放发生变化
+        #url_change_monitor() {
+            window.addEventListener('urlchange', (info) => {
+                const video_id = Base_Info_Match.get_video_id(info.url);
+                if (video_id === this.#video_info.video_id) return;
+                this.video_change_id = video_id;
+                this.url_has_changed = true;
+                // 贝叶斯添加设置为false
+                this.#add_bayes_flag = false;
+                setTimeout(() => {
+                    // 重新监听历史记录
+                    this.#visited_record();
+                    // 更新视频是否下载
+                    this.#update_download_status(true);
+                }, 300);
+            });
+        }
+        constructor(data) { this.#initial_flag = this.update_essential_info(data.upData, data.videoData); }
+        init() {
+            return new Promise((resolve, reject) => {
+                Object.defineProperty(unsafeWindow, 'player', {
+                    get: () => this.#video_player,
+                    set: (val) => {
+                        this.#video_player = val;
+                        // 必须回调
+                        setTimeout(() => {
+                            if (this.#check_support_urlchange()) {
+                                // 尽快执行关灯的动作
+                                this.#auto_light.main() && this.light_control(1);
+                                // 创建视频播放事件
+                                this.#create_video_event();
+                                resolve(true);
+                            } else reject('url_change_event_not_support');
+                        });
+                    },
+                    configurable: true,
+                    enumerable: true
+                });
+            });
         }
         main() {
-            // 先载入视频信息
-            this.#load_video_info();
-            // 浏览器需要支持url change事件
-            if (this.#url_change_monitor()) {
-                // 插入菜单
-                this.#add_video_rate_element();
-                // 创建菜单事件
-                this.#create_video_event();
-                // 关灯控制
-                this.#auto_light.main() && setTimeout(() => this.light_control(1), 300);
-                this.#visited_record();
-                this.#regist_menus_command();
-                GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
-            } else Colorful_Console.print('video module will not function properly', 'debug');
+            // urlchange监听
+            this.#url_change_monitor();
+            // 创建评分菜单
+            this.#add_video_rate_element();
+            // 关灯控制
+            this.#visited_record();
+            // 创建菜单事件
+            this.#regist_menus_command();
+            // 自动速度控制
+            GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
         }
     }
-    // 视频控制模块 ---------
+    // ---------- 视频控制模块
 
     // ----------- 优化器主体
     class Bili_Optimizer {
@@ -2400,7 +2424,7 @@
                 initial_data_name: '__pinia',
                 /**
                  * html第一次载入时携带的数据的处理
-                 * @param {object} val 
+                 * @param {object} val
                  * @returns {Array}
                  */
                 initial_data_handler: (val) => {
@@ -2429,14 +2453,14 @@
                 }),
                 /**
                  * 判断发起请求数据api url是否需要进行拦截操作, 返回一个函数用于提取响应数据
-                 * @param {string} url 
+                 * @param {string} url
                  * @returns {Function}
                  */
                 handle_fetch_url: (url) => url.startsWith(this.#configs.interpose_api_prefix + this.#configs.interpose_api_suffix) ? (data) => data.data?.item : null,
                 /**
                  * 添加数据到节点标题, 注意不是title
-                 * @param {HTMLElement} node 
-                 * @param {string} val 
+                 * @param {HTMLElement} node
+                 * @param {string} val
                  */
                 add_info_to_node_title(node, val) {
                     const h = node.getElementsByTagName('h3')[0];
@@ -2444,8 +2468,8 @@
                 },
                 // 读取目标节点元素的视频标题和up名称
                 /**
-                 * 
-                 * @param {HTMLElement} node 
+                 *
+                 * @param {HTMLElement} node
                  * @returns {object} { up_name: '', title: '' }
                  */
                 get_title_up_name(node) {
@@ -2457,12 +2481,11 @@
                 },
                 /**
                  * 用于处理节点名称的匹配方式
-                 * @param {string} classname 
-                 * @param {string} target_name 
+                 * @param {string} classname
+                 * @param {string} target_name
                  * @returns {boolean}
                  */
-                contextmenu_handle: (classname, target_name) => classname.startsWith(target_name),
-                check_is_login: (val) => val.feed?.data?.recommend.mid ? true : false,
+                contextmenu_handle: (classname, target_name) => classname.startsWith(target_name)
             },
             video: {
                 id: 1,
@@ -2509,6 +2532,7 @@
                         return tmp;
                     } else Colorful_Console.print('initial_data object api has changed in video page.', 'crash', true);
                 },
+                // 视频播放页的初始化状态中, 追踪id就已经被添加到href中, 所以必须通过遍历节点的方式清除掉
                 clear_a_link: (node) => {
                     const links = node.getElementsByTagName('a');
                     for (const a of links) {
@@ -2535,7 +2559,7 @@
                  * 视频页面的数据请求会发生两种情况: 1. 第一次载入, 请求一次, 因为html上的数据
                  * B站在视频播放页这里的操作很迷, 最多可能产生3次数据请求, 一般为2次, 首次可能为1次
                  * 请求的数据分别存放在不同的位置
-                 * @param {string} url 
+                 * @param {string} url
                  * @returns {Function}
                  */
                 handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.startsWith(this.#configs.interpose_api_prefix + e)) ? (response_content, pre_data_check) => {
@@ -2560,13 +2584,13 @@
                             response_content.data.Related = cache_results;
                             return;
                         }
+                        this.#video_instance.update_essential_info(data.View.owner, data.View);
                         results = this.#configs.request_data_handler(data.Related, pre_data_check);
                         response_content.data.Related = results;
                     }
                     this.#video_data_cache = results;
                 } : null,
-                contextmenu_handle: (classname, target_name) => classname === target_name,
-                check_is_login: (val) => val.user?.isLogin ? true : false
+                contextmenu_handle: (classname, target_name) => classname === target_name
             },
             search: {
                 id: 2,
@@ -2604,9 +2628,9 @@
                 },
                 fetch_flag: false,
                 /**
-                 * 
-                 * @param {Array} data 
-                 * @param {Function} clear_data 
+                 *
+                 * @param {Array} data
+                 * @param {Function} clear_data
                  */
                 request_data_handler: (data, clear_data) => {
                     const lost_pic = this.#configs.lost_pic;
@@ -2646,10 +2670,8 @@
                 // 检查搜索链接是否包含黑名单关键词
                 check_search: (href) => {
                     const c = decodeURIComponent(href.slice(32)), { a, b } = Dynamic_Variants_Manager.black_keys, r = a.find(e => c.includes(e)) || b.find(e => c.includes(e));
-                    return r && (alert(`hey, bro, don't waste time on rubbish: "${r}"; there will be closed the page after this alert.`), GM_Objects.window_close(), true);
-                },
-                // 搜索播放页面的初始化数据没有用户是否登录
-                check_is_login: () => document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false
+                    return r && (alert(`hey, bro, don't waste time on rubbish: "${r}"; may be closed the page after this alert.`), GM_Objects.window_close(), true);
+                }
             },
             space: { id: 3 },
             other: { id: 4 },
@@ -2664,7 +2686,7 @@
         #utilities_module = {
             /**
              * 获取节点的up, video的信息
-             * @param {HTMLElement} node 
+             * @param {HTMLElement} node
              * @returns {object | number}
              */
             get_up_video_info: (node) => {
@@ -2693,13 +2715,13 @@
                     else break;
                 }
                 const data = this.#configs.get_title_up_name(node);
-                ['title', 'up_name'].forEach(e => info[e] = data[e].toLowerCase());
+                ['title', 'up_name'].forEach(e => (info[e] = data[e].toLowerCase()));
                 // 检查是否存在空的数据, 假如为空, 则表明内容可能不是视频
                 return Object.values(info).every(e => e ? true : Colorful_Console.print(`less data: ${e}`, 'debug')) ? info : null;
             },
             /**
              * 将拦截对象的数据设置为空
-             * @param {object} data 
+             * @param {object} data
              */
             clear_data(data) {
                 // 递归调用, 遍历清空各层级的内容, 不涉及数组
@@ -2716,8 +2738,8 @@
         #proxy_module = {
             /**
              * 代理设置
-             * @param {object} target 
-             * @param {string} name 
+             * @param {object} target
+             * @param {string} name
              * @param {object} handler
              */
             __proxy(target, name, handler) { target[name] = new Proxy(target[name], handler); },
@@ -2866,7 +2888,7 @@
             },
             /**
              * 获得配置函数
-             * @param {number} id 
+             * @param {number} id
              * @returns {Array}
              */
             get_funcs(id) {
@@ -2947,9 +2969,10 @@
             },
             _video: {
                 run_in: [1],
-                // .bpx-player-toast-item这部分用于隐藏显示的高清试用相关的信息, 但是不影响click操作 
+                // .bpx-player-toast-item这部分用于隐藏显示的高清试用相关的信息, 但是不影响click操作
                 css: (user_is_login) =>
                     (user_is_login ? '' : '.bpx-player-subtitle-panel-text,') + `.video-page-special-card-small,
+                    .video-page-operator-card-small,
                     .pop-live-small-mode.part-1{
                         display: none !important;
                     }
@@ -3043,7 +3066,7 @@
                     u = 宽屏
                     +, 声音 +
                     -, 声音 -
-         
+
                     f = fullscreen // 原生
                     m = mute // 原生
                 */
@@ -3145,7 +3168,7 @@
             },
             /**
              * 配置执行函数
-             * @param {number} id 
+             * @param {number} id
              * @returns {Array}
              */
             get_funcs(id) { return (id < 3 ? Object.getOwnPropertyNames(this).filter(e => e !== 'get_funcs').map(e => this[e]) : [this._click, this._key_down]).map(e => (e.start = 1, e)); }
@@ -3154,8 +3177,8 @@
         #page_modules = {
             /**
              * 遍历视频卡片
-             * @param {HTMLElement} target 
-             * @param {Array} datalist 
+             * @param {HTMLElement} target
+             * @param {Array} datalist
              * @returns {null}
              */
             _traversal_video_card: (target, datalist) => datalist && setTimeout(() => {
@@ -3230,14 +3253,22 @@
             },
             // 初始化页面数据的清理
             _initial_data_intercept: (id, href) => {
-                if (id === 1 && !['com/video', 'com/all'].some(e => href.includes(e))) return;
+                if (id === 2 && !['com/video', 'com/all'].some(e => href.includes(e))) return;
                 let initial_data = null;
-                const initial_data_handler = this.#configs.initial_data_handler.bind(this);
+                const initial_data_handler = this.#configs.initial_data_handler.bind(this), clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module);
                 Object.defineProperty(GM_Objects.window, this.#configs.initial_data_name, {
                     set: (val) => {
                         if (val) {
                             this.#initial_data = initial_data_handler(val);
+                            if (val.spec) clear_data(val.spec);
                             initial_data = val;
+                            if (id === 1) {
+                                const v = new Video_Module(val);
+                                if (v.initial_flag) {
+                                    this.#video_instance = v;
+                                    this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
+                                }
+                            }
                         }
                     },
                     get: () => initial_data
@@ -3307,7 +3338,10 @@
                             for (const node of r.addedNodes) {
                                 f = (node.className || '').startsWith('search-page');
                                 if (f) {
-                                    this.#page_modules._traversal_video_card(node, this.#search_page_results);
+                                    setTimeout(() => {
+                                        this.#page_modules._traversal_video_card(node, this.#search_page_results);
+                                        this.#search_page_results = [];
+                                    }, 300);
                                     break;
                                 }
                             }
@@ -3320,7 +3354,10 @@
                     // 私有属性无法直接拦截
                     let tmp = null;
                     Object.defineProperty(configs, 'fetch_flag', {
-                        set: (v) => (tmp = v) && this.#page_modules._traversal_video_card(document, this.#search_page_results),
+                        set: (v) => (tmp = v) && setTimeout(() => {
+                            this.#page_modules._traversal_video_card(document, this.#search_page_results);
+                            this.#search_page_results = [];
+                        }, 300),
                         get: () => tmp
                     });
                 }, 300)
@@ -3362,23 +3399,20 @@
                     // 超时不触发上面的事件监听则主动播放
                     _wait_switch() {
                         this._timeout_id = setTimeout(() => {
-                            const qs = unsafeWindow.player.getQuality();
-                            if (qs.newQ > 16) unsafeWindow.player.play();
+                            unsafeWindow.player.getQuality()?.newQ > 16 && unsafeWindow.player.play();
                             this._timeout_id = null;
-                        }, 1500);
+                        }, 1800);
                     },
                     // 判断视频是否已经切换到高清
                     _check_switch_finished(node) { return node.innerText?.includes('试用中'); },
                     _trial_btn_click(node) {
+                        // 获得视频支持的清晰度
+                        if (unsafeWindow.player.getSupportedQualityList()?.some(e => e > 16)) {
+                            unsafeWindow.player.pause();
+                            this._wait_switch();
+                        }
                         const b = node.getElementsByClassName('bpx-player-toast-confirm-login');
-                        return this._is_click = b.length > 0 && b[0].innerHTML.includes('试看') ? (setTimeout(() => {
-                            const qs = unsafeWindow.player.getSupportedQualityList();
-                            if (qs && qs.some(e => e > 16)) {
-                                unsafeWindow.player.pause();
-                                this._wait_switch();
-                            }
-                            b[0]?.click();
-                        }, 100), true) : false;
+                        return this._is_click = b.length > 0 && b[0].innerHTML.includes('试看') ? (setTimeout(() => b[0]?.click(), 100), true) : false;
                     },
                     _replay_video() { setTimeout(() => unsafeWindow.player.play()); },
                     init() {
@@ -3428,6 +3462,7 @@
                                 {
                                     apply(target, thisArg, args) {
                                         const node = args[0];
+                                        // 避免错误, 错误可能引发页面的崩溃, 执行这个添加的节点
                                         if (node.tagName?.toLowerCase() === 'script' && node.src.toLowerCase().includes('minilogin')) {
                                             node.src = '';
                                             setTimeout(() => unsafeWindow.player.play(), 100);
@@ -3447,7 +3482,7 @@
                                         // 这里的拦截操作主要是后面用户主动打开或者关闭弹幕
                                         // 这样就是先了弹幕开关的持久化存储而不是每次都是关闭或者开启
                                         if (!this._is_first_time && args[0] === 'bpx_player_profile') {
-                                            this._danmu_switch = JSON.parse(args[1]).dmSetting?.dmSwitch || false;
+                                            this._danmu_switch = JSON.parse(args[1])?.dmSetting?.dmSwitch || false;
                                             GM_Objects.set_value('danmu_switch', this._danmu_switch);
                                         }
                                         return Reflect.apply(target, thisArg, args);
@@ -3525,9 +3560,9 @@
                         });
                     }
                 },
+                // 这里的时间不敏感
                 main: () => setTimeout(() => {
-                    this.#video_instance = new Video_Module();
-                    if (this.#video_module_initial_flag = this.#video_instance.is_initial_success) {
+                    if (this.#video_module_initial_flag) {
                         this.#video_instance.main();
                         Object.defineProperty(this.#video_instance, 'url_has_changed', {
                             set: (_val) => this.#video_data_cache = null,
@@ -3539,6 +3574,8 @@
             // 首页
             _home_module: {
                 _maintain() {
+                    alert('the function has not been opened yet...');
+                    return;
                     if (!confirm('data maintenance will take some time, start?')) return;
                     Colorful_Console.print('data maintenance has started', 'info', true), GM_Objects.set_value('maintain', true);
                     try {
@@ -3566,8 +3603,8 @@
             },
             /**
              * 配置执行函数
-             * @param {number} id 
-             * @param {string} href 
+             * @param {number} id
+             * @param {string} href
              * @returns {Array}
              */
             get_funcs(id, href, is_login = true) {
@@ -3637,8 +3674,8 @@
                 get shade_node() { return document.getElementById(this.id_name); },
                 /**
                  * 创建遮罩
-                 * @param {string} color 
-                 * @param {number} opacity 
+                 * @param {string} color
+                 * @param {number} opacity
                  */
                 create_cover(color, opacity = 0.5) {
                     const html = `
@@ -3822,10 +3859,8 @@
              * 执行函数, type: 0, 使用当前optimizer整个对象的this; 1, 其他的自定义this
              * @param {Array} funcs
              */
-            const load_func = (funcs) => funcs.forEach(e => {
-                e.type ? e() : e.call(this);
-            });
-            load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started'));
+            const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
+            setTimeout(() => load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started')));
         }
     }
     // 优化器主体 -----------
