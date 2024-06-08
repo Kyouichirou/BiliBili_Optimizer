@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         bili_bili_optimizer_x
+// @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
 // @version      2.5
 // @description  control bilibili!
