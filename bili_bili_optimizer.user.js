@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      2.5.1
+// @version      3.0
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1425,14 +1425,16 @@
             ],
             input_handle(content) {
                 const r = Statics_Variant_Manager.reserved_words;
-                return (typeof content === ' string' ? content.split(' ') : Array.isArray(content) ? content : Colorful_Console.print('the input data must be of array or string type', 'warning'))?.map(e => ('' + e).trim().toLocaleLowerCase()).filter(e => e && e.length > 1 && !r.some(c => e.includes(c)));
+                return (typeof content === 'string' ? content.split(' ') : Array.isArray(content) ? content : Colorful_Console.print('the input data must be of array or string type', 'warning'))?.map(e => ('' + e).trim().toLocaleLowerCase()).filter(e => e && e.length > 1 && !r.some(c => e.includes(c)));
             },
             /**
              * 添加拦截关键词
              * @param {Array | string} data
              */
             add(content) {
-                const data = this.input_handle(content), a = this._get_data();
+                const data = this.input_handle(content);
+                if (!data) return;
+                const a = this._get_data();
                 if (a) {
                     const t = [...new Set([...a, ...data])];
                     let i = t.length;
@@ -1451,7 +1453,9 @@
              * @param {Array | string} data
              */
             remove(content) {
-                const data = this.input_handle(content), arr = this._get_data();
+                const data = this.input_handle(content);
+                if (!data) return;
+                const arr = this._get_data();
                 this.a = this.a.filter(e => !data.includes(e));
                 if (arr) {
                     const t = arr.filter(e => !data.includes(e));
@@ -2495,7 +2499,6 @@
         #video_data_cache = null;
         // 视频模块成功加载标志
         #video_module_initial_flag = false;
-        #video_duration_limit = 0;
         // 需要等待页面加载完成后加载的函数
         #end_load_funcs = [];
         // 启动时需要启动的函数
@@ -3222,8 +3225,8 @@
                                 const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
                                 const s = prompt(title).trim();
                                 if (s) {
-                                    const a = s.split(' ').map(e => e.trim()).filter(e => !e?.includes("_")).map(e => e.toLowerCase());
-                                    a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
+                                    const a = Dynamic_Variants_Manager.black_keys.input_handle(s);
+                                    a && a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
                                 }
                                 return true;
                             }
@@ -3367,10 +3370,10 @@
                 this.#page_modules._traversal_video_card(document, this.#initial_data);
                 Object.defineProperties(Terminal_Module, {
                     ...(this.#configs.id === 1 ? {
-                        download_audio_path: { get: () => this.#video_instance.download_audio_path, set: (val) => this.#video_instance.download_audio_path = val },
-                        download_video_path: { get: () => this.#video_instance.download_video_path, set: (val) => this.#video_instance.download_video_path = val },
+                        download_audio_path: { get: () => this.#video_instance.download_audio_path, set: (val) => (this.#video_instance.download_audio_path = val) },
+                        download_video_path: { get: () => this.#video_instance.download_video_path, set: (val) => (this.#video_instance.download_video_path = val) },
                     } : {}),
-                    video_duration_limit: { get: () => this.#video_duration_limit, set: (val) => this.#video_duration_limit = val }
+                    video_duration_limit: { get: () => this.#configs.video_duration_limit, set: (val) => (this.#configs.video_duration_limit = val) }
                 });
             },
             // space页面
@@ -3846,7 +3849,6 @@
             // 预先检查数据是否满足要求
             if (id > 2) return;
             // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
-            this.#video_duration_limit = GM_Objects.get_value('video_duration_limit', 120);
             const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [],
                 // 视频持续的时间(s), 将09:01这种格式的时间转为秒
                 duration_convertor = (duration) => [0, ...duration.replaceAll(' ', '').split(':')].slice(-3).reduce((units, cur, index) => {
@@ -3856,15 +3858,16 @@
             // 预检查数据是否满足要求
             this.#configs = {
                 ...this.#configs,
+                video_duration_limit: GM_Objects.get_value('video_duration_limit', 120),
                 pre_data_check: (e) => {
                     const duration = e.duration;
                     // 过滤掉2分钟以下的视频
                     if (duration) {
                         const s = typeof duration,
                             d = s === 'string' && duration.includes(':') ? duration_convertor(duration) : s === 'number' ? duration : 1e8;
-                        if (d < this.#video_duration_limit) {
+                        if (d < this.#configs.video_duration_limit) {
                             Dynamic_Variants_Manager.accumulative_func();
-                            Colorful_Console.print(`the duration of video ${e.bvid} is less than ${this.#video_duration_limit}s: ${d}s, skip it.`);
+                            Colorful_Console.print(`the duration of video ${e.bvid} is less than ${this.#configs.video_duration_limit}s: ${d}s, skip it.`);
                             return true;
                         }
                     }
@@ -3891,11 +3894,9 @@
                 check_user_login_api: 'https://api.bilibili.com/x/web-interface/nav',
                 // 如何隐藏节点的方式
                 hide_node: id == 1 ? (node) => (node.style.display = 'none') : (node) => (node.style.visibility = 'hidden'),
-                add_data_to_node_dataset: (node, key, val) => node.dataset[key] = val,
-                // 判断用户登录, 函数备用, 作为后面引入api数据请求时使用, 这里暂时统一采用cookie的方式验证, 这里判断登录只用于干预视频的播放
-                check_is_login: () => document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false,
+                add_data_to_node_dataset: (node, key, val) => (node.dataset[key] = val),
                 // 插入拦截信息, 此函数备用, 用于拦截了视频之后的处理, 假如不隐藏卡片, 就创建遮罩覆盖在上面
-                insert_blocked_element: id == 1 ? () => null : (node) => {
+                insert_blocked_element: id == 1 ? (_node) => null : (node) => {
                     // css可以独立出来放置的css注入模块
                     const html = `
                     <div class="bili-video-cards blocked"
@@ -3933,7 +3934,7 @@
             // 载入过滤模块的配置
             this.#load_filter_configs(id);
             // 检查用户是否登录
-            this.#user_is_login = this.#configs.check_is_login?.();
+            this.#user_is_login = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
             // 注入css, 尽快执行
             this.#css_module.inject_css(id, this.#user_is_login);
             // 需要拦截动态数据管理模块的配置
@@ -3951,29 +3952,19 @@
                 [this.#html_modules]
             ].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, ...e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
             // 复杂的部分放到pages_module中, 简单的函数放在配置中
-            const ef = this.#configs.end_load_func, sf = this.#configs.start_load_func;
+            const ef = this.#configs.end_load_func, sf = this.#configs.start_load_func, c = Constants_URLs.main.bind(Constants_URLs), d = () => !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started');
             ef && this.#end_load_funcs.push(ef);
             sf && this.#start_load_funcs.push(sf);
+            c.type = 1, d.type = 1;
+            this.#end_load_funcs.push(c, d);
         }
-        // 启动整个程序
-        async start() {
-            /**
-             * 执行函数, type: 0, 使用当前optimizer整个对象的this; 1, 其他的自定义this
-             * @param {Array} funcs
-             */
-            const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
-            load_func(this.#start_load_funcs);
-            GM_Objects.window.onload = () => {
-                load_func(this.#end_load_funcs);
-                Constants_URLs.main();
-                !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started');
-            };
-        }
+        // 启动整个程序, 执行函数, type: 0, 使用当前optimizer整个对象的this; 1, 其他的自定义this
+        async start() { ((exe) => (exe(this.#start_load_funcs), GM_Objects.window.onload = () => exe(this.#end_load_funcs)))((funcs) => funcs.forEach(e => e.type ? e() : e.call(this))); }
     }
     // 优化器主体 -----------
 
     // ----------------- 启动
-    (() => {
+    {
         // 假如数据处于维护中, 就不执行脚本
         if (GM_Objects.get_value('maintain', false)) Colorful_Console.print('data under maintenance, wait a moment', 'warning', true);
         else {
@@ -3981,6 +3972,6 @@
             // 清除直接访问链接带有的追踪参数
             search.startsWith('?spm_id_from') ? (window.location.href = origin + pathname) : (new Bili_Optimizer(href)).start();
         }
-    })();
+    }
     // 启动 -----------------
 })();
