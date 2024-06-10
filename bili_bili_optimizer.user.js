@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      2.5
+// @version      2.5.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -213,10 +213,6 @@
     // 链接常量 ---------------
 
     // 暂未启用部分 -----------
-    // 保留词
-    const Reserved_Words = [
-        ''
-    ];
     // api数据请求部分
     class Web_Request {
         // 需要注意登录与否
@@ -493,7 +489,6 @@
             '2022Python教程：Simplilearn10小时Python完整入门课程（中英字幕）',
             'Python区块链开发教程-Solidity，区块链和智能合约核心概念及全栈开发课程（中英文字幕）',
             '【Udemy2022Python超级课程】通过构建10个基于现实世界的应用程序-学习Pytho核心技能（中英文字幕）下',
-            '【Udemy2022Python超级课程】通过构建10个基于现实世界的应用程序-学习Pytho核心技能（中英文字幕）上',
             '【Udemy付费课程】PythonNLP自然语言处理（SpaCy、NLTK、Sklearn、CNN）和8实践个项目（中英文字幕）',
             '【Udemy高分付费课程】2022Python数据科学和机器学习训练营-Tensorflow、深度学习、神经网络、回归分类、人工智能（中英文字幕）',
             '【Udemy高分付费课程】Python数据结构与算法-终极Python编码面试和计算机科学训练营（中英文字幕）',
@@ -501,8 +496,6 @@
             '【Udemy高分Python机器学习课程】2022完整训练营-使用Tensorflow、Pandas进行Python机器学习（中英文字幕）上',
             '【UdemyPython机器学习】在Python中学习机器学习、深度学习、贝叶斯学习和模型部署（中英文字幕）',
             '【Udemy排名第一的Python课程】2022PythonPRO训练营-100天构建100个Python项目成为实战专家！（中英文字幕）P3',
-            '【Udemy排名第一的Python课程】2022PythonPRO训练营-100天构建100个Python项目成为实战专家！（中英文字幕）P2',
-            '【Udemy排名第一的Python课程】2022PythonPRO训练营-100天构建100个Python项目成为实战专家！（中英文字幕）P1',
             '【Mosh1个小时入门Python】PythonforBeginners-LearnPythonin1Hour（中英文字幕）',
             '【YouTube百万粉丝大神Mosh】Python系列完整教程（中英文字幕）',
             '【Udemy付费课程】使用PyQt6和Qt设计器进行PythonGUI开发（中英文字幕）',
@@ -1408,7 +1401,6 @@
                 '\u4e2a\u4eba\u5411',
                 '\u9752\u5e74\u5927\u5b66',
                 '\u6768\u7d2b',
-                '\u5c0f\u54e5',
                 '\u89e3\u653e\u519b',
                 '\u7956\u56fd',
                 '\u4e0d\u6295\u5e01',
@@ -1431,12 +1423,16 @@
                 '\u90ed\u656c\u660e',
                 '\u9ec4\u6653\u660e'
             ],
+            input_handle(content) {
+                const r = Statics_Variant_Manager.reserved_words;
+                return (typeof content === ' string' ? content.split(' ') : Array.isArray(content) ? content : Colorful_Console.print('the input data must be of array or string type', 'warning'))?.map(e => ('' + e).trim().toLocaleLowerCase()).filter(e => e && e.length > 1 && !r.some(c => e.includes(c)));
+            },
             /**
              * 添加拦截关键词
-             * @param {Array} data
+             * @param {Array | string} data
              */
-            add(data) {
-                const a = this._get_data();
+            add(content) {
+                const data = this.input_handle(content), a = this._get_data();
                 if (a) {
                     const t = [...new Set([...a, ...data])];
                     let i = t.length;
@@ -1452,11 +1448,11 @@
             },
             /**
              * 移除拦截关键词
-             * @param {Array} data
+             * @param {Array | string} data
              */
-            remove(data) {
+            remove(content) {
+                const data = this.input_handle(content), arr = this._get_data();
                 this.a = this.a.filter(e => !data.includes(e));
-                const arr = this._get_data();
                 if (arr) {
                     const t = arr.filter(e => !data.includes(e));
                     t.length !== arr.length && this._write_data(t);
@@ -1531,60 +1527,95 @@
         },
         // 创建贝叶斯辅助函数
         _stop_bayes() { this.bayes_module = { bayes: (_content) => 0 }; },
-        _create_bayes_funcs() {
-            GM_Objects.window.bayes = new Proxy({
-                /**
-                 * 调整贝叶斯参数
-                 * @param {object} configs {}
-                 * @returns {object}
-                 */
-                configs: (configs) => this.bayes_module.adjust_configs(configs),
-                enable: (state) => this.bayes_module.set_enable_state(state),
-                /**
-                 * 测试文本分类
-                 * @param {string} content
-                 * @returns {null}
-                 */
-                test: (content) => console.log(this.bayes_module.bayes(content) < 0 ? 'the length of content does not meet the requirements' : this.bayes_module.test_result),
-                detail: () => this.bayes_module.show_detail(),
-                /**
-                 * 重置贝叶斯
-                 * @param {number} mode
-                 * @returns {null}
-                 */
-                reset: (mode = 0) => this.bayes_module.reset(mode),
-                help: () => {
-                    const helps = [
-                        ['configs', 'bayes.configs; show the configs; bayes.configs = {};, setup configs'],
-                        ['reset', 'bayes.reset(0); reset the bayes, default 0, will clear all data; 1 reset configs; 2 clear words data and keep configs.'],
-                        ['deatail', 'bayes.detail; show the detail of bayes model.'],
-                        ['test', 'test("content"); will return the result of test content.'],
-                        ['enable', 'bayes default 1 enable, bayes.enable = 0; disable bayes'],
-                        ['help', 'show the info of help.']
-                    ], i = helps.reduce((acc, e) => {
-                        const a = e[0].length;
-                        if (a > acc) acc = a;
-                        return acc;
-                    }, 0) + 2;
-                    console.log(helps.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
-                }
-            }, {
-                get: (target, prop) => {
-                    if (prop === 'detail' || prop === 'help') target[prop]();
-                    else if (prop === 'configs') return this.bayes_module.configs;
-                    else return target[prop];
-                },
-                set: (target, prop, value) => prop === 'configs' || prop === 'enable' && target[prop](value),
-            });
+        _connect_terminal(bayes_enable_stat) {
+            [
+                [
+                    'black_key',
+                    {
+                        detail: () => {
+                            const a = GM_Objects.get_value('black_keys', []);
+                            a.length > 0 ? console.table(a) : Colorful_Console.print('no black keys');
+                        },
+                        add: (content) => this.black_keys.add(content),
+                        remove: (content) => this.black_keys.remove(content),
+                    },
+                    {
+                        get: (target, prop) => prop === 'detail' ? target[prop]() : target[prop]
+                    }
+                ], bayes_enable_stat ? [
+                    'bayes',
+                    {
+                        /**
+                         * 调整贝叶斯参数
+                         * @param {object} configs {}
+                         * @returns {object}
+                         */
+                        configs: (configs) => this.bayes_module.adjust_configs(configs),
+                        enable: (state) => this.bayes_module.set_enable_state(state),
+                        /**
+                         * 测试文本分类
+                         * @param {string} content
+                         * @returns {null}
+                         */
+                        test: (content) => console.log(this.bayes_module.bayes(content) < 0 ? 'the length of content does not meet the requirements' : this.bayes_module.test_result),
+                        detail: () => this.bayes_module.show_detail(),
+                        /**
+                         * 重置贝叶斯
+                         * @param {number} mode
+                         * @returns {null}
+                         */
+                        reset: (mode = 0) => this.bayes_module.reset(mode),
+                        /**
+                         * 添加白名单
+                         * @param {string} content
+                         * @returns {null}
+                         */
+                        add_white: (content) => this.bayes_module.add_new_content(content, true),
+                        /**
+                         * 添加黑名单
+                         * @param {string} content
+                         * @returns {null}
+                         */
+                        add_black: (content) => this.bayes_module.add_new_content(content, false),
+                        help: () => {
+                            const helps = [
+                                ['configs', 'bayes.configs; show the configs; bayes.configs = {};, setup configs'],
+                                ['reset', 'bayes.reset(0); reset the bayes, default 0, will clear all data; 1 reset configs; 2 clear words data and keep configs.'],
+                                ['deatail', 'bayes.detail; show the detail of bayes model.'],
+                                ['test', 'test("content"); will return the result of test content.'],
+                                ['enable', 'bayes default 1 enable, bayes.enable = 0; disable bayes'],
+                                ['add_white', 'bayes.add_white("content"); add the content to white list.'],
+                                ['add_black', 'bayes.add_black("content"); add the content to black list.']
+                                ['help', 'show the info of help.']
+                            ], i = helps.reduce((acc, e) => {
+                                const a = e[0].length;
+                                if (a > acc) acc = a;
+                                return acc;
+                            }, 0) + 2;
+                            console.log(helps.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
+                        }
+                    },
+                    {
+                        get: (target, prop) => {
+                            if (prop === 'detail' || prop === 'help') target[prop]();
+                            else if (prop === 'configs') return this.bayes_module.configs;
+                            else return target[prop];
+                        },
+                        set: (target, prop, value) => prop === 'configs' || prop === 'enable' && target[prop](value),
+                    }
+                ] : null
+            ].forEach(e => e && (GM_Objects.window[e[0]] = new Proxy(e[1], e[2])));
             // 用于监听bayes状态的改变, 修改包括脚本发起或者是远端发起的修改
-            let tmp_state = this.bayes_module.enable_state;
-            Object.defineProperty(this.bayes_module, 'enable_state', {
-                get: () => tmp_state,
-                set: (state) => {
-                    tmp_state = state;
-                    !state && this._stop_bayes();
-                }
-            });
+            if (bayes_enable_stat) {
+                let tmp_state = bayes_enable_stat;
+                Object.defineProperty(this.bayes_module, 'enable_state', {
+                    get: () => tmp_state,
+                    set: (state) => {
+                        tmp_state = state;
+                        !state && this._stop_bayes();
+                    }
+                });
+            }
         },
         /**
          * 贝叶斯拦截记录
@@ -1775,20 +1806,22 @@
                 this.session_visited_videos.push_and_settab = function (video_id) {
                     if (this.includes(video_id)) return false;
                     this.push(video_id);
-                    return GM_Objects.set_tab('session_visited_videos', this), true;
+                    GM_Objects.set_tab('session_visited_videos', this);
+                    return true;
                 };
             });
             this._data_sync_monitor(site_id);
             this._rate_up_status_write_monitor();
             this.show_status = this._show_data_status;
             this.bayes_module = new Bayes_Module();
-            this.bayes_module.enable_state ? this._create_bayes_funcs() : '';
+            this._connect_terminal(this.bayes_module.enable_state);
         },
     };
     // 动态数据管理 ---------
 
     // --------- 静态数据管理
     const Statics_Variant_Manager = {
+        reserved_words: ['_'],
         // 管理up
         up_part: {
             /**
@@ -1886,86 +1919,139 @@
     };
     // 静态数据管理 ---------
 
-    // 展示帮助以及其他内部存储数据 -------
-    Object.defineProperties(GM_Objects.window, {
-        'show_shortcuts': {
-            get: () => {
-                const shortcuts = [
-                    ['快捷键', '辅助/记忆', '功能', '生效页面'],
-                    ['p', 'pause', '暂停/播放视频', '视频'],
-                    ['l', 'light', '视频关/开灯', '视频'],
-                    ['t', '', '视频影院模式', '视频'],
-                    ['+', '', '视频声音调大', '视频'],
-                    ['-', '', '视频声音调小', '视频'],
-                    ['u', '', '视频页面内全屏', '视频'],
-                    ['f', 'fullscreen', '视频全屏', '视频'],
-                    ['m', 'mute', '静音', '视频'],
-                    ['b', 'bing', '必应搜索', '全站'],
-                    ['s', 'search', '哔哩搜索', '全站'],
-                    ['z', 'zhihu', '知乎搜索', '全站'],
-                    ['w', 'white', '添加文本到贝叶斯白名单', '主页, 搜索'],
-                    ['a', 'add', '添加拦截关键词', '主页, 搜索'],
-                    ['r', 'remove', '移除拦截关键', '主页, 搜索'],
-                    ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
-                    ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
-                    ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
-                ];
-                console.table(shortcuts);
-            }
+    // 帮助/展示内部数据/设置参数 -------
+    const Terminal_Module = {
+        download_audio_path: null,
+        download_video_path: null,
+        video_duration_limit: 0,
+        bayes_instance: null,
+        _black_key: null,
+        _get_key_func(id) {
+            return id > 2 ? {} : {
+                ...(id === 1 ? {
+                    download_video_path: {
+                        get: () => {
+                            const p = this.download_video_path;
+                            Colorful_Console.print(`download_video_path: '${p}'`);
+                            return p;
+                        },
+                        set: (path) => {
+                            Colorful_Console.print(`change download_video_path from '${this.download_video_path}' to '${path}'`);
+                            this.download_video_path = path;
+                        }
+                    },
+                    download_audio_path: {
+                        get: () => {
+                            const p = this.download_audio_path;
+                            Colorful_Console.print(`download_audio_path: '${p}'`);
+                            return p;
+                        },
+                        set: (path) => {
+                            Colorful_Console.print(`change download_audio_path from '${this.download_audio_path}' to '${path}'`);
+                            this.download_audio_path = path;
+                        }
+                    },
+                } : {}),
+                bayes: {
+                    get: () => { return this.bayes_instance ? this.bayes_instance : Colorful_Console.print('bayes model is not running on current page'); },
+                    set: (val) => { this.bayes_instance = val; }
+                },
+                video_duration_limit: {
+                    get: () => {
+                        const i = this.video_duration_limit;
+                        Colorful_Console.print(`video_duration_limit: ${i}`);
+                        return i;
+                    },
+                    set: (val) => {
+                        try {
+                            val = parseInt(val);
+                            val > 0 && val < 300 ? (Colorful_Console.print(`change video duration limit from ${this.video_duration_limit} to ${val}`), this.video_duration_limit = val) : Colorful_Console.print('video_duration_limit must be a number between 0 and 300');
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                }
+            };
         },
-        'show_rate': {
-            get() {
-                const data = GM_Objects.get_value('rate_videos', []);
-                data.sort((a, b) => a.add_date - b.add_date);
-                data.forEach(e => {
-                    e.last_active_date = new Date(e.last_active_date).toDateString();
-                    e.add_date = new Date(e.add_date).toDateString();
-                });
-                console.table(data);
-            }
-        },
-        'show_black_keys': {
-            get() {
-                const a = Dynamic_Variants_Manager.black_keys.a;
-                console.log(`black keys(${a.length}):\n_________\n`, a);
-            }
-        },
-        'show_crash_log': {
-            get() {
-                const data = GM_Objects.get_value('crash_log', []);
-                data.length > 0 ? console.table(data) : Colorful_Console.print('no crash log');
-            }
-        },
-        'feedback': { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: true, active: true }); } },
-        'support': { get() { Support_Me.main(); } },
-        'manual': { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: true, active: true }); } },
-        'bayes': {
-            get() { return this._proxy_bayes ? this._proxy_bayes : Colorful_Console.print('bayes model is not running on current page'); },
-            set(val) { this._proxy_bayes = val; }
-        },
-        'help': {
-            get() {
-                const cmds = [
-                    ['show_shortcuts', 'show the shortcuts'],
-                    ['show_rate', 'show all rated videos'],
-                    ['show_black_keys', 'show all a-class black keys'],
-                    ['bayes', 'setup and show the bayes model'],
-                    ['support', 'show the popup of support me'],
-                    ['feedback', 'open the webpage of issues'],
-                    ['manual', 'open the webpage of manual'],
-                    ['show_crash_log', 'show the log of crash'],
-                    ['help', 'show the info of help']
-                ], i = cmds.reduce((acc, e) => {
-                    const a = e[0].length;
-                    if (a > acc) acc = a;
-                    return acc;
-                }, 0) + 2;
-                // 找出最长的字符串, 其他的填充空格
-                console.log(cmds.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
-            }
+        init(id) {
+            Object.defineProperties(GM_Objects.window, {
+                ...this._get_key_func(id),
+                show_shortcuts: {
+                    get: () => {
+                        const shortcuts = [
+                            ['快捷键', '辅助/记忆', '功能', '生效页面'],
+                            ['p', 'pause', '暂停/播放视频', '视频'],
+                            ['l', 'light', '视频关/开灯', '视频'],
+                            ['t', '', '视频影院模式', '视频'],
+                            ['+', '', '视频声音调大', '视频'],
+                            ['-', '', '视频声音调小', '视频'],
+                            ['u', '', '视频页面内全屏', '视频'],
+                            ['f', 'fullscreen', '视频全屏', '视频'],
+                            ['m', 'mute', '静音', '视频'],
+                            ['b', 'bing', '必应搜索', '全站'],
+                            ['s', 'search', '哔哩搜索', '全站'],
+                            ['z', 'zhihu', '知乎搜索', '全站'],
+                            ['w', 'white', '添加文本到贝叶斯白名单', '主页, 搜索'],
+                            ['a', 'add', '添加拦截关键词', '主页, 搜索'],
+                            ['r', 'remove', '移除拦截关键', '主页, 搜索'],
+                            ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
+                            ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
+                            ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
+                        ];
+                        console.table(shortcuts);
+                    }
+                },
+                show_rate: {
+                    get() {
+                        const data = GM_Objects.get_value('rate_videos', []);
+                        data.sort((a, b) => a.add_date - b.add_date);
+                        data.forEach(e => {
+                            e.last_active_date = new Date(e.last_active_date).toDateString();
+                            e.add_date = new Date(e.add_date).toDateString();
+                        });
+                        console.table(data);
+                    }
+                },
+                black_key: {
+                    get: () => this._black_key,
+                    set: (val) => (this._black_key = val)
+                },
+                show_crash_log: {
+                    get() {
+                        const data = GM_Objects.get_value('crash_log', []);
+                        data.length > 0 ? console.table(data) : Colorful_Console.print('no crash log');
+                    }
+                },
+                feedback: { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: true, active: true }); } },
+                support: { get() { Support_Me.main(); } },
+                manual: { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: true, active: true }); } },
+                help: {
+                    get() {
+                        const cmds = [
+                            ['show_shortcuts', 'show the shortcuts'],
+                            ['show_rate', 'show all rated videos'],
+                            ['show_black_keys', 'show all a-class black keys'],
+                            ['bayes', 'setup and show the bayes model'],
+                            ['support', 'show the popup of support me'],
+                            ['feedback', 'open the webpage of issues'],
+                            ['manual', 'open the webpage of manual'],
+                            ['show_crash_log', 'show the log of crash'],
+                            ['download_audio_path', 'show/set the path of download audio'],
+                            ['download_video_path', 'show/set the path of download video'],
+                            ['help', 'show the info of help']
+                        ], i = cmds.reduce((acc, e) => {
+                            const a = e[0].length;
+                            if (a > acc) acc = a;
+                            return acc;
+                        }, 0) + 2;
+                        // 找出最长的字符串, 其他的填充空格
+                        console.log(cmds.map(e => e[0].padEnd(i, ' ') + e[1]).join('\n'));
+                    }
+                }
+            });
         }
-    });
-    // -------- 展示帮助以及其他内部存储数据
+    };
+    // -------- 帮助/展示内部数据/设置参数
 
     // 视频控制模块 ---------
     class Video_Module {
@@ -1975,9 +2061,9 @@
         // 标记视频已下载
         #download_flag = false;
         // 下载音频的路径
-        #download_audio_path = 'E:\\Audio\\voice book';
+        #download_audio_path = GM_Objects.get_value('download_audio_path', 'E:\\Audio\\voice book');
         // 下载视频的路径
-        #download_video_path = 'E:\\videos';
+        #download_video_path = GM_Objects.get_value('download_video_path', 'E:\\videos');
         // 菜单控制速度
         #is_first = true;
         #video_speed = 2;
@@ -2010,12 +2096,14 @@
          * 设置下载音频路径
          * @param {string} path
          */
-        set download_audio_path(path) { this.#download_audio_path = path; }
+        set download_audio_path(path) { this.#download_audio_path = path, GM_Objects.set_value('download_audio_path', path); }
+        get download_audio_path() { return this.#download_audio_path; }
         /**
          * 设置下载视频路径
          * @param {string} path
          */
-        set download_video_path(path) { this.#download_video_path = path; }
+        set download_video_path(path) { this.#download_video_path = path, GM_Objects.set_value('download_video_path', path); }
+        get download_video_path() { return this.#download_video_path; }
         // 播放事件
         #create_video_event() {
             this.#video_player.mediaElement().oncanplay = (e) => {
@@ -2285,7 +2373,7 @@
          */
         voice_control(mode) {
             let vx = this.#video_player.getVolume(), v = vx;
-            if (v !== (vx = mode ? (vx += 0.1) > 1 ? 1 : vx : (vx -= 0.1) < 0 ? 0 : vx)) this.#video_player.setVolume(vx);
+            v !== (vx = mode ? (vx += 0.1) > 1 ? 1 : vx : (vx -= 0.1) < 0 ? 0 : vx) && this.#video_player.setVolume(vx);
         }
         // 播放控制
         play_control() { this.#video_player.isPaused() ? this.#video_player.play() : this.#video_player.pause(); }
@@ -2407,6 +2495,7 @@
         #video_data_cache = null;
         // 视频模块成功加载标志
         #video_module_initial_flag = false;
+        #video_duration_limit = 0;
         // 需要等待页面加载完成后加载的函数
         #end_load_funcs = [];
         // 启动时需要启动的函数
@@ -3274,7 +3363,16 @@
                     get: () => initial_data
                 });
             },
-            _initial_filter: () => this.#page_modules._traversal_video_card(document, this.#initial_data),
+            _initial_main: () => {
+                this.#page_modules._traversal_video_card(document, this.#initial_data);
+                Object.defineProperties(Terminal_Module, {
+                    ...(this.#configs.id === 1 ? {
+                        download_audio_path: { get: () => this.#video_instance.download_audio_path, set: (val) => this.#video_instance.download_audio_path = val },
+                        download_video_path: { get: () => this.#video_instance.download_video_path, set: (val) => this.#video_instance.download_video_path = val },
+                    } : {}),
+                    video_duration_limit: { get: () => this.#video_duration_limit, set: (val) => this.#video_duration_limit = val }
+                });
+            },
             // space页面
             _space_module: {
                 _create_button(mode) {
@@ -3394,7 +3492,7 @@
                             }
                         }).observe(node, { childList: true, subtree: true });
                         // 页面已经基本载入完成
-                        this._is_first_time = false;
+                        setTimeout(() => (this._is_first_time = false), 500);
                     },
                     // 超时不触发上面的事件监听则主动播放
                     _wait_switch() {
@@ -3611,7 +3709,7 @@
                 const run_configs = {
                     _initial_data_intercept: { run_at: 0, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0, is_args: true },
                     _block_video_up_data_sync_monitor: { run_at: 1, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
-                    _initial_filter: { run_at: 1, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
+                    _initial_main: { run_at: 1, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
                     _home_module: { run_at: 1, run_in: [0], type: 1 },
                     _search_module: { run_at: 1, run_in: [2], type: 0 },
                     _video_module: { run_at: 1, run_in: [1], type: 1 },
@@ -3748,6 +3846,7 @@
             // 预先检查数据是否满足要求
             if (id > 2) return;
             // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
+            this.#video_duration_limit = GM_Objects.get_value('video_duration_limit', 120);
             const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [],
                 // 视频持续的时间(s), 将09:01这种格式的时间转为秒
                 duration_convertor = (duration) => [0, ...duration.replaceAll(' ', '').split(':')].slice(-3).reduce((units, cur, index) => {
@@ -3755,55 +3854,56 @@
                     return units;
                 }, [3600, 60, 1]).reduce((ic, cur) => ic + cur, 0);
             // 预检查数据是否满足要求
-            this.#configs.pre_data_check = (e) => {
-                const duration = e.duration;
-                // 过滤掉2分钟以下的视频
-                if (duration) {
-                    const s = typeof duration,
-                        d = s === 'string' && duration.includes(':') ? duration_convertor(duration) : s === 'number' ? duration : 1e8;
-                    if (d < 120) {
-                        Dynamic_Variants_Manager.accumulative_func();
-                        Colorful_Console.print(`the duration of video ${e.bvid} is less than 2min(120s): ${d}s, skip it.`);
-                        return true;
+            this.#configs = {
+                ...this.#configs,
+                pre_data_check: (e) => {
+                    const duration = e.duration;
+                    // 过滤掉2分钟以下的视频
+                    if (duration) {
+                        const s = typeof duration,
+                            d = s === 'string' && duration.includes(':') ? duration_convertor(duration) : s === 'number' ? duration : 1e8;
+                        if (d < this.#video_duration_limit) {
+                            Dynamic_Variants_Manager.accumulative_func();
+                            Colorful_Console.print(`the duration of video ${e.bvid} is less than ${this.#video_duration_limit}s: ${d}s, skip it.`);
+                            return true;
+                        }
                     }
+                    // 读取基本的四个元素信息
+                    const info = {
+                        up_id: e.mid || e.owner?.mid || '',
+                        up_name: e.author || e.owner?.name || '',
+                        title: e.title,
+                        video_id: e.bvid
+                    };
+                    for (const k in info) {
+                        const t = info[k];
+                        if (!t) return true;
+                        // 确保所有的数据都是字符串
+                        info[k] = t + '';
+                    }
+                    // 搜索页的title需要去掉多余的标签
+                    search_tags.forEach(e => (info.title = info.title.replaceAll(e, '')));
+                    return Dynamic_Variants_Manager.completed_check(info);
+                },
+                lost_pic: '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg',
+                interpose_api_prefix: 'https://api.bilibili.com/x/web-interface/',
+                // B站中每个页面都会发起的请求, 用于获取用户信息, 双重验证, 本地cookie & 服务器信息校检
+                check_user_login_api: 'https://api.bilibili.com/x/web-interface/nav',
+                // 如何隐藏节点的方式
+                hide_node: id == 1 ? (node) => (node.style.display = 'none') : (node) => (node.style.visibility = 'hidden'),
+                add_data_to_node_dataset: (node, key, val) => node.dataset[key] = val,
+                // 判断用户登录, 函数备用, 作为后面引入api数据请求时使用, 这里暂时统一采用cookie的方式验证, 这里判断登录只用于干预视频的播放
+                check_is_login: () => document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false,
+                // 插入拦截信息, 此函数备用, 用于拦截了视频之后的处理, 假如不隐藏卡片, 就创建遮罩覆盖在上面
+                insert_blocked_element: id == 1 ? () => null : (node) => {
+                    // css可以独立出来放置的css注入模块
+                    const html = `
+                    <div class="bili-video-cards blocked"
+                        style="position: absolute;background-color: rgba(60, 60, 60, 0.85);display: flex;justify-content: center;align-items: center;z-index: 10;backdrop-filter: blur(6px);border-radius: 6px;height: 100%;width: 100%;">
+                        <div style="color: rgb(250, 250, 250);">Blocked</div>
+                    </div>`;
+                    node.insertAdjacentHTML('afterbegin', html);
                 }
-                // 读取基本的四个元素信息
-                const info = {
-                    up_id: e.mid || e.owner?.mid || '',
-                    up_name: e.author || e.owner?.name || '',
-                    title: e.title,
-                    video_id: e.bvid
-                };
-                for (const k in info) {
-                    const t = info[k];
-                    if (!t) return true;
-                    // 确保所有的数据都是字符串
-                    info[k] = t + '';
-                }
-                // 搜索页的title需要去掉多余的标签
-                search_tags.forEach(e => (info.title = info.title.replaceAll(e, '')));
-                return Dynamic_Variants_Manager.completed_check(info);
-            };
-            // 图片填充
-            this.#configs.lost_pic = '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg';
-            // 拦截请求数据的api前缀
-            this.#configs.interpose_api_prefix = 'https://api.bilibili.com/x/web-interface/';
-            // B站中每个页面都会发起的请求, 用于获取用户信息, 双重验证, 本地cookie & 服务器信息校检
-            this.#configs.check_user_login_api = 'https://api.bilibili.com/x/web-interface/nav';
-            // 如何隐藏节点的方式
-            this.#configs.hide_node = id == 1 ? (node) => node.style.display = 'none' : (node) => node.style.visibility = 'hidden';
-            this.#configs.add_data_to_node_dataset = (node, key, val) => node.dataset[key] = val;
-            // 判断用户登录, 函数备用, 作为后面引入api数据请求时使用, 这里暂时统一采用cookie的方式验证, 这里判断登录只用于干预视频的播放
-            this.#configs.check_is_login = () => document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
-            // 插入拦截信息, 此函数备用, 用于拦截了视频之后的处理, 假如不隐藏卡片, 就创建遮罩覆盖在上面
-            this.#configs.insert_blocked_element = (node) => {
-                // css可以独立出来放置的css注入模块
-                const html = `
-                <div class="bili-video-cards blocked"
-                    style="position: absolute;background-color: rgba(60, 60, 60, 0.85);display: flex;justify-content: center;align-items: center;z-index: 10;backdrop-filter: blur(6px);border-radius: 6px;height: 100%;width: 100%;">
-                    <div style="color: rgb(250, 250, 250);">Blocked</div>
-                </div>`;
-                node.insertAdjacentHTML('afterbegin', html);
             };
         }
         /**
@@ -3836,6 +3936,8 @@
             this.#user_is_login = this.#configs.check_is_login?.();
             // 注入css, 尽快执行
             this.#css_module.inject_css(id, this.#user_is_login);
+            // 需要拦截动态数据管理模块的配置
+            Terminal_Module.init(id);
             // 初始化动态数据管理模块
             Dynamic_Variants_Manager.init(id);
             // 配置启动函数
@@ -3854,13 +3956,18 @@
             sf && this.#start_load_funcs.push(sf);
         }
         // 启动整个程序
-        start() {
+        async start() {
             /**
              * 执行函数, type: 0, 使用当前optimizer整个对象的this; 1, 其他的自定义this
              * @param {Array} funcs
              */
             const load_func = (funcs) => funcs.forEach(e => e.type ? e() : e.call(this));
-            setTimeout(() => load_func(this.#start_load_funcs), GM_Objects.window.onload = () => (load_func(this.#end_load_funcs), Constants_URLs.main(), !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started')));
+            load_func(this.#start_load_funcs);
+            GM_Objects.window.onload = () => {
+                load_func(this.#end_load_funcs);
+                Constants_URLs.main();
+                !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started');
+            };
         }
     }
     // 优化器主体 -----------
