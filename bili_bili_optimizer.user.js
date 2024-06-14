@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0
+// @version      3.0.1
 // @description  control bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -65,7 +65,7 @@
          * @param {boolean} mode true, 检查值是否为空, 默认false
          * @returns {null}
          */
-        set_value: (key_name, value, mode = false) => mode ? value && GM_setValue(key_name, value) : GM_setValue(key_name, value),
+        set_value: (key_name, value, mode = false) => (!mode || (mode && value)) && GM_setValue(key_name, value),
         /**
          * 注入css, 返回注入的css节点
          * @param {string} css
@@ -2115,8 +2115,23 @@
                 if (this.#is_first) return;
                 const target = e.target;
                 this.#auto_speed_mode = false;
-                target.playbackRate !== this.#video_speed && setTimeout(() => { target.playbackRate = this.#video_speed; }, 1500);
+                target.playbackRate !== this.#video_speed && setTimeout(() => { target.playbackRate = this.#video_speed; }, 3000);
             };
+        }
+        // 在不登陆的状态下, 切换不同的视频导致原来的video标签失效
+        #video_element_change_monitor() {
+            const node = document.getElementsByClassName("bpx-player-video-wrap");
+            node.length ? new MutationObserver((records) => {
+                let f = false;
+                for (const r of records) {
+                    if (r.removedNodes.length) {
+                        f = true;
+                        this.#create_video_event();
+                        break;
+                    }
+                    if (f) break;
+                }
+            }).observe(node[0], { childList: true, subtree: true }) : Colorful_Console.print('failed to find video parent element', 'crash', true);
         }
         /**
          * 播放速度控制
@@ -2127,11 +2142,9 @@
             // 假如手动设置速度, 则取消自动变速
             this.#auto_speed_mode = false;
             this.#video_speed += (mode ? 0.5 : -0.5);
-            if (0 < this.#video_speed && this.#video_speed < 5) {
-                this.#video_player.setPlaybackRate(this.#video_speed);
-                // 当速度调节小于2时, 重新恢复第一次的标记
-                this.#is_first = this.#video_speed < 2;
-            }
+            0 < this.#video_speed && this.#video_speed < 5 && this.#video_player.setPlaybackRate(this.#video_speed);
+            // 当速度调节小于2时, 重新恢复第一次的标记
+            this.#is_first = this.#video_speed < 2;
         }
         // 自动速度控制, 用于快速观看视频
         #auto_speed_up() {
@@ -2164,7 +2177,7 @@
             }, duration);
         }
         // 菜单执行函数
-        #rate_funcs = {
+        #rate_menus_funcs = {
             // 菜单
             0: () => null,
             // remove, 从评分中将数据移除掉
@@ -2180,7 +2193,7 @@
             // 标记已经下载
             8: (mode = false) => {
                 if (mode || !this.#download_flag) {
-                    this.#rate_funcs.set_color(true);
+                    this.#rate_menus_funcs.set_color(true);
                     Statics_Variant_Manager.mark_download_video.add({ video_id: this.#video_info.video_id, title: this.#video_info.title });
                 }
                 this.#download_flag = true;
@@ -2224,7 +2237,7 @@
                         Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
                         this.#add_bayes_flag = true;
                     }
-                } else !this.#download_flag && confirm('mark video as downloaded?') && this.#rate_funcs['8'](true);
+                } else !this.#download_flag && confirm('mark video as downloaded?') && this.#rate_menus_funcs['8'](true);
                 const params = [];
                 // 只有当页面的视频为合集的状态才会生成相应的参数
                 let f = false;
@@ -2256,7 +2269,7 @@
         #video_rate_event() {
             setTimeout(() => {
                 const node = document.getElementById('selectWrap'), h = node.getElementsByTagName('h3')[0], select = node.getElementsByTagName('select')[0];
-                select.onchange = (e) => (h.innerText = this.#rate_funcs.main(parseInt(e.target.value)) || ''), this.#reset_menus(select, h);
+                select.onchange = (e) => (h.innerText = this.#rate_menus_funcs.main(parseInt(e.target.value)) || ''), this.#reset_menus(select, h);
                 this.#update_download_status(false);
             }, 300);
         }
@@ -2344,9 +2357,9 @@
             // 当已经标记下载, 再设置下载标记时, 则不执行
             if (f && mode && r) return;
             // 当已经标记下载, 加载下一个没有被标记的视频, 则恢复原来的颜色
-            else if (f && !r) this.#rate_funcs.set_color(false);
+            else if (f && !r) this.#rate_menus_funcs.set_color(false);
             // 当未标记下载, 加载下一个被标记的视频, 则显示颜色
-            else if (!f && r) this.#rate_funcs.set_color(true);
+            else if (!f && r) this.#rate_menus_funcs.set_color(true);
             this.#download_flag = r;
         }
         video_change_id = null;
@@ -2446,7 +2459,7 @@
             });
         }
         constructor(data) { this.#initial_flag = this.update_essential_info(data.upData, data.videoData); }
-        init() {
+        init(user_is_login) {
             return new Promise((resolve, reject) => {
                 Object.defineProperty(unsafeWindow, 'player', {
                     get: () => this.#video_player,
@@ -2457,8 +2470,8 @@
                             if (this.#check_support_urlchange()) {
                                 // 尽快执行关灯的动作
                                 this.#auto_light.main() && this.light_control(1);
-                                // 创建视频播放事件
-                                this.#create_video_event();
+                                // 创建视频播放事件或者是监听视频元素变化
+                                user_is_login ? this.#create_video_event() : this.#video_element_change_monitor();
                                 resolve(true);
                             } else reject('url_change_event_not_support');
                         });
@@ -2468,7 +2481,7 @@
                 });
             });
         }
-        main() {
+        main(user_is_login) {
             // urlchange监听
             this.#url_change_monitor();
             // 创建评分菜单
@@ -2479,6 +2492,11 @@
             this.#regist_menus_command();
             // 自动速度控制
             GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
+            // 设置为不自动播放会出现一个问题, 就是play()这个操作会被浏览器拦截, 假如没有和页面产生交互的情况下
+            // 这个问题主要出现在edge浏览器中
+            // play()操作大概率因为页面没有和浏览器产生交互, 浏览器会拦截这个操作, 导致无法播放
+            // 但是在chrome上这种情况并不明显
+            setTimeout(() => this.#video_player.setAutoplay(user_is_login), 5500);
         }
     }
     // ---------- 视频控制模块
@@ -2817,12 +2835,15 @@
              */
             clear_data(data) {
                 // 递归调用, 遍历清空各层级的内容, 不涉及数组
-                for (const key in data) {
-                    const tmp = data[key];
-                    const vtype = typeof tmp;
-                    if (vtype === 'string') data[key] = '';
-                    else if (vtype === 'number') data[key] = 0;
-                    else if (data) this.clear_data(tmp);
+                if (Array.isArray(data)) for (const e of data) this.clear_data(e);
+                else if (data && data.constructor === Object) {
+                    for (const key in data) {
+                        const tmp = data[key];
+                        const vtype = typeof tmp;
+                        if (vtype === 'string') data[key] = '';
+                        else if (vtype === 'number') data[key] = 0;
+                        else if (data) this.clear_data(tmp);
+                    }
                 }
             }
         };
@@ -2869,9 +2890,7 @@
             _addeventlistener() { this.__proxy(document, 'addEventListener', { apply(...args) { !(args.length === 3 && args[2][0] === 'click' && args[2][1]?.name === 'handleDocumentInitActive') && Reflect.apply(...args); } }); },
             // 干预页面进行的href添加追踪参数的操作
             // 由于当前页面的元素已经添加了追踪参数, 所以拦截的操作可以在这里启动, 而不是在页面刚加载的时候启动
-            _setattribute() {
-                this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } });
-            },
+            _setattribute() { this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } }); },
             // 拦截document.body菜单事件
             // 由于事件是由于document.body所创建, 通过window/document无法直接拦截到
             // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦(无法准确及时进行)
@@ -3065,6 +3084,9 @@
                 css: (user_is_login) =>
                     (user_is_login ? '' : '.bpx-player-subtitle-panel-text,') + `.video-page-special-card-small,
                     .video-page-operator-card-small,
+                    .slide-ad-exp,
+                    a.ad-report.video-card-ad-small,
+                    a#right-bottom-banner,
                     .pop-live-small-mode.part-1{
                         display: none !important;
                     }
@@ -3352,13 +3374,14 @@
                     set: (val) => {
                         if (val) {
                             this.#initial_data = initial_data_handler(val);
+                            //  val.adData; 假如清空这个广告内容会导致页面崩溃
                             if (val.spec) clear_data(val.spec);
                             initial_data = val;
                             if (id === 1) {
                                 const v = new Video_Module(val);
                                 if (v.initial_flag) {
                                     this.#video_instance = v;
-                                    this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
+                                    this.#video_instance.init(this.#user_is_login).then(() => (this.#video_module_initial_flag = true));
                                 }
                             }
                         }
@@ -3371,7 +3394,7 @@
                 Object.defineProperties(Terminal_Module, {
                     ...(this.#configs.id === 1 ? {
                         download_audio_path: { get: () => this.#video_instance.download_audio_path, set: (val) => (this.#video_instance.download_audio_path = val) },
-                        download_video_path: { get: () => this.#video_instance.download_video_path, set: (val) => (this.#video_instance.download_video_path = val) },
+                        download_video_path: { get: () => his.#video_instance.download_video_path, set: (val) => (this.#video_instance.download_video_path = val) },
                     } : {}),
                     video_duration_limit: { get: () => this.#configs.video_duration_limit, set: (val) => (this.#configs.video_duration_limit = val) }
                 });
@@ -3500,7 +3523,7 @@
                     // 超时不触发上面的事件监听则主动播放
                     _wait_switch() {
                         this._timeout_id = setTimeout(() => {
-                            unsafeWindow.player.getQuality()?.newQ > 16 && unsafeWindow.player.play();
+                            unsafeWindow.player.getQuality()?.newQ > 16 && this._replay_video();
                             this._timeout_id = null;
                         }, 1800);
                     },
@@ -3508,10 +3531,11 @@
                     _check_switch_finished(node) { return node.innerText?.includes('试用中'); },
                     _trial_btn_click(node) {
                         // 获得视频支持的清晰度
-                        if (unsafeWindow.player.getSupportedQualityList()?.some(e => e > 16)) {
-                            unsafeWindow.player.pause();
-                            this._wait_switch();
+                        if (!unsafeWindow.player.getSupportedQualityList()?.some(e => e > 16)) {
+                            this._replay_video();
+                            return false;
                         }
+                        this._wait_switch();
                         const b = node.getElementsByClassName('bpx-player-toast-confirm-login');
                         return this._is_click = b.length > 0 && b[0].innerHTML.includes('试看') ? (setTimeout(() => b[0]?.click(), 100), true) : false;
                     },
@@ -3664,7 +3688,7 @@
                 // 这里的时间不敏感
                 main: () => setTimeout(() => {
                     if (this.#video_module_initial_flag) {
-                        this.#video_instance.main();
+                        this.#video_instance.main(this.#user_is_login);
                         Object.defineProperty(this.#video_instance, 'url_has_changed', {
                             set: (_val) => this.#video_data_cache = null,
                             get: () => null
