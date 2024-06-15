@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.1
-// @description  control bilibili!
+// @version      3.0.2
+// @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
 // @homepage     https://github.com/Kyouichirou/BiliBili_Optimizer
@@ -2059,8 +2059,9 @@
 
     // 视频控制模块 ---------
     class Video_Module {
-        // 贝叶斯添加标记
+        // 初始化成功与否的标记
         #initial_flag = false;
+        // 贝叶斯添加标记
         #add_bayes_flag = false;
         // 标记视频已下载
         #download_flag = false;
@@ -2068,8 +2069,9 @@
         #download_audio_path = GM_Objects.get_value('download_audio_path', 'E:\\Audio\\voice book');
         // 下载视频的路径
         #download_video_path = GM_Objects.get_value('download_video_path', 'E:\\videos');
-        // 菜单控制速度
+        // 菜单控制速度, 是否点击
         #is_first = true;
+        // 控制的初始速度
         #video_speed = 2;
         // 视频控制组件
         #video_player = null;
@@ -2079,6 +2081,10 @@
         #auto_speed_mode = false;
         // 视频基本信息
         #video_info = null;
+        // 视频切换
+        video_change_id = null;
+        // url切换
+        url_has_changed = false;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2109,9 +2115,18 @@
         set download_video_path(path) { this.#download_video_path = path, GM_Objects.set_value('download_video_path', path); }
         get download_video_path() { return this.#download_video_path; }
         // 播放事件
-        #create_video_event() {
+        #is_need_stop = false;
+        #create_video_start_event() {
             this.#video_player.mediaElement().oncanplay = (e) => {
                 // 只有当手动更改之后, 才会自动变速
+                if (this.#is_need_stop) {
+                    this.#is_need_stop = false;
+                    // 由于视频的canplay事件无法准时捕捉到,, 以及urlchang事件触发顺序的不确定, 可能已经成功切换到1080p, 这里就不需要暂停
+                    if (this.#video_player.getQuality()?.newQ === 16) {
+                        e.target.pause();
+                        return;
+                    }
+                }
                 if (this.#is_first) return;
                 const target = e.target;
                 this.#auto_speed_mode = false;
@@ -2122,14 +2137,11 @@
         #video_element_change_monitor() {
             const node = document.getElementsByClassName("bpx-player-video-wrap");
             node.length ? new MutationObserver((records) => {
-                let f = false;
                 for (const r of records) {
                     if (r.removedNodes.length) {
-                        f = true;
-                        this.#create_video_event();
+                        this.#create_video_start_event();
                         break;
                     }
-                    if (f) break;
                 }
             }).observe(node[0], { childList: true, subtree: true }) : Colorful_Console.print('failed to find video parent element', 'crash', true);
         }
@@ -2270,7 +2282,7 @@
             setTimeout(() => {
                 const node = document.getElementById('selectWrap'), h = node.getElementsByTagName('h3')[0], select = node.getElementsByTagName('select')[0];
                 select.onchange = (e) => (h.innerText = this.#rate_menus_funcs.main(parseInt(e.target.value)) || ''), this.#reset_menus(select, h);
-                this.#update_download_status(false);
+                this.#update_download_status(false, this.#video_info.video_id);
             }, 300);
         }
         // 添加评分菜单
@@ -2283,7 +2295,8 @@
                     <style>
                         div#selectWrap {
                             width: 139px;
-                            border: 2px solid gray;
+                            margin-left: -18px;
+                            border: 1px solid gray;
                         }
                         .select_wrap dt {
                             float: left;
@@ -2352,8 +2365,14 @@
                 this.#video_rate_event();
             } else Colorful_Console.print('fail to insert rate element', 'crash', true);
         }
-        #update_download_status(mode) {
-            const f = this.#download_flag, r = Statics_Variant_Manager.mark_download_video.check(this.#video_info.video_id);
+        /**
+         * 更新下载状态
+         * @param {boolean} mode
+         * @param {string} vid
+         * @returns {null}
+         */
+        #update_download_status(mode, vid) {
+            const f = this.#download_flag, r = Statics_Variant_Manager.mark_download_video.check(vid);
             // 当已经标记下载, 再设置下载标记时, 则不执行
             if (f && mode && r) return;
             // 当已经标记下载, 加载下一个没有被标记的视频, 则恢复原来的颜色
@@ -2362,8 +2381,6 @@
             else if (!f && r) this.#rate_menus_funcs.set_color(true);
             this.#download_flag = r;
         }
-        video_change_id = null;
-        url_has_changed = false;
         // 监听视频播放发生变化
         #reset_menus(select, h) {
             let tmp = null;
@@ -2374,6 +2391,8 @@
                     select.value = '0';
                     const r = Statics_Variant_Manager.rate_video_part.check_video_rate(video_id);
                     h.innerText = (r > 0 ? 'Rate: ' + r : Dynamic_Variants_Manager.block_videos.includes_r(video_id) ? 'Blocked' : '');
+                    // 更新视频是否下载
+                    this.#update_download_status(true, video_id);
                 },
                 get: () => tmp
             });
@@ -2442,20 +2461,21 @@
         // 判断浏览器是否支持urlchange事件
         #check_support_urlchange() { return GM_Objects.supportonurlchange === null || (Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true), false); }
         // 监听页面播放发生变化
-        #url_change_monitor() {
+        #url_change_monitor(user_is_login) {
             window.addEventListener('urlchange', (info) => {
                 const video_id = Base_Info_Match.get_video_id(info.url);
+                if (!video_id) {
+                    Colorful_Console.print('url_change event error', 'crash', true);
+                    return;
+                }
+                this.#is_need_stop = !user_is_login;
                 if (video_id === this.#video_info.video_id) return;
                 this.video_change_id = video_id;
                 this.url_has_changed = true;
                 // 贝叶斯添加设置为false
                 this.#add_bayes_flag = false;
-                setTimeout(() => {
-                    // 重新监听历史记录
-                    this.#visited_record();
-                    // 更新视频是否下载
-                    this.#update_download_status(true);
-                }, 300);
+                // 重新监听历史记录
+                setTimeout(() => this.#visited_record(), 300);
             });
         }
         constructor(data) { this.#initial_flag = this.update_essential_info(data.upData, data.videoData); }
@@ -2467,11 +2487,11 @@
                         this.#video_player = val;
                         // 必须回调
                         setTimeout(() => {
-                            if (this.#check_support_urlchange()) {
+                            if (this.#check_support_urlchange(user_is_login)) {
                                 // 尽快执行关灯的动作
                                 this.#auto_light.main() && this.light_control(1);
                                 // 创建视频播放事件或者是监听视频元素变化
-                                user_is_login ? this.#create_video_event() : this.#video_element_change_monitor();
+                                user_is_login ? this.#create_video_start_event() : this.#video_element_change_monitor();
                                 resolve(true);
                             } else reject('url_change_event_not_support');
                         });
@@ -3525,7 +3545,7 @@
                         this._timeout_id = setTimeout(() => {
                             unsafeWindow.player.getQuality()?.newQ > 16 && this._replay_video();
                             this._timeout_id = null;
-                        }, 1800);
+                        }, 5000);
                     },
                     // 判断视频是否已经切换到高清
                     _check_switch_finished(node) { return node.innerText?.includes('试用中'); },
@@ -3533,7 +3553,7 @@
                         // 获得视频支持的清晰度
                         if (!unsafeWindow.player.getSupportedQualityList()?.some(e => e > 16)) {
                             this._replay_video();
-                            return false;
+                            return true;
                         }
                         this._wait_switch();
                         const b = node.getElementsByClassName('bpx-player-toast-confirm-login');
@@ -3938,8 +3958,8 @@
         constructor(href) {
             // 判断当前链接所处的站点
             const site = [
-                'search',
                 'space',
+                'search',
                 'video',
                 'play',
                 'read'
