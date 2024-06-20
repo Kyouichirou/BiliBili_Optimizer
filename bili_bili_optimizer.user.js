@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.3
+// @version      3.0.4
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1422,8 +1422,9 @@
                 '\u9ec4\u6653\u660e'
             ],
             input_handle(content) {
+                if (!content) return;
                 const r = Statics_Variant_Manager.reserved_words;
-                return (typeof content === 'string' ? content.split(' ') : Array.isArray(content) ? content : Colorful_Console.print('the input data must be of array or string type', 'warning'))?.map(e => ('' + e).trim().toLocaleLowerCase()).filter(e => e && e.length > 1 && !r.some(c => e.includes(c)));
+                return (typeof content === 'string' ? content.trim().split(' ') : Array.isArray(content) ? content : Colorful_Console.print('the input data must be of array or string type', 'warning'))?.map(e => ('' + e).trim().toLocaleLowerCase()).filter(e => e && e.length > 1 && !r.some(c => e.includes(c)));
             },
             /**
              * 添加拦截关键词
@@ -1431,20 +1432,23 @@
              */
             add(content) {
                 const data = this.input_handle(content);
-                if (!data) return;
-                const a = this._get_data();
-                if (a) {
-                    const t = [...new Set([...a, ...data])];
-                    let i = t.length;
-                    if (i !== a.length) {
-                        while (i > 1000) t.pop(), --i;
-                        this._write_data(t);
-                    }
-                } else this._write_data([...new Set(data)]);
-                this.a = [...new Set([...this.a, ...data])];
-                // 重新赋值后, 需要重新添加函数
-                this.a.includes_r = includes_r.call(this.a, false);
-                this._show_info(data, true);
+                if (data?.length > 0) {
+                    const a = this._get_data();
+                    if (a) {
+                        const t = [...new Set([...a, ...data])];
+                        let i = t.length;
+                        if (i !== a.length) {
+                            while (i > 1000) t.pop(), --i;
+                            this._write_data(t);
+                        }
+                    } else this._write_data([...new Set(data)]);
+                    this.a = [...new Set([...this.a, ...data])];
+                    // 重新赋值后, 需要重新添加函数
+                    this.a.includes_r = includes_r.call(this.a, false);
+                    this._show_info(data, true);
+                    return true;
+                }
+                return false;
             },
             /**
              * 移除拦截关键词
@@ -1452,14 +1456,17 @@
              */
             remove(content) {
                 const data = this.input_handle(content);
-                if (!data) return;
-                const arr = this._get_data();
-                this.a = this.a.filter(e => !data.includes(e));
-                if (arr) {
-                    const t = arr.filter(e => !data.includes(e));
-                    t.length !== arr.length && this._write_data(t);
+                if (data?.length > 0) {
+                    const arr = this._get_data();
+                    this.a = this.a.filter(e => !data.includes(e));
+                    if (arr) {
+                        const t = arr.filter(e => !data.includes(e));
+                        t.length !== arr.length && this._write_data(t);
+                    }
+                    this._show_info(data, false);
+                    return true;
                 }
-                this._show_info(data, false);
+                return false;
             },
             _show_info(data, mode) { console.log(`${mode ? 'add' : 'remove'} black keys:\n${[...new Set(data)].join('\n')}`); },
             _write_data(data) { GM_Objects.set_value('black_keys', data), GM_Objects.notification('update black keys', 'info'); },
@@ -1789,7 +1796,7 @@
         initial_visited_videos: () => new Visited_Array(GM_Objects.get_value('visited_videos', []), 2000),
         // 当前浏览器会话播放的历史视频
         initial_session_visited_videos() { return new Promise((resolve, _reject) => GM_Objects.get_tabs((tabs) => resolve(Object.values(tabs).find(tab => tab.session_visited_videos)))); },
-        check_visited_video(video_id) { return this.session_visited_videos.includes(video_id) ? 1 : this.visited_videos.includes(video_id) ? 2 : 0; },
+        check_visited_video(video_id) { return this.session_visited_videos?.includes(video_id) ? 1 : this.visited_videos.includes(video_id) ? 2 : 0; },
         // 展示数据状态
         show_status: () => null,
         /**
@@ -3025,6 +3032,21 @@
                     }
                 };
             },
+            _localstorage() {
+                this.__proxy(localStorage, 'setItem', {
+                    apply(target, thisArg, args) {
+                        // B站的首页会私自更改弹幕开关
+                        if (args[0] === 'bpx_player_profile') {
+                            const json = JSON.parse(args[1]);
+                            if (json?.dmSetting?.dmSwitch) {
+                                json.dmSetting.dmSwitch = GM_Objects.get_value('danmu_switch', false);
+                                args[1] = JSON.stringify(json);
+                            }
+                        }
+                        return Reflect.apply(target, thisArg, args);
+                    }
+                });
+            },
             /**
              * 获得配置函数
              * @param {number} id
@@ -3040,7 +3062,8 @@
                     _addeventlistener: { run_at: 0, run_in: [2], type: 1 },
                     _setattribute: { run_at: 1, run_in: [1], type: 1 },
                     _history_replacestate: { run_at: 0, run_in: [1, 5], type: 1 },
-                    _history_pushstate: { run_at: 1, run_in: [1, 5], type: 1 }
+                    _history_pushstate: { run_at: 1, run_in: [1, 5], type: 1 },
+                    _localstorage: { run_at: 0, run_in: [0], type: 1 }
                 }, arr = [];
                 for (const k in run_configs) {
                     const c = run_configs[k];
@@ -3261,6 +3284,7 @@
                             for (const node of nodes) {
                                 if (node.dataset.is_hidden) continue;
                                 const info = this.#utilities_module.get_up_video_info(node);
+                                debugger;
                                 if (info) {
                                     const { title, up_name } = info;
                                     if (data.some(e => title.includes(e) || up_name.includes(e))) {
@@ -3275,12 +3299,8 @@
                         main(key) {
                             const c = this[key];
                             if (c) {
-                                const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".';
-                                const s = prompt(title).trim();
-                                if (s) {
-                                    const a = Dynamic_Variants_Manager.black_keys.input_handle(s);
-                                    a && a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
-                                }
+                                const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".', a = Dynamic_Variants_Manager.black_keys.input_handle(prompt(title).trim());
+                                a && a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
                                 return true;
                             }
                             return false;
@@ -3308,8 +3328,11 @@
                     if (check_is_input(event.target)) return;
                     const key = event.key.toLowerCase();
                     const id = this.#configs.id;
-                    !search.main(key) && (this.#video_module_initial_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key));
-                });
+                    if (search.main(key) || (this.#video_module_initial_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key))) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                }, true);
             },
             /**
              * 配置执行函数
@@ -3550,7 +3573,7 @@
                             }
                         }).observe(node, { childList: true, subtree: true });
                         // 页面已经基本载入完成
-                        setTimeout(() => (this._is_first_time = false), 500);
+                        setTimeout(() => (this._is_first_time = false), 550);
                     },
                     // 超时不触发上面的事件监听则主动播放
                     _wait_switch() {
