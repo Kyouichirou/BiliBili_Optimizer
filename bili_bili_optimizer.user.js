@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.4
+// @version      3.0.5
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1192,7 +1192,6 @@
                 '\u6bd5\u5bfc',
                 '\u7279\u6717\u666e',
                 '\u827e\u8dc3\u8fdb',
-                '\u8d58\u5a7f',
                 '\u4e60\u8fd1\u5e73',
                 '\u4e60\u4e3b\u5e2d',
                 '\u6bdb\u6cfd\u4e1c',
@@ -1231,7 +1230,6 @@
                 '\u89c2\u89c6\u9891',
                 '\u4eba\u6c11\u65e5\u62a5',
                 '\u601d\u60f3\u706b\u70ac',
-                '\u6c99\u6d77',
                 '\u534a\u4f5b',
                 '\u6797\u60ca\u7fbd',
                 '\u706b\u7bad\u5c11\u5973',
@@ -1339,7 +1337,6 @@
                 '\u72d7\u8840',
                 '\u5a31\u4e50\u5708',
                 '\u6697\u604b',
-                '\u76d7\u5893\u7b14\u8bb0',
                 '\u8bf4\u5531\u65b0\u4e16\u4ee3',
                 '\u60f3\u89c1\u4f60',
                 '\u5c0f\u9b3c\u5b50',
@@ -1459,6 +1456,7 @@
                 if (data?.length > 0) {
                     const arr = this._get_data();
                     this.a = this.a.filter(e => !data.includes(e));
+                    this.a.includes_r = includes_r.call(this.a, false);
                     if (arr) {
                         const t = arr.filter(e => !data.includes(e));
                         t.length !== arr.length && this._write_data(t);
@@ -1594,7 +1592,7 @@
                                 ['test', 'test("content"); will return the result of test content.'],
                                 ['enable', 'bayes default 1 enable, bayes.enable = 0; disable bayes'],
                                 ['add_white', 'bayes.add_white("content"); add the content to white list.'],
-                                ['add_black', 'bayes.add_black("content"); add the content to black list.']
+                                ['add_black', 'bayes.add_black("content"); add the content to black list.'],
                                 ['help', 'show the info of help.']
                             ], i = helps.reduce((acc, e) => {
                                 const a = e[0].length;
@@ -1919,7 +1917,7 @@
             Dynamic_Variants_Manager.session_visited_videos.push_and_settab(video_id);
             GM_Objects.set_value('visited_videos', arr);
             Dynamic_Variants_Manager.rate_visited_data_sync(video_id);
-            Colorful_Console.print('play record has been writed');
+            Colorful_Console.print(`${video_id}, play record has been writed`);
         },
         /**
          * 异常日志记录
@@ -2049,7 +2047,7 @@
                         const cmds = [
                             ['show_shortcuts', 'show the shortcuts'],
                             ['show_rate', 'show all rated videos'],
-                            ['show_black_keys', 'show all a-class black keys'],
+                            ['black_key', 'setup custom black keys'],
                             ['bayes', 'setup and show the bayes model'],
                             ['support', 'show the popup of support me'],
                             ['feedback', 'open the webpage of issues'],
@@ -2112,6 +2110,7 @@
                 title: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.title),
                 up_id: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, user_data.mid),
                 duration: (_arg) => video_data.duration,
+                videos: (_arg) => video_data.videos,
                 is_collection: ((arg) => (arg === undefined ? undefined : arg > 1 ? true : false)).bind(null, video_data.videos)
             }).every(([k, v]) => (this.#video_info[k] = v()) === undefined ? (Colorful_Console.print(`failed to obtain basic video information: ${k}`, 'crash', true), false) : true);
         }
@@ -2190,18 +2189,16 @@
         // 速度控制, 菜单函数
         #regist_menus_command() { [['speedup', true], ['slow', false]].forEach(e => GM_Objects.registermenucommand(e[0], this.#speed_control.bind(this, e[1]))); }
         #visited_record() {
-            // 连续的内容不记录 ?
-            // if (this.#video_info.is_collection) return;
             if (this.#record_id) {
                 clearTimeout(this.#record_id);
                 this.#record_id = null;
             }
-            const duration = parseInt(this.#video_info.duration * 500);
+            const lm = 30 * 60 * 1000, vs = this.#video_info.videos,  duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
+            console.log(duration);
             duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
-                const id = this.#video_info.video_id;
-                Statics_Variant_Manager.add_visited_video(id);
+                Statics_Variant_Manager.add_visited_video(this.#video_info.video_id);
                 this.#record_id = null;
-            }, duration);
+            }, duration > lm ? lm : duration);
         }
         // 菜单执行函数
         #rate_menus_funcs = {
@@ -2729,7 +2726,7 @@
                             response_content.data.Related = cache_results;
                             return;
                         }
-                        this.#video_instance.update_essential_info(data.View.owner, data.View);
+                        this.#video_instance?.update_essential_info(data.View.owner, data.View);
                         results = this.#configs.request_data_handler(data.Related, pre_data_check);
                         response_content.data.Related = results;
                     }
@@ -3925,7 +3922,7 @@
         };
         // 获取过滤配置
         #load_filter_configs(id) {
-            // 预先检查数据是否满足要求
+            // 预先检查数据是否满足要+求+
             if (id > 2) return;
             // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
             const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [],
