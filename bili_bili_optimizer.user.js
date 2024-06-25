@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.5
+// @version      3.0.6
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2055,6 +2055,7 @@
                             ['show_crash_log', 'show the log of crash'],
                             ['download_audio_path', 'show/set the path of download audio'],
                             ['download_video_path', 'show/set the path of download video'],
+                            ['video_duration_limit', 'setup the duration to filter video'],
                             ['help', 'show the info of help']
                         ], i = cmds.reduce((acc, e) => {
                             const a = e[0].length;
