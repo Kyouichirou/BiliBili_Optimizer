@@ -2194,7 +2194,6 @@
                 this.#record_id = null;
             }
             const lm = 30 * 60 * 1000, vs = this.#video_info.videos,  duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
-            console.log(duration);
             duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
                 Statics_Variant_Manager.add_visited_video(this.#video_info.video_id);
                 this.#record_id = null;
