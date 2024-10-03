@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.6
+// @version      3.0.7
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1478,15 +1478,19 @@
         cache_block_ups: null,
         // 手动拉黑的视频, 动态, 限制数量, 结构[], 跨标签通信
         block_videos: null,
+        // 已经检查过的视频缓存, 结构[]
+        has_checked_videos: null,
         // 临时拦截视频, 不保存数据, 结构[]
         cache_block_videos: null,
         // 手动, 视频的评分, 重要数据, 结构[{}], 跨标签通信
         rate_videos: null,
         // 自动, 历史访问视频, 动态, 限制数量[]
         visited_videos: null,
+        // 当前页面已播放过列表
         session_visited_videos: null,
         // 自动, 累积拦截次数, 跨标签通信
         accumulative_total: GM_Objects.get_value('accumulative_total', 0),
+        // 贝叶斯拦截的次数
         accumulative_bayes: GM_Objects.get_value('accumulative_bayes', 0),
         // 统计拦截的up的情况
         _block_up_statistics() {
@@ -1734,14 +1738,15 @@
             // 3. 拦截关键词, 如果包含a类关键词, 拉黑up在缓存
             // 4. 最后检查拦截视频
             const { title, up_id, video_id, up_name } = info;
-            if (this.block_ups.includes_r(up_id) || this.cache_block_ups.includes_r(up_id) || this.block_videos.includes_r(video_id) || this.cache_block_videos.includes_r(video_id)) return true;
+            if (this.has_checked_videos.includes(video_id)) return false;
+            else if (this.block_ups.includes_r(up_id) || this.cache_block_ups.includes_r(up_id) || this.block_videos.includes_r(video_id) || this.cache_block_videos.includes_r(video_id)) return true;
             const r = this.key_check(title + "_" + up_name);
             if (r > 0) {
                 r == 2 && this.cache_block_ups.push(up_id);
                 return true;
             }
             const b = this.bayes_module.bayes(title);
-            return b > 0 ? (this._bayes_accumulative(title, b), true) : false;
+            return b > 0 ? (this._bayes_accumulative(title, b), true) : (this.has_checked_videos.push(video_id), false);
         },
         /**
          * 取消拦截视频
@@ -1759,6 +1764,7 @@
                 GM_Objects.set_value('rate_videos', this.rate_videos);
                 this.rate_visited_data_sync({ type: 'remove', value: video_id });
             }
+            this.has_checked_videos.remove(video_id);
             Colorful_Console.print(`add video to block_video list: ${video_id}`);
         },
         // 累积拦截计数记录
@@ -1810,6 +1816,11 @@
             this.cache_block_videos = [], this.cache_block_videos.includes_r = includes_r.call(this.cache_block_videos, true);
             this.block_ups = this.initial_block_ups();
             this.block_videos = new Block_Video_Array(GM_Objects.get_value('block_videos', []), 0);
+            this.has_checked_videos = [];
+            this.has_checked_videos.remove = function (video_id) {
+                const index = this.indexOf(video_id);
+                index > -1 && this.splice(index, 1);
+            };
             // 评分信息仅在搜索的页面启用, 播放页不需要, 播放页只需要执行一次, 放置于静态数据管理模块
             if (site_id === 2) this.rate_videos = this.initial_rate_videos();
             if (site_id !== 1) this.visited_videos = this.initial_visited_videos();
@@ -2194,7 +2205,7 @@
                 clearTimeout(this.#record_id);
                 this.#record_id = null;
             }
-            const lm = 30 * 60 * 1000, vs = this.#video_info.videos,  duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
+            const lm = 30 * 60 * 1000, vs = this.#video_info.videos, duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
             duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
                 Statics_Variant_Manager.add_visited_video(this.#video_info.video_id);
                 this.#record_id = null;
