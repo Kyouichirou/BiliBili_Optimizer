@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.7
+// @version      3.0.8
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1858,7 +1858,7 @@
              * @returns {boolean}
              */
             check(up_id) { return this._data.some(e => e.up_id === up_id); },
-            _info_write(data, up_id, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.print(`${mode ? 'remove up from ' : 'add up to '} block_ups list: ${up_id}`, 'info', mode); },
+            _info_write(data, up_id, mode = false) { GM_Objects.set_value('block_ups', data), Colorful_Console.print(`${mode ? 'add up to ' : 'remove up from '} block_ups list: ${up_id}`, 'info', mode); },
             /**
              * 取消up拦截
              * @param {string} up_id
@@ -2703,11 +2703,7 @@
                 // 不能采用清空数据的策略, 在视频播放页面该操作会导致侧边栏添加html元素时出现错误
                 // 筛选掉被过滤的内容, 重新生成新的数组
                 request_data_handler: (data, pre_data_check) => data.filter(e => !pre_data_check(e)),
-                get_title_up_name(node) {
-                    const info = {};
-                    [['title', 'title', 'title'], ['up_name', 'name', 'innerText']].forEach(e => (info[e[0]] = node.getElementsByClassName(e[1])[0]?.e[2].trim() || ''));
-                    return info;
-                },
+                get_title_up_name(node) { return [['title', 'title', 'title'], ['up_name', 'name', 'innerText']].reduce((t, c) => (t[c[0]] = node.getElementsByClassName(c[1])[0]?.[c[2]]?.trim() || '', t), {}); },
                 /**
                  * 视频页面的数据请求会发生两种情况: 1. 第一次载入, 请求一次, 因为html上的数据
                  * B站在视频播放页这里的操作很迷, 最多可能产生3次数据请求, 一般为2次, 首次可能为1次
