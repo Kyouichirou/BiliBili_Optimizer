@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.0.8
+// @version      3.1.0
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -15,6 +15,7 @@
 // @match        https://search.bilibili.com/*
 // @connect      files.superbed.cn
 // @connect      8.z.wiki
+// @connect      wkphoto.cdn.bcebos.com
 // @grant        GM_info
 // @grant        GM_getTab
 // @grant        GM_getTabs
@@ -166,12 +167,12 @@
         install: 'https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js',
         feedback: 'https://github.com/Kyouichirou/BiliBili_Optimizer/issues',
         /**
-         * 将字符串响应头转为字典
+         * 将字符串响应头转为字典, 请求头存在没有空格的现象
          * @param {string} content
          * @returns {object}
          */
         _convert_dic(content) {
-            return content.split('\n').map(e => e.trim()).filter(e => e.length > 0).map(e => e.split(': ')).reduce((acc, e) => {
+            return content.split('\n').map(e => e.trim()).filter(e => e.length > 0).map(e => e.replaceAll(' ', '').split(':')).reduce((acc, e) => {
                 acc[e[0]] = e[1];
                 return acc;
             }, {});
@@ -189,18 +190,21 @@
                 onload: (response) => {
                     const code = response.status;
                     // 请求头得到的内容是字符串, 需要转换为对象
-                    code === 200 && this._convert_dic(response.responseHeaders)['content-length'] > 0 ? resolve(true) : reject('request code: ' + code + `, : ${url}`);
+                    if (code === 200) {
+                        const cl = this._convert_dic(response.responseHeaders)['content-length'];
+                        cl && parseInt(cl) > 0 ? resolve(true) : reject('content-length: ' + cl + `, : ${url}`);
+                    } else reject('request code: ' + code + `, : ${url}`);
                 },
                 onerror: (response) => (console.error(response), reject('error: ' + url)),
                 ontimeout: (_response) => reject('timeout: ' + url)
             }));
         },
-        // 检查图床的图片是否可以正常访问, 每三天检查一次
+        // 检查图床的图片是否可以正常访问, 每10天检查一次
         _check_pic() {
             const xmls = [];
             for (const k in this) {
                 const url = (k === 'main' || k.startsWith('_')) ? '' : this[k];
-                ['8.z.wiki', 'files.superbed.cn'].some((e) => url.includes(e)) && xmls.push(this._http(url));
+                GM_Objects.info.script.connects.some((e) => url.includes(e)) && xmls.push(this._http(url));
             }
             Promise.allSettled(xmls).then(res => {
                 const error_urls = res.filter(item => item.status === 'rejected').map(item => item.reason);
@@ -208,7 +212,7 @@
                 GM_Objects.set_value('pic_check_date', Date.now());
             });
         },
-        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 3 && this._check_pic(), 10000); }
+        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 10 && this._check_pic(), 10000); }
     };
     // 链接常量 ---------------
 
@@ -233,8 +237,18 @@
             const api = ``;
         }
     }
+
     // 数据导出导入管理
     const Data_Manager = {};
+
+    // 启用indexdb
+    // tampermonkey的存储读写操作太过于麻烦, 大规模的数据很是不便
+    // 更大规模的历史数据存储, 更详细的视频数据存储
+    // 相关视频的推荐
+    // 相关up的推荐
+    // 自定义一套算法来补充数据的推荐
+    class Indexed_DB {
+    }
     // ------------- 暂未启用部分
 
     // --------------- 通用函数
@@ -1910,11 +1924,11 @@
         // 管理标记的下载视频记录
         mark_download_video: {
             get _data() { return GM_Objects.get_value('mark_download_videos', []); },
-            _info_write(data) { GM_Objects.set_value('mark_download_videos', data), Colorful_Console.print('successfully marked video as downloaded'); },
+            _info_write(data, video_id) { GM_Objects.set_value('mark_download_videos', data), Colorful_Console.print(`${video_id}, successfully marked video as downloaded`); },
             add(info) {
                 const data = this._data, video_id = info.video_id;
                 if (this.check(video_id, data)) return;
-                data.push(info), this._info_write(data);
+                data.push(info), this._info_write(data, video_id);
             },
             check(video_id, data = null) { return (data || this._data).some(e => e.video_id === video_id); }
         },
@@ -2086,10 +2100,9 @@
     class Video_Module {
         // 初始化成功与否的标记
         #initial_flag = false;
+        #user_is_login = false;
         // 贝叶斯添加标记
-        #add_bayes_flag = false;
-        // 标记视频已下载
-        #download_flag = false;
+        #added_bayes_list = [];
         // 下载音频的路径
         #download_audio_path = GM_Objects.get_value('download_audio_path', 'E:\\Audio\\voice book');
         // 下载视频的路径
@@ -2106,10 +2119,10 @@
         #auto_speed_mode = false;
         // 视频基本信息
         #video_info = {};
-        // 视频切换
-        video_change_id = null;
         // url切换
         url_has_changed = false;
+        // 视频信息更新完成
+        video_info_update_flag = false;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2117,7 +2130,7 @@
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
         update_essential_info(user_data, video_data) {
-            return Object.entries({
+            return this.video_info_update_flag = Object.entries({
                 video_id: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
                 title: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.title),
                 up_id: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, user_data.mid),
@@ -2199,7 +2212,8 @@
             GM_Objects.set_value('speed_up_video', false);
         }
         // 速度控制, 菜单函数
-        #regist_menus_command() { [['speedup', true], ['slow', false]].forEach(e => GM_Objects.registermenucommand(e[0], this.#speed_control.bind(this, e[1]))); }
+        #regist_menus_command() { [['speed +', true], ['speed -', false]].forEach(e => GM_Objects.registermenucommand(e[0], this.#speed_control.bind(this, e[1]))); }
+        // 历史访问记录
         #visited_record() {
             if (this.#record_id) {
                 clearTimeout(this.#record_id);
@@ -2211,214 +2225,190 @@
                 this.#record_id = null;
             }, duration > lm ? lm : duration);
         }
+        // 侧边状态栏html
+        #get_sider_status_html(status_dic) {
+            // 下载, 评分, 贝叶斯, 拦截
+            return `<div id="status_sider_bar" style="z-index: 999;margin-left: -90px;position: absolute;">
+                    <div class="s_list" style="display: grid;">
+                    ${Object.entries(status_dic).map(([k, v]) => `<span><label>${k}: ${v}</label><hr></span>`).join('')}
+                    </div>
+                </div>`;
+        }
+        // 添加侧边状态栏
+        #add_status_siderbar(mode = false) {
+            // 检查视频是否下载, 是否拦截, 评分
+            // 假如拦截, 就不需要检查评分, 下载还是需要检查
+            mode && (this.#select_element.value = '0');
+            const target = document.getElementById('viewbox_report');
+            if (!target) {
+                Colorful_Console.print('fail to insert element of status', 'crash', true);
+                return;
+            } else if (target.nextElementSibling.id === 'status_sider_bar') target.nextElementSibling.remove();
+            const vid = this.#video_info.video_id,
+                status_dic = {
+                    'Rate': Statics_Variant_Manager.rate_video_part.check_video_rate(vid),
+                    'Blocked': 0,
+                    'Bayesed': this.#added_bayes_list.includes(vid) ? 1 : 0,
+                    'Downloaded': Statics_Variant_Manager.mark_download_video.check(vid) ? 1 : 0
+                };
+            status_dic.Blocked = status_dic.Rate === 0 ? Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 1 : 0 : 0;
+            setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)));
+        }
         // 菜单执行函数
-        #rate_menus_funcs = {
+        #menus_funcs = {
             // 菜单
-            0: () => null,
+            _change_lable(change_dic) {
+                const lables = document.getElementById('status_sider_bar').getElementsByTagName('label');
+                for (const label of lables) {
+                    const text = label.innerText.split(':')[0];
+                    if (text in change_dic) label.innerText = `${text}: ${change_dic[text]}`;
+                }
+            },
+            0(_) { },
             // remove, 从评分中将数据移除掉
-            4: () => Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id),
+            4(video_info) {
+                Statics_Variant_Manager.rate_video_part.remove(video_info.video_id);
+                this._change_lable({ 'Rate': 0 });
+            },
             // block, 拦截视频
-            5: () => {
-                Dynamic_Variants_Manager.block_video(this.#video_info.video_id);
-                Statics_Variant_Manager.rate_video_part.remove(this.#video_info.video_id);
-                return 'Blocked';
+            5(video_info) {
+                // 拦截
+                Dynamic_Variants_Manager.block_video(video_info.video_id);
+                // 移除评分
+                Statics_Variant_Manager.rate_video_part.remove(video_info.video_id);
+                this._change_lable({ 'Blocked': 1, "Rate": 0 });
             },
             // unblock, 不拦截视频
-            6: () => Dynamic_Variants_Manager.unblock_video(this.#video_info.video_id),
-            // 标记已经下载
-            8: (mode = false) => {
-                if (mode || !this.#download_flag) {
-                    this.#rate_menus_funcs.set_color(true);
-                    Statics_Variant_Manager.mark_download_video.add({ video_id: this.#video_info.video_id, title: this.#video_info.title });
-                }
-                this.#download_flag = true;
+            6(video_info) {
+                Dynamic_Variants_Manager.unblock_video(video_info.video_id);
+                this._change_lable({ 'Blocked': 0 });
             },
-            set_color(mode) {
-                const h1 = document.getElementsByTagName('h1')[0];
-                h1.style.color = mode ? 'chocolate' : 'black';
-                mode && (h1.title = `${h1.title}; Downloaded.`);
+            // 标记已经下载
+            8(video_info) {
+                Statics_Variant_Manager.mark_download_video.add({ video_id: video_info.video_id, title: video_info.title });
+                this._change_lable({ 'Downloaded': 1 });
+            },
+            // 生成bbdown下载命令
+            _bbdown: (id, params, audio_mode) => {
+                const cm = `BBDown -mt --work-dir "${audio_mode ? this.#download_audio_path : this.#download_video_path}" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
+                GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.print("bbdown commandline: " + cm));
+            },
+            // 添加评分
+            _add_rate: (val, video_info) => {
+                const id = video_info.video_id;
+                if (!id) {
+                    Colorful_Console.print('fail to get video_id', 'warning', true);
+                    return 0;
+                }
+                const now = Date.now();
+                // 这里存在问题, 访问次数和活跃时间
+                const info = {
+                    video_id: id,
+                    title: video_info.title,
+                    up_id: video_info.up_id,
+                    last_active_date: now,
+                    visited_times: 1,
+                    add_date: now,
+                    rate: val
+                };
+                Statics_Variant_Manager.rate_video_part.add(info);
+                // 假如评分的视频是拦截的视频, 则取消拦截
+                Dynamic_Variants_Manager.unblock_video(id);
+                if (!this.#added_bayes_list.includes(id) && (val === 5 || confirm("add to whitelist of bayes model?"))) {
+                    Dynamic_Variants_Manager.bayes_module.add_new_content(video_info.title, true);
+                    this.#added_bayes_list.push(id);
+                    return 2;
+                }
+                return 1;
             },
             // 1 3分
             // 2 4分
             // 3 5分
             // 7 bbdown, 下载视频
-            _rate: (val) => {
-                const id = this.#video_info.video_id;
-                let title = '';
-                if (val !== 7) {
-                    const add_rate = (val, video_info) => {
-                        const id = video_info.video_id;
-                        if (id) {
-                            const now = Date.now();
-                            const info = {
-                                video_id: id,
-                                title: video_info.title,
-                                up_id: video_info.up_id,
-                                last_active_date: now,
-                                visited_times: 1,
-                                add_date: now,
-                                rate: val
-                            };
-                            Statics_Variant_Manager.rate_video_part.add(info);
-                            return true;
-                        }
-                        Colorful_Console.print('fail to get up_id', 'warning', true);
-                        return false;
-                    };
-                    val += 2;
-                    Dynamic_Variants_Manager.unblock_video(id);
-                    title = add_rate(val, this.#video_info) ? 'Rate: ' + val : '';
-                    if (!this.#add_bayes_flag && (val === 5 || confirm("add to whitelist of bayes model?"))) {
-                        Dynamic_Variants_Manager.bayes_module.add_new_content(this.#video_info.title, true);
-                        this.#add_bayes_flag = true;
+            _other(val, video_info) {
+                const dic = {};
+                if (val === 7) {
+                    if (confirm('mark video as downloaded?')) {
+                        this[8](video_info);
+                        dic.Downloaded = 1;
                     }
-                } else !this.#download_flag && confirm('mark video as downloaded?') && this.#rate_menus_funcs['8'](true);
-                const params = [];
-                // 只有当页面的视频为合集的状态才会生成相应的参数
-                let f = false;
-                if (this.#video_info.is_collection) {
-                    params.push('-p ALL');
-                    const nodes = document.getElementsByClassName('title');
-                    const voices = ['有声', '小说剧', '广播剧', '播讲', '听书'];
-                    let ic = 0;
-                    for (const node of nodes) {
-                        const t = node.innerHTML.replaceAll(' ', '');
-                        ic += (voices.some(e => t.includes(e)) ? 1 : 0);
-                        if (ic > 4) {
-                            params.push('--audio-only');
-                            f = true;
-                            break;
-                        }
+                } else {
+                    val += 2;
+                    const i = this._add_rate(val, video_info);
+                    if (i > 0) {
+                        dic.Rate = val;
+                        dic.Blocked = 0;
+                        i === 2 && (dic.Bayesed = 1);
                     }
                 }
-                const cm = `BBDown -mt --work-dir "${f ? this.#download_audio_path : this.#download_video_path}" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
-                GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.print("bbdown commandline: " + cm));
-                return title;
+                const params = [];
+                // 只有当页面的视频为合集的状态才会生成相应的参数
+                video_info.is_collection && params.push('-p ALL');
+                const is_audio = this._check_is_audio();
+                is_audio && params.push('--audio-only');
+                this._bbdown(video_info.video_id, params, is_audio);
+                this._change_lable(dic);
             },
-            main(val) {
+            // 判断是否是音频类视频
+            _voice_keys: ['有声', '小说剧', '广播剧', '播讲', '听书'],
+            _check_is_audio() {
+                const nodes = document.getElementsByClassName('title');
+                let ic = 0;
+                for (const title of nodes) {
+                    const t = title.innerHTML.replaceAll(' ', '');
+                    if ((ic += (this._voice_keys.some(e => t.includes(e)) ? 1 : 0)) > 4) return true;
+                }
+                return false;
+            },
+            main(val, video_info) {
                 const f = this[val];
-                return f ? f() : this._rate(val);
+                // 注意this的丢失, 函数在赋值之后
+                return f ? f.call(this, video_info) : this._other(val, video_info);
             }
         };
-        // 视频操作菜单事件
-        #video_rate_event() {
-            setTimeout(() => {
-                const node = document.getElementById('selectWrap'), h = node.getElementsByTagName('h3')[0], select = node.getElementsByTagName('select')[0];
-                select.onchange = (e) => (h.innerText = this.#rate_menus_funcs.main(parseInt(e.target.value)) || ''), this.#reset_menus(select, h);
-                this.#update_download_status(false, this.#video_info.video_id);
-            }, 300);
-        }
         // 添加评分菜单
-        #add_video_rate_element() {
-            const vid = this.#video_info.video_id,
-                rate = Statics_Variant_Manager.rate_video_part.check_video_rate(vid),
-                status = rate === 0 ? '' : Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 'Blocked' : 'Rate: ' + rate,
-                html = `
+        get #select_element() { return document.getElementById('selectWrap').getElementsByTagName('select')[0]; }
+        #add_menus_element() {
+            const html = `
                 <div class="select_wrap" id="selectWrap">
                     <style>
                         div#selectWrap {
-                            width: 139px;
+                            width: 82px;
                             margin-left: -18px;
-                            border: 1px solid gray;
-                        }
-                        .select_wrap dt {
-                            float: left;
-                            width: 64px;
-                            line-height: 30px;
-                            text-align: right;
-                            font-size: 14px;
+                            border: 1px solid #00b5e5;
+                            border-radius: 6px;
                         }
                         .select_wrap dd {
-                            margin-left: 56px;
+                            margin-left: 5px;
                             line-height: 30px;
                         }
                         select#selectElem {
-                            width: 62px;
+                            font-size: 14px;
+                            width: 72px;
                             text-align: center;
                         }
-                        .select_container {
-                            position: relative;
-                            display: inline-block;
-                        }
-                        .select_container ul {
-                            position: absolute;
-                            top: 35px;
-                            width: 100%;
-                            margin: 0;
-                            padding: 0;
-                            background: #fff;
-                            border-radius: 4px;
-                            box-shadow: 0 0px 5px #ccc;
-                        }
-                        .select_container li {
-                            list-style: none;
-                            font-size: 12px;
-                            line-height: 30px;
-                            padding: 0 10px;
-                            cursor: pointer;
-                        }
-                        .select_container li:hover,
-                        .select_container li.cur {
-                            background: #dbf0ff;
-                        }
                     </style>
-                    <h3 style="margin-left: 8%;">${status}</h2>
-                    <hr>
-                    <dl>
-                        <dt>Menus：</dt>
-                        <dd>
-                            <select id="selectElem">
-                                <option value="0">menus</option>
-                                <option value="1">Rate: 3</option>
-                                <option value="2">Rate: 4</option>
-                                <option value="3">Rate: 5</option>
-                                <option value="4" title="remove video rate">Remove</option>
-                                <option value="5" title="block video">Block</option>
-                                <option value="6" title="unblock video">unBlock</option>
-                                <option value="7" title="generate download video command of bbdown">BBdown</option>
-                                <option value="8" title="mark video as downloaded">Marked</option>
-                            </select>
-                        </dd>
-                    </dl>
+                    <dd>
+                        <select id="selectElem">
+                            <option value="0">Menus</option>
+                            <option value="1">Rate: 3</option>
+                            <option value="2">Rate: 4</option>
+                            <option value="3" style="color: blue;">Rate: 5</option>
+                            <option value="4" title="remove video rate">Remove</option>
+                            <option value="5" title="block video" style="color:red;">Block</option>
+                            <option value="6" title="unblock video">unBlock</option>
+                            <option value="7" title="generate download video command of bbdown">BBdown</option>
+                            <option value="8" title="mark video as downloaded" style="color: #FFA500;">Marked</option>
+                        </select>
+                    </dd>
                 </div>`,
                 toolbar = document.getElementsByClassName('video-toolbar-left');
             if (toolbar.length > 0) {
-                // 这个函数不会返回插入生成的节点, 返回空值
+                this.#add_status_siderbar();
+                // insertAdjacentHTML, 这个函数不会返回插入生成的节点, 返回空值
                 toolbar[0].insertAdjacentHTML('beforeend', html);
-                this.#video_rate_event();
+                setTimeout(() => this.#select_element.onchange = (e) => this.#menus_funcs.main(parseInt(e.target.value), this.#video_info), 300);
             } else Colorful_Console.print('fail to insert rate element', 'crash', true);
-        }
-        /**
-         * 更新下载状态
-         * @param {boolean} mode
-         * @param {string} vid
-         * @returns {null}
-         */
-        #update_download_status(mode, vid) {
-            const f = this.#download_flag, r = Statics_Variant_Manager.mark_download_video.check(vid);
-            // 当已经标记下载, 再设置下载标记时, 则不执行
-            if (f && mode && r) return;
-            // 当已经标记下载, 加载下一个没有被标记的视频, 则恢复原来的颜色
-            else if (f && !r) this.#rate_menus_funcs.set_color(false);
-            // 当未标记下载, 加载下一个被标记的视频, 则显示颜色
-            else if (!f && r) this.#rate_menus_funcs.set_color(true);
-            this.#download_flag = r;
-        }
-        // 监听视频播放发生变化
-        #reset_menus(select, h) {
-            let tmp = null;
-            // 注意, Object.defineProperty无法拦截私有属性的操作
-            Object.defineProperty(this, 'video_change_id', {
-                set: (video_id) => {
-                    tmp = video_id;
-                    select.value = '0';
-                    const r = Statics_Variant_Manager.rate_video_part.check_video_rate(video_id);
-                    h.innerText = (r > 0 ? 'Rate: ' + r : Dynamic_Variants_Manager.block_videos.includes_r(video_id) ? 'Blocked' : '');
-                    // 更新视频是否下载
-                    this.#update_download_status(true, video_id);
-                },
-                get: () => tmp
-            });
         }
         // 点击执行
         #click_target(classname) { document.getElementsByClassName(classname)[0]?.click(); }
@@ -2484,51 +2474,21 @@
         // 判断浏览器是否支持urlchange事件
         #check_support_urlchange() { return GM_Objects.supportonurlchange === null || (Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true), false); }
         // 监听页面播放发生变化
-        #url_change_monitor(user_is_login) {
+        #url_change_monitor() {
             window.addEventListener('urlchange', (info) => {
                 const video_id = Base_Info_Match.get_video_id(info.url);
-                if (!video_id) {
-                    Colorful_Console.print('url_change event error', 'crash', true);
-                    return;
-                }
-                this.#is_need_stop = !user_is_login;
-                if (video_id === this.#video_info.video_id) return;
-                this.video_change_id = video_id;
-                this.url_has_changed = true;
-                // 贝叶斯添加设置为false
-                this.#add_bayes_flag = false;
-                // 重新监听历史记录
-                setTimeout(() => this.#visited_record(), 300);
+                if (video_id) {
+                    this.#is_need_stop = !this.#user_is_login;
+                    if (video_id === this.#video_info.video_id) return;
+                    this.url_has_changed = true;
+                } else Colorful_Console.print('url_change event error', 'crash', true);
             });
         }
-        constructor(data) { this.#initial_flag = this.update_essential_info(data.upData, data.videoData); }
-        init(user_is_login) {
-            return new Promise((resolve, reject) => {
-                Object.defineProperty(unsafeWindow, 'player', {
-                    get: () => this.#video_player,
-                    set: (val) => {
-                        this.#video_player = val;
-                        // 必须回调
-                        setTimeout(() => {
-                            if (this.#check_support_urlchange(user_is_login)) {
-                                // 尽快执行关灯的动作
-                                this.#auto_light.main() && this.light_control(1);
-                                // 创建视频播放事件或者是监听视频元素变化
-                                user_is_login ? this.#create_video_start_event() : this.#video_element_change_monitor();
-                                resolve(true);
-                            } else reject('url_change_event_not_support');
-                        });
-                    },
-                    configurable: true,
-                    enumerable: true
-                });
-            });
-        }
-        main(user_is_login) {
+        main() {
             // urlchange监听
             this.#url_change_monitor();
-            // 创建评分菜单
-            this.#add_video_rate_element();
+            // 创建下拉菜单
+            this.#add_menus_element();
             // 关灯控制
             this.#visited_record();
             // 创建菜单事件
@@ -2539,7 +2499,53 @@
             // 这个问题主要出现在edge浏览器中
             // play()操作大概率因为页面没有和浏览器产生交互, 浏览器会拦截这个操作, 导致无法播放
             // 但是在chrome上这种情况并不明显
-            setTimeout(() => this.#video_player.setAutoplay(user_is_login), 5500);
+            setTimeout(() => this.#video_player.setAutoplay(this.#user_is_login), 5500);
+        }
+        // 初始化模块
+        init() {
+            return new Promise((resolve, reject) => {
+                Object.defineProperty(unsafeWindow, 'player', {
+                    get: () => this.#video_player,
+                    set: (val) => {
+                        this.#video_player = val;
+                        // 必须回调, 等待对象内容赋值后才能捕获具体
+                        setTimeout(() => {
+                            if (this.#check_support_urlchange()) {
+                                // 尽快执行关灯的动作
+                                this.#auto_light.main() && this.light_control(1);
+                                // 创建视频播放事件或者是监听视频元素变化
+                                this.#user_is_login ? this.#create_video_start_event() : this.#video_element_change_monitor();
+                                resolve(true);
+                            } else reject('url_change_event_not_support');
+                        });
+                    },
+                    configurable: true,
+                    enumerable: true
+                });
+            });
+        }
+        /**
+         * @param {Object} data
+         * @param {boolean} user_is_login
+         */
+        constructor(data, user_is_login) {
+            this.#user_is_login = user_is_login;
+            this.#initial_flag = this.update_essential_info(data.upData, data.videoData);
+            // 监听视频信息更新, 需要等待信息更新完成才执行下一步
+            let timeout_id = null;
+            Object.defineProperty(this, 'video_info_update_flag', {
+                set: (val) => {
+                    if (val) {
+                        timeout_id && clearTimeout(timeout_id);
+                        timeout_id = setTimeout(() => {
+                            timeout_id = null;
+                            this.#visited_record();
+                            this.#add_status_siderbar(true);
+                        }, 1000);
+                    }
+                },
+                get() { }
+            });
         }
     }
     // ---------- 视频控制模块
@@ -2564,6 +2570,15 @@
         #end_load_funcs = [];
         // 启动时需要启动的函数
         #start_load_funcs = [];
+        // 追踪标记
+        static track_tags = ['spm_id_from', '?vid', 'vd_source', 'from_spmid'];
+        // 清除url中的追踪标记
+        static clear_track_tag(url) {
+            // static, 相互之间访问的时候, this的指向是class自身而不是实例对象
+            const t = this.track_tags.reduce((acc, e) => (acc = acc.split(e)[0], acc), url),
+                p = url.split('&').find(e => e.startsWith('p='));
+            return (t.endsWith('&') || t.endsWith('?') ? t.slice(0, -1) : t) + (p ? `?${p}` : '');
+        }
         // 不同站点的基础配置信息
         #site_configs = {
             home: {
@@ -2619,19 +2634,12 @@
                     const h = node.getElementsByTagName('h3')[0];
                     h ? h.innerText = val + h.innerText : Colorful_Console.print('title element miss', 'crash');
                 },
-                // 读取目标节点元素的视频标题和up名称
                 /**
-                 *
+                 * 读取目标节点元素的视频标题和up名称, 由于上面的添加信息到节点的操作, 不能直接读取标题的内容而是悬浮时显示的title
                  * @param {HTMLElement} node
                  * @returns {object} { up_name: '', title: '' }
                  */
-                get_title_up_name(node) {
-                    const info = { up_name: '', title: '' };
-                    // 由于上面的添加信息到节点的操作, 不能直接读取标题的内容而是悬浮时显示的title
-                    info.title = node.getElementsByTagName('h3')[0]?.title.trim() || '';
-                    info.up_name = node.getElementsByClassName('bili-video-card__info--author')[0]?.innerHTML.trim() || '';
-                    return info;
-                },
+                get_title_up_name: (node) => ({ up_name: node.getElementsByClassName('bili-video-card__info--author')[0]?.innerHTML.trim() || '', title: node.getElementsByTagName('h3')[0]?.title.trim() || '' }),
                 /**
                  * 用于处理节点名称的匹配方式
                  * @param {string} classname
@@ -2703,7 +2711,7 @@
                 // 不能采用清空数据的策略, 在视频播放页面该操作会导致侧边栏添加html元素时出现错误
                 // 筛选掉被过滤的内容, 重新生成新的数组
                 request_data_handler: (data, pre_data_check) => data.filter(e => !pre_data_check(e)),
-                get_title_up_name(node) { return [['title', 'title', 'title'], ['up_name', 'name', 'innerText']].reduce((t, c) => (t[c[0]] = node.getElementsByClassName(c[1])[0]?.[c[2]]?.trim() || '', t), {}); },
+                get_title_up_name: (node) => [['title', 'title', 'title'], ['up_name', 'name', 'innerText']].reduce((t, c) => (t[c[0]] = node.getElementsByClassName(c[1])[0]?.[c[2]]?.trim() || '', t), {}),
                 /**
                  * 视频页面的数据请求会发生两种情况: 1. 第一次载入, 请求一次, 因为html上的数据
                  * B站在视频播放页这里的操作很迷, 最多可能产生3次数据请求, 一般为2次, 首次可能为1次
@@ -2900,7 +2908,7 @@
                 this.__proxy(GM_Objects.window.history, 'replaceState', {
                     apply(...args) {
                         const a = args[2]?.[2];
-                        !(a && ['vd_source=', 'spm_id_from'].some(e => a.includes(e))) && Reflect.apply(...args);
+                        !(a && Bili_Optimizer.track_tags.some(e => a.includes(e))) && Reflect.apply(...args);
                     }
                 });
             },
@@ -2914,10 +2922,7 @@
                                 const i = a.length - 1;
                                 if (i >= 0) {
                                     const b = a[i];
-                                    if (b) {
-                                        const t = b.split('spm_id_from')[0];
-                                        a[i] = t.endsWith('&') || t.endsWith('?') ? t.slice(0, -1) : t;
-                                    }
+                                    if (b) a[i] = Bili_Optimizer.clear_track_tag(b);
                                 }
                             }
                         }
@@ -3117,6 +3122,8 @@
                 .bili-live-card.is-rcmd{
                     visibility: hidden !important;
                 }
+                .btn-ad,
+                .adcard,
                 .carousel,
                 .adblock-tips,
                 .vip-login-tip,
@@ -3140,6 +3147,7 @@
                     (user_is_login ? '' : '.bpx-player-subtitle-panel-text,') + `.video-page-special-card-small,
                     .video-page-operator-card-small,
                     .slide-ad-exp,
+                    a.ad-report.ad-floor-exp.right-bottom-banner,
                     a.ad-report.video-card-ad-small,
                     a#right-bottom-banner,
                     .pop-live-small-mode.part-1{
@@ -3288,7 +3296,6 @@
                             for (const node of nodes) {
                                 if (node.dataset.is_hidden) continue;
                                 const info = this.#utilities_module.get_up_video_info(node);
-                                debugger;
                                 if (info) {
                                     const { title, up_name } = info;
                                     if (data.some(e => title.includes(e) || up_name.includes(e))) {
@@ -3437,10 +3444,10 @@
                             if (val.spec) clear_data(val.spec);
                             initial_data = val;
                             if (id === 1) {
-                                const v = new Video_Module(val);
+                                const v = new Video_Module(val, this.#user_is_login);
                                 if (v.initial_flag) {
                                     this.#video_instance = v;
-                                    this.#video_instance.init(this.#user_is_login).then(() => (this.#video_module_initial_flag = true));
+                                    this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
                                 }
                             }
                         }
@@ -3504,10 +3511,14 @@
                         if (up_name === 'undefined' || up_name.length === title.length) return;
                         const up_id = Base_Info_Match.get_up_id(location.href);
                         if (up_id) {
+                            if (up_id === '441644010') {
+                                Colorful_Console.print("author's page, whitelist", 'debug');
+                                return;
+                            }
                             const mode = Statics_Variant_Manager.up_part.check(up_id);
                             this._create_event(this._create_button(mode), mode, up_id, up_name);
                         }
-                    }, 1000);
+                    }, 3000);
                 }
             },
             // 搜索页面
@@ -3747,7 +3758,7 @@
                 // 这里的时间不敏感
                 main: () => setTimeout(() => {
                     if (this.#video_module_initial_flag) {
-                        this.#video_instance.main(this.#user_is_login);
+                        this.#video_instance.main();
                         Object.defineProperty(this.#video_instance, 'url_has_changed', {
                             set: (_val) => this.#video_data_cache = null,
                             get: () => null
@@ -3991,7 +4002,6 @@
             };
         }
         /**
-         * 构造函数
          * @param {string} href
          */
         constructor(href) {
@@ -4051,9 +4061,9 @@
         // 假如数据处于维护中, 就不执行脚本
         if (GM_Objects.get_value('maintain', false)) Colorful_Console.print('data under maintenance, wait a moment', 'warning', true);
         else {
-            const { href, search, origin, pathname } = location;
+            const href = location.href, new_url = Bili_Optimizer.clear_track_tag(href);
             // 清除直接访问链接带有的追踪参数
-            search.startsWith('?spm_id_from') ? (window.location.href = origin + pathname) : (new Bili_Optimizer(href)).start();
+            new_url.length !== href.length ? (window.location.href = new_url) : (new Bili_Optimizer(new_url)).start();
         }
     }
     // 启动 -----------------
