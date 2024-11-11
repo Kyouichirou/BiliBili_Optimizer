@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.0
+// @version      3.1.1
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -156,6 +156,61 @@
     };
     // GM内置函数/对象 ---------------
 
+    // --------------- 通用函数
+    // 自定义打印内容
+    const Colorful_Console = {
+        _colors: {
+            warning: "#F73E3E",
+            debug: "#327662",
+            info: "#1475b2",
+            crash: "#FF0000"
+        },
+        /**
+         * 执行打印
+         * @param {string} content
+         * @param {string} type
+         * @param {boolean} mode
+         */
+        print(content, type = 'info', mode = false) {
+            const bc = this._colors[type];
+            const title = bc ? type : (bc = this._colors.info, 'info');
+            const params = [
+                `%c ${title} %c ${content} `,
+                "padding: 1px; border-radius: 3px 0 0 3px; color: #fff; font-size: 12px; background: #606060;",
+                `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
+            ];
+            console.log(...params), mode && GM_Objects.notification(content, type);
+            bc === this._colors.crash && Statics_Variant_Manager.add_crash_log(content);
+        }
+    };
+    // 基本信息匹配
+    const Base_Info_Match = {
+        // video id
+        _video_id_reg: /[a-z\d]{10,}/i,
+        // up uid, up的长度范围很广从1位数到16位数
+        _up_id_reg: /(?<=com\/)\d+/,
+        /**
+         * 匹配执行
+         * @param {RegExp} reg
+         * @param {string} href
+         * @returns {string}
+         */
+        _match(reg, href) { return href.match(reg)?.[0] || ''; },
+        /**
+         * 匹配视频id
+         * @param {string} href
+         * @returns {string}
+         */
+        get_video_id(href) { return href.includes('/video/') ? this._match(this._video_id_reg, href) : ''; },
+        /**
+         * 匹配up id
+         * @param {string} href
+         * @returns {string}
+         */
+        get_up_id(href) { return href.includes('space.bilibili') ? this._match(this._up_id_reg, href) : ''; }
+    };
+    // 通用函数 ---------------
+
     // ---------------- 链接常量
     const Constants_URLs = {
         blog: 'https://kyouichirou.github.io/',
@@ -248,63 +303,118 @@
     // 相关up的推荐
     // 自定义一套算法来补充数据的推荐
     class Indexed_DB {
+        #db_name = null;
+        #db_open = null;
+        #db_instance = null;
+        #table_arr = null;
+        #is_update_flag = false;
+        error_flag = false;
+        // request的简单封装
+        #request_wrapper(request, return_type) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = (e) => resolve(return_type === 'value' ? request.result : request.result.value);
+                request.onerror = (_e) => reject(request.error);
+            });
+        }
+        // 事务的简单封装
+        #transaction_wrapper(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => reject('transaction error');
+            });
+        }
+        // 检查表是否存在
+        #check_tables_is_exist() { return this.#table_arr.filter(e => !this.#db_instance.objectStoreNames.contains(e.table_name)); }
+        // 重新打开数据库, 创建新的表
+        #reopen_db() {
+            const v = this.#db_instance.version + 1;
+            this.#db_instance.close();
+            this.#db_instance = indexedDB.open(this.#db_name, v);
+            return this.initialize();
+        }
+        // 创建表
+        #create_tables() {
+            // transaction中只有最后的事务执行完毕才会执行oncomplete回调函数, 而不是每个事务执行完毕时执行oncomplete回调函数
+            return this.#transaction_wrapper(this.#table_arr.map(e => {
+                const keypath = e.key_path;
+                return this.#db_instance.createObjectStore(e.table_name, keypath ? { keyPath: keypath } : { autoIncrement: true });
+            }).pop().transaction);
+        }
+        // 获得表对象
+        #get_table_obj(table_name, rwmode) {
+            return this.#db_instance.transcation(table_name, rwmode).objectStore(table_name);
+        }
+        initialize() {
+            return new Promise((resolve, reject) => {
+                // 升级事件, 当数据库不存在时, 先触发
+                // 创建表格等操作必须在这个事件之下才能执行
+                this.#db_open.onupgradeneeded = (e) => {
+                    this.#db_instance = e.target.result;
+                    this.#is_update_flag = true;
+                    this.#create_tables().then(() => {
+                        console.log('tables created');
+                        resolve(0);
+                    }).catch(() => reject('fail to create tables'));
+                };
+                // 数据库不存在时, 先触发上面的升级事件, 然后才触发本事件
+                this.#db_open.onsuccess = (e) => {
+                    if (this.#is_update_flag) return;
+                    this.#db_instance = e.target.result;
+                    const arr = this.#check_tables_is_exist();
+                    if (arr.length > 0) {
+                        this.#table_arr = arr;
+                        this.#reopen_db().then(() => resolve(2)).catch(e => reject(e));
+                    } else resolve(1);
+                };
+                this.#db_open.onerror = (e) => {
+                    console.log(e);
+                    reject("open error");
+                };
+                /*
+                The event handler for the blocked event.
+                This event is triggered when the upgradeneeded event should be triggered _
+                because of a version change but the database is still in use (i.e. not closed) somewhere,
+                even after the versionchange event was sent.
+                */
+                this.#db_open.onblocked = () => {
+                    console.log("please close others tab to update database", 'debug');
+                    reject("conflict error");
+                };
+                this.#db_open.onversionchange = (_e) => {
+                    console.log("The version of this database has changed");
+                    reject("db version change");
+                };
+                // 意外关闭才会触发这个事件, 如数据库被手动删除, 正常关闭数据库不会触发这个事件
+                this.#db_open.onclose = (_e) => {
+                    console.log("database closed unexpectedly");
+                    reject("close error");
+                };
+            });
+        }
+        close() { this.#db_instance.close(); }
+        add(table_name, data) {
+
+        }
+        delete(table_name, id) {
+            return this.#request_wrapper(this.#get_table_obj(table_name, 'readwrite').delete(id), 'boolean');
+        }
+        get() {
+
+        }
+        check(table_name, id) {
+            return this.#request_wrapper(this.#get_table_obj(table_name, 'readonly').get(id), 'boolean');
+        }
+        /**
+         * @param {string} dbname
+         * @param {Array} table_dics [{'table_name':'', 'key_path':''}]
+         */
+        constructor(dbname, table_arr) {
+            this.#db_name = dbname;
+            this.#table_arr = table_arr;
+            this.#db_open = indexedDB.open(dbname);
+        }
     }
     // ------------- 暂未启用部分
-
-    // --------------- 通用函数
-    // 自定义打印内容
-    const Colorful_Console = {
-        _colors: {
-            warning: "#F73E3E",
-            debug: "#327662",
-            info: "#1475b2",
-            crash: "#FF0000"
-        },
-        /**
-         * 执行打印
-         * @param {string} content
-         * @param {string} type
-         * @param {boolean} mode
-         */
-        print(content, type = 'info', mode = false) {
-            const bc = this._colors[type];
-            const title = bc ? type : (bc = this._colors.info, 'info');
-            const params = [
-                `%c ${title} %c ${content} `,
-                "padding: 1px; border-radius: 3px 0 0 3px; color: #fff; font-size: 12px; background: #606060;",
-                `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
-            ];
-            console.log(...params), mode && GM_Objects.notification(content, type);
-            bc === this._colors.crash && Statics_Variant_Manager.add_crash_log(content);
-        }
-    };
-    // 基本信息匹配
-    const Base_Info_Match = {
-        // video id
-        _video_id_reg: /[a-z\d]{10,}/i,
-        // up uid, up的长度范围很广从1位数到16位数
-        _up_id_reg: /(?<=com\/)\d+/,
-        /**
-         * 匹配执行
-         * @param {RegExp} reg
-         * @param {string} href
-         * @returns {string}
-         */
-        _match(reg, href) { return href.match(reg)?.[0] || ''; },
-        /**
-         * 匹配视频id
-         * @param {string} href
-         * @returns {string}
-         */
-        get_video_id(href) { return href.includes('/video/') ? this._match(this._video_id_reg, href) : ''; },
-        /**
-         * 匹配up id
-         * @param {string} href
-         * @returns {string}
-         */
-        get_up_id(href) { return href.includes('space.bilibili') ? this._match(this._up_id_reg, href) : ''; }
-    };
-    // 通用函数 ---------------
 
     // ------- 支持模块
     const Support_Me = {
@@ -1919,7 +2029,7 @@
                 const arr = this._data, s_type = mode ? 'add' : 'remove';
                 arr[s_type](data) && (this._info_write(arr), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
-            _info_write(data) { GM_Objects.set_value('rate_videos', data, true), Colorful_Console.print('update_rate_video_info'); }
+            _info_write(data, video_id) { GM_Objects.set_value('rate_videos', data, true), Colorful_Console.print(`${video_id}, successfully ${s_type} video_id to rate_videos`); }
         },
         // 管理标记的下载视频记录
         mark_download_video: {
@@ -3125,6 +3235,7 @@
                 .btn-ad,
                 .adcard,
                 .carousel,
+                a.banner-link,
                 .adblock-tips,
                 .vip-login-tip,
                 .recommended-swipe,
@@ -3202,15 +3313,16 @@
             // 点击链接事件
             _click: () => {
                 const cure_href_reg = /[&\?](live|spm|from)[\w]+=\d+/,
-                    get_cure_href = (href) => href?.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href;
+                    get_cure_href = (href) => href?.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href,
+                    id = this.#configs.id, func = (id === 1 || id === 5) ? (url) => url.includes('/video/') || url.includes('play/') : (_url) => false;
                 document.addEventListener('click', (event) => {
                     const path = event.composedPath();
                     let i = 0;
                     for (const p of path) {
                         if (p.localName === 'a') {
                             let href = p.href || '';
-                            if (!href?.startsWith('javascript')) {
-                                if ((this.#configs.id === 1 || this.#configs.id === 5) && (href.includes('/video/') || href.includes('play/'))) return;
+                            if (!href.startsWith('javascript')) {
+                                if (func(href)) return;
                                 event.preventDefault();
                                 event.stopImmediatePropagation();
                                 // 干预因为清除掉拦截的视频信息后生成的href
@@ -3289,6 +3401,14 @@
                         '-': () => this.#video_instance.voice_control(false),
                         main(key) { this[key]?.(); }
                     },
+                    // 管理贝叶斯
+                    manage_bayes = {
+                        _add_white() {
+                            const s = prompt('add content to bayes white list').trim();
+                            return s && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true), true;
+                        },
+                        main(key) { return key === 'w' && this._add_white(); }
+                    },
                     // 关键词黑名单管理
                     manage_black_key = {
                         _func: (data) => {
@@ -3310,20 +3430,11 @@
                         main(key) {
                             const c = this[key];
                             if (c) {
-                                const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".', a = Dynamic_Variants_Manager.black_keys.input_handle(prompt(title).trim());
+                                const title = c.title + ' black key; use space to separate mult words; e.g.: "abc"; or "abc" "bcd".',
+                                    a = Dynamic_Variants_Manager.black_keys.input_handle((prompt(title) || '').trim());
                                 a && a.length > 0 && (c.mode ? (Dynamic_Variants_Manager.black_keys.add(a), this._func(a)) : Dynamic_Variants_Manager.black_keys.remove(a));
-                                return true;
-                            }
-                            return false;
+                            } else manage_bayes.main(key);
                         }
-                    },
-                    // 管理贝叶斯
-                    manage_bayes = {
-                        _add_white() {
-                            const s = prompt('add content to bayes white list').trim();
-                            return s && Dynamic_Variants_Manager.bayes_module.add_new_content(s, true), true;
-                        },
-                        main(key) { return key === 'w' && this._add_white(); }
                     },
                     // 文本标签, 需要排除输入
                     local_tags = ["textarea", "input"], class_tags = ['input', 'text', 'editor'],
@@ -3333,13 +3444,13 @@
                         const classname = (target.className || '').toLowerCase();
                         if (classname && class_tags.some(e => classname.includes(e))) return true;
                         return false;
-                    };
+                    },
+                    id = this.#configs.id, func = this.#video_module_initial_flag ? video_control.main : (id === 0 || id === 2) ? manage_black_key.main.bind(manage_black_key) : () => null;
                 document.addEventListener('keydown', (event) => {
                     if (event.shiftKey || event.ctrlKey || event.altKey) return;
                     if (check_is_input(event.target)) return;
                     const key = event.key.toLowerCase();
-                    const id = this.#configs.id;
-                    if (search.main(key) || (this.#video_module_initial_flag ? video_control.main(key) : (id === 0 || id === 2) && !manage_black_key.main(key) && manage_bayes.main(key))) {
+                    if (search.main(key) || func(key)) {
                         event.preventDefault();
                         event.stopPropagation();
                     }
