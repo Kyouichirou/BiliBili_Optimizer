@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.1
+// @version      3.1.2
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -3445,7 +3445,7 @@
                         if (classname && class_tags.some(e => classname.includes(e))) return true;
                         return false;
                     },
-                    id = this.#configs.id, func = this.#video_module_initial_flag ? video_control.main : (id === 0 || id === 2) ? manage_black_key.main.bind(manage_black_key) : () => null;
+                    id = this.#configs.id, func = this.#video_module_initial_flag ? video_control.main.bind(video_control) : (id === 0 || id === 2) ? manage_black_key.main.bind(manage_black_key) : () => null;
                 document.addEventListener('keydown', (event) => {
                     if (event.shiftKey || event.ctrlKey || event.altKey) return;
                     if (check_is_input(event.target)) return;
