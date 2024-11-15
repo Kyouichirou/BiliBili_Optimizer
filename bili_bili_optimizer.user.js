@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.2
+// @version      3.1.3
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -303,25 +303,45 @@
     // 相关up的推荐
     // 自定义一套算法来补充数据的推荐
     class Indexed_DB {
+        // 打开的数据库名称
         #db_name = null;
+        // 打开数据库的
         #db_open = null;
         #db_instance = null;
+        // 需要创建的表
         #table_arr = null;
+        // 是否触发更新标志
         #is_update_flag = false;
-        error_flag = false;
+        // 是否有错误标志
+        #error_flag = false;
+        get error_flag() { return this.#error_flag; }
+        // 错误处理
+        #error_wrapper(event, source_name) {
+            this.#error_flag = true;
+            const error = 'indexeddb error, ' + source_name + ': ' + event.target.error.message;
+            Colorful_Console.print(error);
+            return error;
+        }
         // request的简单封装
         #request_wrapper(request, return_type) {
             return new Promise((resolve, reject) => {
-                request.onsuccess = (e) => resolve(return_type === 'value' ? request.result : request.result.value);
-                request.onerror = (_e) => reject(request.error);
+                request.onsuccess = (e) => resolve(return_type === 'value' ? e.target.result : e.target.result ? true : false);
+                request.onerror = (e) => reject(this.#error_wrapper(e, 'request wrapper'));
             });
         }
         // 事务的简单封装
         #transaction_wrapper(transaction) {
             return new Promise((resolve, reject) => {
                 transaction.oncomplete = () => resolve();
-                transaction.onerror = () => reject('transaction error');
+                transaction.onerror = () => reject(this.#error_wrapper(e, 'transaction wrapper'));
             });
+        }
+        // 其他事件
+        #create_other_event() {
+            // 版本变化监听事件
+            this.#db_open.onversionchange = (_e) => console.log("The version of this database has changed");
+            // 意外关闭才会触发这个事件, 如数据库被手动删除, 正常关闭数据库不会触发这个事件
+            this.#db_open.onclose = (e) => this.#error_wrapper(e, 'close error');
         }
         // 检查表是否存在
         #check_tables_is_exist() { return this.#table_arr.filter(e => !this.#db_instance.objectStoreNames.contains(e.table_name)); }
@@ -341,9 +361,53 @@
             }).pop().transaction);
         }
         // 获得表对象
-        #get_table_obj(table_name, rwmode) {
-            return this.#db_instance.transcation(table_name, rwmode).objectStore(table_name);
+        #get_table_obj(table_name, rwmode) { return this.#db_instance.transaction(table_name, rwmode).objectStore(table_name); }
+        /**
+         * 具体的表内容操作, 增/删/改/查
+         * @param {string|Array} data
+         * @param {string} table_name
+         * @param {string} rwmode
+         * @param {string} operator
+         * @param {string} value_type
+         * @param {boolean} is_mult_args 多参数传递
+         * @returns {Promise}
+         */
+        #table_operation(data, table_name, rwmode, operator, value_type, is_mult_args = false) {
+            if (Array.isArray(data) && !is_mult_args) {
+                const table = this.#get_table_obj(table_name, rwmode);
+                return Promise.all(data.map(e => this.#request_wrapper(table[operator](e), value_type)));
+            } else return this.#request_wrapper(this.#get_table_obj(table_name, rwmode)[operator](...(is_mult_args ? data : [data])), value_type);
         }
+        add(table_name, data) { return this.#table_operation(data, table_name, 'readwrite', 'add', 'boolean'); }
+        delete(table_name, data) { return this.#table_operation(data, table_name, 'readwrite', 'delete', 'boolean'); }
+        get(table_name, data) { return this.#table_operation(data, table_name, 'readonly', 'get', 'value'); }
+        check(table_name, data) { return this.#table_operation(data, table_name, 'readonly', 'get', 'boolean'); }
+        /**
+         * 自定义筛选检索
+         * @param {string} table_name
+         * @param {Function} condition_func 自定义条件函数
+         * @param {any} args
+         * @param {number} limit
+         * @returns {Promise}
+         */
+        batch_get_by_condition(table_name, condition_func, args, limit = 10) {
+            return new Promise((resolve, reject) => {
+                const table = this.#get_table_obj(table_name, 'readonly'), request = table.openCursor(), results = [];
+                request.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor && results.length < limit) {
+                        const value = cursor.value;
+                        condition_func(value, ...args) && results.push(value);
+                        cursor.continue();
+                    } else resolve(results.length === 0 ? false : results);
+                };
+                request.onerror = (e) => reject(this.#error_wrapper(e, 'batch get error'));
+            });
+        }
+        batch_get(table_name, limit = 10) { return this.#table_operation([null, limit], table_name, 'readonly', 'getAll', 'value', true); }
+        // 数据库关闭
+        close() { this.#db_instance.close(); }
+        // 初始化数据库
         initialize() {
             return new Promise((resolve, reject) => {
                 // 升级事件, 当数据库不存在时, 先触发
@@ -351,58 +415,28 @@
                 this.#db_open.onupgradeneeded = (e) => {
                     this.#db_instance = e.target.result;
                     this.#is_update_flag = true;
-                    this.#create_tables().then(() => {
-                        console.log('tables created');
-                        resolve(0);
-                    }).catch(() => reject('fail to create tables'));
+                    this.#create_tables().then(() => resolve(0)).catch(() => reject('fail to create tables'));
                 };
                 // 数据库不存在时, 先触发上面的升级事件, 然后才触发本事件
                 this.#db_open.onsuccess = (e) => {
+                    this.#create_other_event();
                     if (this.#is_update_flag) return;
                     this.#db_instance = e.target.result;
                     const arr = this.#check_tables_is_exist();
                     if (arr.length > 0) {
                         this.#table_arr = arr;
-                        this.#reopen_db().then(() => resolve(2)).catch(e => reject(e));
+                        this.#reopen_db().then(() => resolve(2)).catch(e => reject(this.#error_wrapper(e, 'reopen error')));
                     } else resolve(1);
                 };
-                this.#db_open.onerror = (e) => {
-                    console.log(e);
-                    reject("open error");
-                };
+                this.#db_open.onerror = (e) => reject(this.#error_wrapper(e, 'open error'));
                 /*
                 The event handler for the blocked event.
                 This event is triggered when the upgradeneeded event should be triggered _
                 because of a version change but the database is still in use (i.e. not closed) somewhere,
                 even after the versionchange event was sent.
                 */
-                this.#db_open.onblocked = () => {
-                    console.log("please close others tab to update database", 'debug');
-                    reject("conflict error");
-                };
-                this.#db_open.onversionchange = (_e) => {
-                    console.log("The version of this database has changed");
-                    reject("db version change");
-                };
-                // 意外关闭才会触发这个事件, 如数据库被手动删除, 正常关闭数据库不会触发这个事件
-                this.#db_open.onclose = (_e) => {
-                    console.log("database closed unexpectedly");
-                    reject("close error");
-                };
+                this.#db_open.onblocked = (e) => reject(this.#error_wrapper(e, 'blocked error'));;
             });
-        }
-        close() { this.#db_instance.close(); }
-        add(table_name, data) {
-
-        }
-        delete(table_name, id) {
-            return this.#request_wrapper(this.#get_table_obj(table_name, 'readwrite').delete(id), 'boolean');
-        }
-        get() {
-
-        }
-        check(table_name, id) {
-            return this.#request_wrapper(this.#get_table_obj(table_name, 'readonly').get(id), 'boolean');
         }
         /**
          * @param {string} dbname
@@ -2362,7 +2396,7 @@
                     'Downloaded': Statics_Variant_Manager.mark_download_video.check(vid) ? 1 : 0
                 };
             status_dic.Blocked = status_dic.Rate === 0 ? Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 1 : 0 : 0;
-            setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)));
+            setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)), 1000);
         }
         // 菜单执行函数
         #menus_funcs = {
@@ -2672,6 +2706,8 @@
         #search_page_results = null;
         // 视频模块
         #video_instance = null;
+        // indexed数据库
+        #indexeddb_instance = null;
         // 视频侧边栏请求数据缓存
         #video_data_cache = null;
         // 视频模块成功加载标志
@@ -2973,7 +3009,7 @@
                     } else if (!info.video_id) {
                         // 小课堂的内容清除掉
                         if (href.includes('/cheese')) {
-                            Colorful_Console.print(`cheese clear: ${href}`);
+                            Colorful_Console.print(`ad cheese clear: ${href}`);
                             return null;
                         }
                         info.video_id = Base_Info_Match.get_video_id(href);
@@ -3258,6 +3294,7 @@
                     (user_is_login ? '' : '.bpx-player-subtitle-panel-text,') + `.video-page-special-card-small,
                     .video-page-operator-card-small,
                     .slide-ad-exp,
+                    .video-page-game-card-small,
                     a.ad-report.ad-floor-exp.right-bottom-banner,
                     a.ad-report.video-card-ad-small,
                     a#right-bottom-banner,
@@ -3576,6 +3613,9 @@
                     video_duration_limit: { get: () => this.#configs.video_duration_limit, set: (val) => (this.#configs.video_duration_limit = val) }
                 });
             },
+            _load_indexeddb: () =>{
+                // this.#indexeddb_instance = new Indexed_DB()
+            },
             // space页面
             _space_module: {
                 _create_button(mode) {
@@ -3870,6 +3910,8 @@
                 main: () => setTimeout(() => {
                     if (this.#video_module_initial_flag) {
                         this.#video_instance.main();
+                        // 当监听到url发生改变, 清空缓存
+                        // 因为存在多次重复请求数据, 所以需要保持这个缓存
                         Object.defineProperty(this.#video_instance, 'url_has_changed', {
                             set: (_val) => this.#video_data_cache = null,
                             get: () => null
@@ -3921,7 +3963,8 @@
                     _home_module: { run_at: 1, run_in: [0], type: 1 },
                     _search_module: { run_at: 1, run_in: [2], type: 0 },
                     _video_module: { run_at: 1, run_in: [1], type: 1 },
-                    _space_module: { run_at: 1, run_in: [3], type: 1 }
+                    _space_module: { run_at: 1, run_in: [3], type: 1 },
+                    _load_indexeddb: { run_at: 1, run_in: [0, 1], type: 0 }
                 }, data = [];
                 for (const k in run_configs) {
                     const { run_at, run_in, type, is_args } = run_configs[k];
