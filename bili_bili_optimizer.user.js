@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.3
+// @version      3.1.4
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -271,32 +271,6 @@
     };
     // 链接常量 ---------------
 
-    // 暂未启用部分 -----------
-    // api数据请求部分
-    class Web_Request {
-        // 需要注意登录与否
-        // 携带请求信息
-        constructor() { }
-        #request(url, method = 'GET', data = null, headers = {}) {
-            fetch(url, {
-                method: method,
-                headers: headers,
-                body: data
-            }).then(res => res.json()).then(res => {
-                console.log(res);
-                return res;
-            });
-        }
-        // 评分的视频将用于获取数据作为过滤内容的填充
-        get_related_videos(video_id) {
-            const api = ``;
-        }
-    }
-
-    // 数据导出导入管理
-    const Data_Manager = {};
-
-    // 启用indexdb
     // tampermonkey的存储读写操作太过于麻烦, 大规模的数据很是不便
     // 更大规模的历史数据存储, 更详细的视频数据存储
     // 相关视频的推荐
@@ -448,6 +422,32 @@
             this.#db_open = indexedDB.open(dbname);
         }
     }
+    // ----------indexedDB end--------
+
+    // 暂未启用部分 -----------
+    // api数据请求部分
+    class Web_Request {
+        // 需要注意登录与否
+        // 携带请求信息
+        constructor() { }
+        #request(url, method = 'GET', data = null, headers = {}) {
+            fetch(url, {
+                method: method,
+                headers: headers,
+                body: data
+            }).then(res => res.json()).then(res => {
+                console.log(res);
+                return res;
+            });
+        }
+        // 评分的视频将用于获取数据作为过滤内容的填充
+        get_related_videos(video_id) {
+            const api = ``;
+        }
+    }
+
+    // 数据导出导入管理
+    const Data_Manager = {};
     // ------------- 暂未启用部分
 
     // ------- 支持模块
@@ -2057,13 +2057,13 @@
              * 更新, 全新添加
              * @param {object} info
              */
-            add(info) { this._handle(info, true); },
-            remove(video_id) { this._handle(video_id, false); },
-            _handle(data, mode) {
+            add(info) { this._handle(info, true, info.video_id); },
+            remove(video_id) { this._handle(video_id, false, video_id); },
+            _handle(data, mode, video_id) {
                 const arr = this._data, s_type = mode ? 'add' : 'remove';
-                arr[s_type](data) && (this._info_write(arr), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
+                arr[s_type](data) && (this._info_write(arr, video_id, s_type), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
-            _info_write(data, video_id) { GM_Objects.set_value('rate_videos', data, true), Colorful_Console.print(`${video_id}, successfully ${s_type} video_id to rate_videos`); }
+            _info_write(data, video_id, s_type) { GM_Objects.set_value('rate_videos', data, true), Colorful_Console.print(`${video_id}, successfully ${s_type} video_id to rate_videos`); }
         },
         // 管理标记的下载视频记录
         mark_download_video: {
@@ -2396,7 +2396,7 @@
                     'Downloaded': Statics_Variant_Manager.mark_download_video.check(vid) ? 1 : 0
                 };
             status_dic.Blocked = status_dic.Rate === 0 ? Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 1 : 0 : 0;
-            setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)), 1000);
+            setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)), 1500);
         }
         // 菜单执行函数
         #menus_funcs = {
@@ -2759,7 +2759,7 @@
                  * @param {Array} data
                  */
                 request_data_handler: (data, clear_data) => data.forEach(e => {
-                    if ((e.business_info || this.#configs.pre_data_check(e))) clear_data(e);
+                    if ((e.business_info || this.#configs.pre_data_check(e))) { clear_data(e); }
                     else {
                         const v = Dynamic_Variants_Manager.check_visited_video(e.bvid);
                         if (v) e.title = `[H-${v}]${e.title}`;
@@ -2893,6 +2893,47 @@
                     }
                     this.#video_data_cache = results;
                 } : null,
+                data_to_home_structure: (content) => {
+                    const module = {
+                        id: 0, bvid: '', cid: 0, goto: '', uri: '', pic: '', pic_4_3: '',
+                        title: '', duration: 0, pubdate: 0, owner: { mid: 0, name: '', face: '' },
+                        stat: { view: 0, like: 0, danmaku: 0, vt: 0 },
+                        av_feature: null, is_followed: 0,
+                        rcmd_reason: { reason_type: 0 },
+                        show_info: 0, track_id: '', pos: 0, room_info: null, ogv_info: null,
+                        business_info: null, is_stock: 0, enable_vt: 0, vt_display: '',
+                        dislike_switch: 0, dislike_switch_pc: 0
+                    };
+                    const get_data = (key, obj) => {
+                        const d = obj[key];
+                        if (d === undefined) {
+                            for (const k in obj) {
+                                const tmp = obj[k];
+                                if (tmp && tmp.constructor === Object) {
+                                    const m = get_data(key, tmp);
+                                    if (m === undefined) continue;
+                                    return m;
+                                }
+                            }
+                        } else return d;
+                        return undefined;
+                    };
+                    const get_key = (data, target) => {
+                        // 递归调用, 遍历清空各层级的内容, 不涉及数组
+                        // null => object
+                        if (data && data.constructor === Object) {
+                            for (const key in data) {
+                                const tmp = data[key];
+                                const vtype = typeof tmp;
+                                if (vtype === 'string') data[key] = get_data(key, target) ?? '';
+                                else if (vtype === 'number') data[key] = get_data(key, target) ?? 0;
+                                else if (tmp) get_key(tmp);
+                            }
+                        }
+                    };
+                    get_key(module, content);
+                    return module;
+                },
                 contextmenu_handle: (classname, target_name) => classname === target_name
             },
             search: {
@@ -3613,8 +3654,14 @@
                     video_duration_limit: { get: () => this.#configs.video_duration_limit, set: (val) => (this.#configs.video_duration_limit = val) }
                 });
             },
-            _load_indexeddb: () =>{
-                // this.#indexeddb_instance = new Indexed_DB()
+            _indexeddb_main: () => {
+                return;
+                const tables = [
+                    { table_name: '', key_path: 'bvid' },
+                    { table_name: '', key_path: 'bvid' },
+                ];
+                this.#indexeddb_instance = new Indexed_DB('bilibili', [{}, {}]);
+
             },
             // space页面
             _space_module: {
