@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.4
+// @version      3.1.5
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -4011,7 +4011,7 @@
                     _search_module: { run_at: 1, run_in: [2], type: 0 },
                     _video_module: { run_at: 1, run_in: [1], type: 1 },
                     _space_module: { run_at: 1, run_in: [3], type: 1 },
-                    _load_indexeddb: { run_at: 1, run_in: [0, 1], type: 0 }
+                    _indexeddb_main: { run_at: 1, run_in: [0, 1], type: 0 }
                 }, data = [];
                 for (const k in run_configs) {
                     const { run_at, run_in, type, is_args } = run_configs[k];
