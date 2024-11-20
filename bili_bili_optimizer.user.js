@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.5
+// @version      3.1.6
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2438,7 +2438,7 @@
                 GM_Objects.copy_to_clipboard(cm, "text", () => Colorful_Console.print("bbdown commandline: " + cm));
             },
             // 添加评分
-            _add_rate: (val, video_info) => {
+            _add_rate: (val, video_info, is_key_send) => {
                 const id = video_info.video_id;
                 if (!id) {
                     Colorful_Console.print('fail to get video_id', 'warning', true);
@@ -2458,7 +2458,7 @@
                 Statics_Variant_Manager.rate_video_part.add(info);
                 // 假如评分的视频是拦截的视频, 则取消拦截
                 Dynamic_Variants_Manager.unblock_video(id);
-                if (!this.#added_bayes_list.includes(id) && (val === 5 || confirm("add to whitelist of bayes model?"))) {
+                if (!is_key_send && !this.#added_bayes_list.includes(id) && (val === 5 || confirm("add to whitelist of bayes model?"))) {
                     Dynamic_Variants_Manager.bayes_module.add_new_content(video_info.title, true);
                     this.#added_bayes_list.push(id);
                     return 2;
@@ -2469,7 +2469,7 @@
             // 2 4分
             // 3 5分
             // 7 bbdown, 下载视频
-            _other(val, video_info) {
+            _other(val, video_info, is_key_send) {
                 const dic = {};
                 if (val === 7) {
                     if (confirm('mark video as downloaded?')) {
@@ -2478,7 +2478,7 @@
                     }
                 } else {
                     val += 2;
-                    const i = this._add_rate(val, video_info);
+                    const i = this._add_rate(val, video_info, is_key_send);
                     if (i > 0) {
                         dic.Rate = val;
                         dic.Blocked = 0;
@@ -2504,12 +2504,14 @@
                 }
                 return false;
             },
-            main(val, video_info) {
+            main(val, video_info, is_key_send = false) {
                 const f = this[val];
                 // 注意this的丢失, 函数在赋值之后
-                return f ? f.call(this, video_info) : this._other(val, video_info);
+                return f ? f.call(this, video_info) : this._other(val, video_info, is_key_send);
             }
         };
+        // 键盘控制评分
+        key_rate_video(val) { this.#menus_funcs.main(val, this.#video_info, true); }
         // 添加评分菜单
         get #select_element() { return document.getElementById('selectWrap').getElementsByTagName('select')[0]; }
         #add_menus_element() {
@@ -3376,8 +3378,11 @@
                                 if (p.dataset.is_hidden) return;
                                 this.#configs.hide_node(p);
                                 this.#configs.add_data_to_node_dataset(p, 'is_hidden', 1);
-                                const info = this.#utilities_module.get_up_video_info(p);
-                                info?.video_id && (shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false)));
+                                const info = this.#utilities_module.get_up_video_info(p), vid = info.video_id;
+                                if (vid){
+                                    shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false));
+                                    this.#indexeddb_instance?.delete('rec_video_tb', vid)
+                                }
                                 break;
                             }
                             if (++i > 6) break;
@@ -3477,6 +3482,10 @@
                         u: () => this.#video_instance.wide_screen(),
                         '=': () => this.#video_instance.voice_control(true),
                         '-': () => this.#video_instance.voice_control(false),
+                        _rate: (val) => this.#video_instance.key_rate_video(val),
+                        1() { this._rate(1); },
+                        2() { this._rate(2); },
+                        3() { this._rate(3); },
                         main(key) { this[key]?.(); }
                     },
                     // 管理贝叶斯
@@ -3655,13 +3664,15 @@
                 });
             },
             _indexeddb_main: () => {
-                return;
                 const tables = [
-                    { table_name: '', key_path: 'bvid' },
-                    { table_name: '', key_path: 'bvid' },
+                    { table_name: 'rec_video_tb', key_path: 'bvid' },
+                    { table_name: 'his_tb', key_path: 'bvid' },
                 ];
-                this.#indexeddb_instance = new Indexed_DB('bilibili', [{}, {}]);
-
+                const db = new Indexed_DB('mybili', tables);
+                db.initialize().then(() => {
+                    this.#indexeddb_instance = db;
+                    Colorful_Console.print('IndexedDB, init success!');
+                });
             },
             // space页面
             _space_module: {
