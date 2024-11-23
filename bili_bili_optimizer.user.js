@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.6
+// @version      3.1.7
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2267,6 +2267,7 @@
         url_has_changed = false;
         // 视频信息更新完成
         video_info_update_flag = false;
+        #watch_later_list = [];
         /**
          * 视频基础信息
          * @returns {object}
@@ -2432,6 +2433,10 @@
                 Statics_Variant_Manager.mark_download_video.add({ video_id: video_info.video_id, title: video_info.title });
                 this._change_lable({ 'Downloaded': 1 });
             },
+            // 稍后观看
+            9: (video_info) => {
+                !this.#watch_later_list.includes(video_info.video_id) && this.#watch_later_list.push(video_info.video_id);
+            },
             // 生成bbdown下载命令
             _bbdown: (id, params, audio_mode) => {
                 const cm = `BBDown -mt --work-dir "${audio_mode ? this.#download_audio_path : this.#download_video_path}" "${id}"${params.length > 0 ? ' ' + params.join(' ') : ''}`;
@@ -2545,6 +2550,7 @@
                             <option value="6" title="unblock video">unBlock</option>
                             <option value="7" title="generate download video command of bbdown">BBdown</option>
                             <option value="8" title="mark video as downloaded" style="color: #FFA500;">Marked</option>
+                            <option value="9" title="watch video later">Pocket</option>
                         </select>
                     </dd>
                 </div>`,
@@ -2735,7 +2741,7 @@
                 // 目标元素的class_name
                 target_class: 'bili-video-card is-rcmd',
                 // api url 后缀
-                interpose_api_suffix: 'wbi/index/top/feed/rcmd',
+                interpose_api_suffix: ['index/top/feed/rcmd', 'wbi/index/top/feed/rcmd'],
                 // 初始化数据的键名
                 initial_data_name: '__pinia',
                 /**
@@ -2772,7 +2778,7 @@
                  * @param {string} url
                  * @returns {Function}
                  */
-                handle_fetch_url: (url) => url.startsWith(this.#configs.interpose_api_prefix + this.#configs.interpose_api_suffix) ? (data) => data.data?.item : null,
+                handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.includes(this.#configs.interpose_api_prefix + e)) ? (data) => data.data?.item : null,
                 /**
                  * 添加数据到节点标题, 注意不是title
                  * @param {HTMLElement} node
@@ -2867,7 +2873,7 @@
                  * @param {string} url
                  * @returns {Function}
                  */
-                handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.startsWith(this.#configs.interpose_api_prefix + e)) ? (response_content, pre_data_check) => {
+                handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.includes(this.#configs.interpose_api_prefix + e)) ? (response_content, pre_data_check) => {
                     const data = response_content.data;
                     if (!data) {
                         Colorful_Console.print("the api of video data has change", 'crash', true);
@@ -3009,7 +3015,7 @@
                             ['all/v2?__refresh__=true'],
                             ['type?category_id=&search_type=video'],
                             ['type?__refresh__=true', 'search_type=video']
-                        ].findIndex(e => e.length > 1 ? url.startsWith(pref + e[0]) && url.includes(e[1]) : url.startsWith(pref + e[0]));
+                        ].findIndex(e => e.length > 1 ? url.includes(pref + e[0]) && url.includes(e[1]) : url.includes(pref + e[0]));
                     return index < 0 ? null : index === 0 ? a : b;
                 },
                 contextmenu_handle: (classname, target_name) => classname === target_name,
@@ -3148,33 +3154,36 @@
                 });
             },
             // 拦截fetch的返回结果
+            // B站的数据请求会在fetch, xhr之间反复切换
+            // fetch, 有直接调用和bind之后调用两种, xhr则没有
             _fetch: () => {
                 // B站的fetch进行了bind(window)的操作, 拦截这个操作, 不能直接拦截fetch
+                const fetch = GM_Objects.window.fetch,
+                    handle_fetch = async (...args) => {
+                        // 拦截fetch返回的结果, 并且进行数据清理
+                        const [url, config] = args,
+                            response = await fetch(url, config),
+                            // 根据配置的函数, 决定是否需要干预, 返回一个处理后续数据的函数
+                            hfu = this.#configs.handle_fetch_url(url),
+                            clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module);
+                        if (hfu) {
+                            // response, 只允许访问一次, clone一份, 在复制上进行操作
+                            response.json = () => response.clone().json().then((response_content) => {
+                                const results = hfu(response_content),
+                                    spec = response_content.Spec;
+                                // 清除掉这个广告内容
+                                if (spec) clear_data(spec);
+                                results ? this.#configs.request_data_handler(results, clear_data) : Colorful_Console.print('url no match rule: ' + url, 'debug');
+                                return response_content;
+                            });
+                        }
+                        return response;
+                    };
+                GM_Objects.window.fetch = handle_fetch;
                 Function.prototype.bind = new Proxy(Function.prototype.bind, {
                     apply: (...args) => {
-                        if (args[1]?.name === 'fetch') {
-                            // 返回自定义的fetch函数替换掉fetch.bind(window)生成的函数
-                            args[1] = async (...args) => {
-                                const [url, config] = args,
-                                    response = await fetch(url, config),
-                                    // 根据配置的函数, 决定是否需要干预, 返回一个处理后续数据的函数
-                                    hfu = this.#configs.handle_fetch_url(url),
-                                    clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module);
-                                // 然后拦截json函数的返回内容, 从而实现对返回结果的拦截
-                                if (hfu) {
-                                    // response, 只允许访问一次, clone一份, 在复制上进行操作
-                                    response.json = () => response.clone().json().then((response_content) => {
-                                        const results = hfu(response_content),
-                                            spec = response_content.Spec;
-                                        // 清除掉这个广告内容
-                                        if (spec) clear_data(spec);
-                                        results ? this.#configs.request_data_handler(results, clear_data) : Colorful_Console.print('url no match rule: ' + url, 'debug');
-                                        return response_content;
-                                    });
-                                }
-                                return response;
-                            };
-                        }
+                        // 返回自定义的fetch函数替换掉fetch.bind(window)生成的函数
+                        if (args[1]?.name === 'fetch') args[1] = handle_fetch;
                         return Reflect.apply(...args);
                     }
                 });
@@ -3192,6 +3201,7 @@
                 GM_Objects.window.XMLHttpRequest = class extends GM_Objects.window.XMLHttpRequest {
                     constructor() {
                         super();
+                        // super之后调用this
                         this.addEventListener('readystatechange', () => {
                             if (this.readyState === 4 && this.status === 200) {
                                 let json = null;
@@ -3379,9 +3389,9 @@
                                 this.#configs.hide_node(p);
                                 this.#configs.add_data_to_node_dataset(p, 'is_hidden', 1);
                                 const info = this.#utilities_module.get_up_video_info(p), vid = info.video_id;
-                                if (vid){
-                                    shift ? Dynamic_Variants_Manager.block_video(info.video_id) : ((Dynamic_Variants_Manager.cache_block_videos.push(info.video_id)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false));
-                                    this.#indexeddb_instance?.delete('rec_video_tb', vid)
+                                if (vid) {
+                                    shift ? Dynamic_Variants_Manager.block_video(vid) : ((Dynamic_Variants_Manager.cache_block_videos.push(vid)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false));
+                                    this.#indexeddb_instance?.delete('rec_video_tb', vid);
                                 }
                                 break;
                             }
@@ -3667,6 +3677,7 @@
                 const tables = [
                     { table_name: 'rec_video_tb', key_path: 'bvid' },
                     { table_name: 'his_tb', key_path: 'bvid' },
+                    { table_name: 'pockey_tb', key_path: 'bvid' }
                 ];
                 const db = new Indexed_DB('mybili', tables);
                 db.initialize().then(() => {
@@ -4195,7 +4206,8 @@
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
                 lost_pic: '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg',
-                interpose_api_prefix: 'https://api.bilibili.com/x/web-interface/',
+                // 有时并没有https开头
+                interpose_api_prefix: '//api.bilibili.com/x/web-interface/',
                 // B站中每个页面都会发起的请求, 用于获取用户信息, 双重验证, 本地cookie & 服务器信息校检
                 check_user_login_api: 'https://api.bilibili.com/x/web-interface/nav',
                 // 如何隐藏节点的方式
