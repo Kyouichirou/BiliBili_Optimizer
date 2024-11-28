@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.1.8
+// @version      3.1.9
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -183,7 +183,42 @@
             bc === this._colors.crash && Statics_Variant_Manager.add_crash_log(content);
         }
     };
+
+    // bvid & aid 相互转换
+    const Bili_id_Convertor = {
+        _xor_c: 23442827791579n,
+        _mask_c: 2251799813685247n,
+        _alphabet: "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf",
+        _max_aid: 1n << 51n,
+        _bv_indexs: [8, 7, 0, 5, 1, 3, 2, 4, 6],
+        _av_indexs: [8, 7, 0, 5, 1, 3, 2, 4, 6].reverse(),
+        _prefix: "BV1",
+        _bvid_len: 9,
+        get _alpha_bi() { return BigInt(this._alphabet.length); },
+        _av2bv(aid) {
+            let tmp = (this._max_aid | BigInt(aid)) ^ this._xor_c;
+            const ba = this._alpha_bi;
+            return this._prefix + this._bv_indexs.reduce((acc, cur) => {
+                acc[cur] = this._alphabet[Number(tmp % ba)];
+                tmp /= ba;
+                return acc;
+            }, new Array(this._bvid_len).fill("")).join('');
+        },
+        _bv2av(bvid) {
+            const ba = this._alpha_bi, bid = bvid.slice(this._prefix.length),
+                tmp = this._av_indexs.reduce((acc, cur) => acc * ba + BigInt(this._alphabet.indexOf(bid[cur])), 0n);
+            return Number((tmp & this._mask_c) ^ this._xor_c);
+        },
+        /**
+         * @param {string|number} id
+         * @returns {number|null|string}
+         */
+        main(id) { return typeof id === 'number' ? this._av2bv(id) : id.startsWith(this._prefix) ? this._bv2av(id) : null; }
+    };
+
+    // 数据转换为对应的模板
     const Data_Switch = {
+        // 首页的aid没有使用aid, 而是id
         home: {
             id: 0, bvid: '', cid: 0, goto: '', uri: '', pic: '', pic_4_3: '',
             title: '', duration: 0, pubdate: 0, owner: { mid: 0, name: '', face: '' },
@@ -221,12 +256,19 @@
                 }
             }
         },
-        main(target, module_name = 'home') {
+        main(target, module_name = 'home', check_id = 'bvid') {
             const module = JSON.parse(JSON.stringify(this[module_name]));
             Array.isArray(target) ? target.forEach(e => this.get_key(module, e)) : this.get_key(module, target);
+            if (module_name === 'home') {
+                if (!module.goto) module.goto = 'av';
+                const id = module[check_id];
+                if (id) module.id = Bili_id_Convertor.main(id);
+                else module = null;
+            }
             return module;
         }
     };
+
     // 基本信息匹配
     const Base_Info_Match = {
         // video id
@@ -322,6 +364,11 @@
     // 自定义一套算法来补充数据的推荐
     class Indexed_DB {
         // 打开的数据库名称
+        static tb_name_dic = {
+            pocket: 'pocket_tb',
+            recommend: 'rec_video_tb',
+            history: 'his_tb'
+        };
         #db_name = null;
         // 打开数据库的
         #db_open = null;
@@ -2313,6 +2360,8 @@
         url_has_changed = false;
         // 视频信息更新完成
         video_info_update_flag = false;
+        // 添加侧边栏视频到数据库
+        add_related_video_flag = false;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2361,6 +2410,11 @@
                 const target = e.target;
                 this.#auto_speed_mode = false;
                 target.playbackRate !== this.#video_speed && setTimeout(() => { target.playbackRate = this.#video_speed; }, 3000);
+            };
+            // 当观看完整, 删除收藏
+            this.#video_player.mediaElement().onended = () => {
+                const i = this.#video_info.videos;
+                (i === 1 || GM_Objects.window.__INITIAL_STATE__.p === i) && this.#db_instance.delete('pocket_tb', this.#video_info.video_id);
             };
         }
         // 在不登陆的状态下, 切换不同的视频导致原来的video标签失效
@@ -2412,7 +2466,9 @@
             }
             const lm = 30 * 60 * 1000, vs = this.#video_info.videos, duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
             duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
-                Statics_Variant_Manager.add_visited_video(this.#video_info.video_id);
+                const id = this.#video_info.video_id;
+                Statics_Variant_Manager.add_visited_video(id);
+                this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
                 this.#record_id = null;
             }, duration > lm ? lm : duration);
         }
@@ -2450,8 +2506,13 @@
         #menus_funcs = {
             // 菜单
             _watch_list: [],
-            _control_db: () => {
-                this.#db_instance.add('pocket_tb', this.#home_video_info).then(() => Colorful_Console.print(`add pocket success: ${this.#video_info.video_id}`));
+            _control_db: (mode) => {
+                const id = this.#video_info.video_id;
+                if (mode === 0) this.#home_video_info && this.#db_instance.add(Indexed_DB.tb_name_dic.pocket, this.#home_video_info).then(() => Colorful_Console.print(`add pocket success: ${id}`));
+                else {
+                    this.#db_instance.delete(Indexed_DB.tb_name_dic.pocket, id);
+                    this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
+                }
             },
             _change_lable: (change_dic) => {
                 const lables = document.getElementById('status_sider_bar').getElementsByTagName('label');
@@ -2472,6 +2533,7 @@
                 Dynamic_Variants_Manager.block_video(video_info.video_id);
                 // 移除评分
                 Statics_Variant_Manager.rate_video_part.remove(video_info.video_id);
+                this._control_db(1);
                 this._change_lable({ 'Blocked': 1, "Rate": 0 });
             },
             // unblock, 不拦截视频
@@ -2489,7 +2551,7 @@
                 if (!this._watch_list.includes(video_info.video_id)) {
                     this._watch_list.push(video_info.video_id);
                     this._change_lable({ 'Pocketed': 1 });
-                    this._control_db();
+                    this._control_db(0);
                 }
             },
             // 生成bbdown下载命令
@@ -2523,6 +2585,7 @@
                     this.#added_bayes_list.push(id);
                     return 2;
                 }
+                this.add_related_video_flag = true;
                 return 1;
             },
             // 1 3分
@@ -2772,6 +2835,7 @@
         #video_instance = null;
         // indexed数据库
         #indexeddb_instance = null;
+        #fill_home_videos = null;
         // 视频侧边栏请求数据缓存
         #video_data_cache = null;
         // 视频模块成功加载标志
@@ -2822,13 +2886,49 @@
                  * 处理api返回的数据
                  * @param {Array} data
                  */
-                request_data_handler: (data, clear_data) => data.forEach(e => {
-                    if ((e.business_info || this.#configs.pre_data_check(e))) { clear_data(e); }
-                    else {
-                        const v = Dynamic_Variants_Manager.check_visited_video(e.bvid);
-                        if (v) e.title = `[H-${v}]${e.title}`;
+                pre_data: null,
+                request_data_handler: (data, clear_data) => {
+                    const sc = [];
+                    data.forEach(e => {
+                        let id = e.bvid;
+                        if (!id || e.business_info || this.#configs.pre_data_check(e)) {
+                            const item = this.#fill_home_videos?.my_pop(), id = item?.bvid;
+                            if (id && !sc.includes(id)) {
+                                for (const k in e) e[k] = item[k];
+                                sc.push(id);
+                            } else clear_data(e);
+                        } else if (!sc.includes(id)) {
+                            sc.push(id);
+                            const v = Dynamic_Variants_Manager.check_visited_video(id);
+                            if (v) e.title = `[H-${v}]${e.title}`;
+                        }
+                        // if ((e.business_info || this.#configs.pre_data_check(e))) {
+                        //     const item = this.#fill_home_videos?.my_pop();
+                        //     if (item) {
+                        //         for (const k in e) e[k] = item[k];
+                        //     } else clear_data(e);
+                        // } else {
+
+                        //     const v = Dynamic_Variants_Manager.check_visited_video(id);
+                        //     if (v) e.title = `[H-${v}]${e.title}`;
+                        // }
+                    });
+                    debugger;
+                },
+                get_pocket_data: async () => {
+                    let results = await this.#indexeddb_instance.batch_get(Indexed_DB.tb_name_dic.pocket);
+                    if (results) {
+                        if (results.length < 10) {
+                            const rec = await this.#indexeddb_instance.batch_get_by_condition(Indexed_DB.tb_name_dic.recommend, (..._args) => Math.ceil(Math.random() * 10000) % 2 === 0, []);
+                            if (rec) results = [...results, ...rec];
+                        }
+                        this.#fill_home_videos = results;
+                        this.#fill_home_videos.my_pop = () => {
+                            this.#fill_home_videos.length < 3 && this.#configs.get_pocket_data();
+                            return this.#fill_home_videos.pop();
+                        };
                     }
-                }),
+                },
                 /**
                  * 判断发起请求数据api url是否需要进行拦截操作, 返回一个函数用于提取响应数据
                  * @param {string} url
@@ -3037,7 +3137,7 @@
                 // 检查搜索链接是否包含黑名单关键词
                 check_search: (href) => {
                     const c = decodeURIComponent(href.slice(32)), { a, b } = Dynamic_Variants_Manager.black_keys, r = a.find(e => c.includes(e)) || b.find(e => c.includes(e));
-                    return r && (alert(`hey, bro, don't waste time on rubbish: "${r}"; may be closed the page after this alert.`), GM_Objects.window_close(), true);
+                    return r ? (Colorful_Console.print(`hey, bro, search rubbish: "${r}"`), true) : false;
                 }
             },
             space: { id: 3 },
@@ -3690,9 +3790,9 @@
             },
             _indexeddb_main: () => {
                 const tables = [
-                    { table_name: 'rec_video_tb', key_path: 'bvid' },
-                    { table_name: 'his_tb', key_path: 'bvid' },
-                    { table_name: 'pocket_tb', key_path: 'bvid' }
+                    { table_name: Indexed_DB.tb_name_dic.recommend, key_path: 'bvid' },
+                    { table_name: Indexed_DB.tb_name_dic.history, key_path: 'bvid' },
+                    { table_name: Indexed_DB.tb_name_dic.pocket, key_path: 'bvid' }
                 ];
                 const db = new Indexed_DB('mybili', tables);
                 db.initialize().then(() => {
@@ -3994,11 +4094,23 @@
                 main: () => setTimeout(() => {
                     if (this.#video_module_initial_flag) {
                         this.#video_instance.main(this.#indexeddb_instance);
-                        // 当监听到url发生改变, 清空缓存
-                        // 因为存在多次重复请求数据, 所以需要保持这个缓存
-                        Object.defineProperty(this.#video_instance, 'url_has_changed', {
-                            set: (_val) => this.#video_data_cache = null,
-                            get: () => null
+                        Object.defineProperties(this.#video_instance, {
+                            // 当监听到url发生改变, 清空缓存
+                            // 因为存在多次重复请求数据, 所以需要保持这个缓存
+                            url_has_changed: {
+                                set: (_val) => (this.#video_data_cache = null),
+                                get: () => null
+                            },
+                            add_related_video_flag: {
+                                set: (_v) => {
+                                    const cache = this.#video_data_cache;
+                                    if (cache) {
+                                        const shuffle_with_sort = (arr) => arr.sort(() => Math.random() - 0.5),
+                                            data = shuffle_with_sort(cache.filter(e => e.bvid !== 'BV1P5411T71D')).slice(0, 20).map(e => Data_Switch.main(e)).filter(e => e);
+                                        this.#indexeddb_instance.add('rec_video_tb', data).then(() => Colorful_Console.print('add rec_video_tb success'));
+                                    }
+                                }, get: () => null
+                            }
                         });
                     }
                 }, 3500)
@@ -4031,7 +4143,11 @@
                     }
                     setTimeout(() => GM_Objects.window_close(), 5000);
                 },
-                main() { GM_Objects.registermenucommand('maintain', this._maintain.bind(this)); }
+                _load_rec_video: () => this.#configs.get_pocket_data(),
+                main() {
+                    // GM_Objects.registermenucommand('maintain', this._maintain.bind(this));
+                    setTimeout(() => this._load_rec_video(), 5000);
+                }
             },
             /**
              * 配置执行函数
