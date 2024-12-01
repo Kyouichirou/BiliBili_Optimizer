@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.2.0
+// @version      3.2.1
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -229,47 +229,84 @@
             business_info: null, is_stock: 0, enable_vt: 0, vt_display: '',
             dislike_switch: 0, dislike_switch_pc: 0
         },
-        get_data(key, obj) {
+        _get_data(key, obj) {
             const d = obj[key];
             if (d === undefined) {
                 for (const k in obj) {
                     const tmp = obj[k];
                     if (tmp && tmp.constructor === Object) {
-                        const m = this.get_data(key, tmp);
+                        const m = this._get_data(key, tmp);
                         if (m === undefined) continue;
                         return m;
                     }
                 }
-            } else return d;
+            } else return d.constructor === Object ? d.count : d;
             return undefined;
         },
-        get_key(module, target) {
+        _get_key(module, target) {
             // 递归调用, 遍历清空各层级的内容, 不涉及数组
             // null => object
             if (module && module.constructor === Object) {
                 for (const key in module) {
                     const tmp = module[key];
                     const vtype = typeof tmp;
-                    if (vtype === 'string') module[key] = this.get_data(key, target) ?? '';
-                    else if (vtype === 'number') module[key] = this.get_data(key, target) ?? 0;
-                    else if (tmp) this.get_key(tmp, target);
+                    if (vtype === 'string') module[key] = this._get_data(key, target) ?? '';
+                    else if (vtype === 'number') module[key] = this._get_data(key, target) ?? 0;
+                    else if (tmp) this._get_key(tmp, target);
                 }
             }
         },
-        main(target, module_name = 'home', check_id = 'bvid') {
-            // 深度拷贝对象
-            const module = JSON.parse(JSON.stringify(this[module_name]));
-            Array.isArray(target) ? target.forEach(e => this.get_key(module, e)) : this.get_key(module, target);
+        _check(module, module_name, check_id) {
             if (module_name === 'home') {
                 // 假如没有 av, 内容不会被写入
                 if (!module.goto) module.goto = 'av';
-                const id = module[check_id];
-                // 由于首页的aid没有使用aid, 而是id, 所以需要转换, 不做额外的处理
-                // aid不存在会导致视频的更新出现问题
-                if (id) module.id = Bili_id_Convertor.main(id);
-                else module = null;
+                if (!module.id) {
+                    const id = module[check_id];
+                    // 由于首页的aid没有使用aid, 而是id, 所以需要转换, 不做额外的处理
+                    // aid不存在会导致视频的更新出现问题
+                    if (id) module.id = Bili_id_Convertor.main(id);
+                    else module = null;
+                } else module.id = parseInt(module.id);
             }
             return module;
+        },
+        // 视频持续的时间(s), 将09:01这种格式的时间转为秒
+        duration_convertor: (duration) => typeof duration === 'string' ? duration.includes(':') ? [0, ...duration.replaceAll(' ', '').split(':')].slice(-3).reduce((units, cur, index) => {
+            units[index] = units[index] * parseInt(cur);
+            return units;
+        }, [3600, 60, 1]).reduce((ic, cur) => ic + cur, 0) : 1e8 : duration,
+        dynamic_to_home(target, module_name = 'home', check_id = 'id') {
+            // 深度拷贝对象
+            const module = JSON.parse(JSON.stringify(this[module_name]));
+            this._get_key(module, target);
+            const b = {
+                play: 0,
+                cover: "",
+                duration_text: "",
+                aid: 0
+            }, a = {
+                cover: "pic",
+                duration_text: "duration",
+                aid: "id"
+            };
+            this._get_key(module, target);
+            this._get_key(b, target);
+            for (const k in a) {
+                const e = a[k];
+                if (!module[e]) module[e] = b[k];
+            }
+            const bp = b.play;
+            if (!module.stat.view && bp) module.stat.view = bp.includes('万') ? Number(bp.replaceAll('万', '')) * 1e4 : parseInt(bp);
+            if (module.duration) module.duration = this.duration_convertor(module.duration);
+            const dm = module.stat.danmaku;
+            if (dm) module.stat.danmaku = dm.includes('万') ? Number(dm.replaceAll('万', '')) * 1e4 : parseInt(dm);
+            return this._check(module, module_name, check_id);
+        },
+        video_to_home(target, module_name = 'home', check_id = 'bvid') {
+            // 深度拷贝对象
+            const module = JSON.parse(JSON.stringify(this[module_name]));
+            Array.isArray(target) ? target.forEach(e => this._get_key(module, e)) : this._get_key(module, target);
+            return this._check(module, module_name, check_id);
         }
     };
 
@@ -519,28 +556,29 @@
     }
     // ----------indexedDB end--------
 
-    // 暂未启用部分 -----------
     // api数据请求部分
     class Web_Request {
         // 需要注意登录与否
         // 携带请求信息
         constructor() { }
-        #request(url, method = 'GET', data = null, headers = {}) {
-            fetch(url, {
-                method: method,
-                headers: headers,
-                body: data
-            }).then(res => res.json()).then(res => {
-                console.log(res);
-                return res;
-            });
+        #request(url, configs) {
+            return new Promise((resolve, reject) => fetch(url, configs)
+                .then(res => res.json())
+                .then(data => resolve(data))
+                .catch(e => reject(e))
+            );
         }
         // 评分的视频将用于获取数据作为过滤内容的填充
         get_related_videos(video_id) {
             const api = ``;
         }
+        get_dynamic_data() {
+            const api = `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video&platform=web&page=1`;
+            return this.#request(api, { credentials: "include" });
+        }
     }
 
+    // 暂未启用部分 -----------
     // 数据导出导入管理
     const Data_Manager = {};
     // ------------- 暂未启用部分
@@ -2373,7 +2411,7 @@
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
         update_essential_info(user_data, video_data) {
-            this.#home_video_info = Data_Switch.main([user_data, video_data]);
+            this.#home_video_info = Data_Switch.video_to_home([user_data, video_data]);
             return this.video_info_update_flag = Object.entries({
                 video_id: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
                 title: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.title),
@@ -2918,7 +2956,7 @@
 
                     });
                 },
-                get_pocket_data: async () => {
+                get_mybili_data: async () => {
                     // 首先获取稍后阅读的数据
                     let results = await this.#indexeddb_instance.batch_get(Indexed_DB.tb_name_dic.pocket);
                     if ((results && results.length < 10) || !results) {
@@ -2927,7 +2965,7 @@
                         if (results) {
                             this.#fill_home_videos = results;
                             this.#fill_home_videos.my_pop = () => {
-                                this.#fill_home_videos.length < 3 && this.#configs.get_pocket_data();
+                                this.#fill_home_videos.length < 3 && this.#configs.get_mybili_data();
                                 return this.#fill_home_videos.pop();
                             };
                         }
@@ -3542,7 +3580,7 @@
                                 else {
                                     href = get_cure_href(href);
                                     event.ctrlKey && GM_Objects.set_value('speed_up_video', true);
-                                    id < 2 && this.#indexeddb_instance?.delete(Indexed_DB.tb_name_dic.recommend, Base_Info_Match.get_video_id(href));
+                                    this.#indexeddb_instance?.delete(Indexed_DB.tb_name_dic.recommend, Base_Info_Match.get_video_id(href));
                                     if (p.target === '_blank') GM_Objects.openintab(href, { insert: 1, active: true });
                                     else window.location.href = href;
                                 }
@@ -4115,7 +4153,7 @@
                                         // 将视频的顺序打乱, 洗牌算法
                                         const shuffle_with_sort = (arr) => arr.sort(() => Math.random() - 0.5), sl = [3, 5, 10, 20][val - 2],
                                             tmp = shuffle_with_sort(cache.filter(e => e.bvid !== 'BV1P5411T71D'));
-                                        const data = tmp.length > sl ? tmp.slice(0, sl).map(e => Data_Switch.main(e)).filter(e => e) : null;
+                                        const data = tmp.length > sl ? tmp.slice(0, sl).map(e => Data_Switch.video_to_home(e)).filter(e => e) : null;
                                         data && this.#indexeddb_instance.add('rec_video_tb', data).then(() => Colorful_Console.print('add rec_video_tb successfully'));
                                     }
                                 }, get: () => null
@@ -4152,7 +4190,14 @@
                     }
                     setTimeout(() => GM_Objects.window_close(), 5000);
                 },
-                _load_rec_video: () => this.#configs.get_pocket_data(),
+                _load_rec_video: () => {
+                    this.#configs.get_mybili_data();
+                    // 当登陆的时候获取up的动态更新
+                    this.#user_is_login && new Web_Request().get_dynamic_data().then(results => {
+                        const tmp = results?.data?.items?.filter(e => e.type === 'DYNAMIC_TYPE_AV')?.map(e => Data_Switch.dynamic_to_home(e))?.filter(e => e);
+                        tmp && tmp.length > 0 && this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.recommend, tmp).then(() => Colorful_Console.print('add up dynamic to rec_video_tb successfully'));
+                    });
+                },
                 main() {
                     // GM_Objects.registermenucommand('maintain', this._maintain.bind(this));
                     setTimeout(() => this._load_rec_video(), 5000);
@@ -4306,12 +4351,7 @@
             // 预先检查数据是否满足要+求+
             if (id > 2) return;
             // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
-            const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [],
-                // 视频持续的时间(s), 将09:01这种格式的时间转为秒
-                duration_convertor = (duration) => [0, ...duration.replaceAll(' ', '').split(':')].slice(-3).reduce((units, cur, index) => {
-                    units[index] = units[index] * parseInt(cur);
-                    return units;
-                }, [3600, 60, 1]).reduce((ic, cur) => ic + cur, 0);
+            const search_tags = id == 2 ? ['</em>', '<em class="keyword">'] : [];
             // 预检查数据是否满足要求
             this.#configs = {
                 ...this.#configs,
@@ -4320,8 +4360,7 @@
                     const duration = e.duration;
                     // 过滤掉2分钟以下的视频
                     if (duration) {
-                        const s = typeof duration,
-                            d = s === 'string' && duration.includes(':') ? duration_convertor(duration) : s === 'number' ? duration : 1e8;
+                        const d = Data_Switch.duration_convertor(duration);
                         if (d < this.#configs.video_duration_limit) {
                             Dynamic_Variants_Manager.accumulative_func();
                             Colorful_Console.print(`the duration of video ${e.bvid} is less than ${this.#configs.video_duration_limit}s: ${d}s, skip it.`);
