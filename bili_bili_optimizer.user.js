@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.2.2
+// @version      3.2.3
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -257,6 +257,7 @@
             }
         },
         _check(module, module_name, check_id) {
+            module.add_time = Date.now();
             if (module_name === 'home') {
                 // 假如没有 av, 内容不会被写入
                 if (!module.goto) module.goto = 'av';
@@ -511,6 +512,19 @@
             });
         }
         batch_get(table_name, limit = 10) { return this.#table_operation([null, limit], table_name, 'readonly', 'getAll', 'value', true); }
+        batch_del_by_condition(table_name, condition_func, args) {
+            return new Promise((resolve, reject) => {
+                const table = this.#get_table_obj(table_name, 'readwrite'), request = table.openCursor();
+                request.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        condition_func(cursor.valu, ...args) && objectStore.delete(cursor.key);
+                        cursor.continue();
+                    } else resolve();
+                };
+                request.onerror = (e) => reject(this.#error_wrapper(e, 'batch delete error'));
+            });
+        }
         // 数据库关闭
         close() { this.#db_instance.close(); }
         // 初始化数据库
@@ -4190,7 +4204,7 @@
                     }
                     setTimeout(() => GM_Objects.window_close(), 5000);
                 },
-                _load_rec_video: () => {
+                _load_database: () => {
                     this.#configs.get_mybili_data();
                     // 当登陆的时候获取up的动态更新
                     if (this.#user_is_login) {
@@ -4202,6 +4216,9 @@
                             GM_Objects.set_value('dynamic_update_time', n);
                         });
                     }
+                    // 每三天检查清除掉超过7天的旧数据
+                    const { recommend, pocket } = Indexed_DB.tb_name_dic, t = GM_Objects.get_value('clear_database_time', 0), n = Date.now(), d = 1000 * 24 * 60 * 60;
+                    ((n - t) > 3 * d) && [recommend, pocket].forEach(e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(() => Colorful_Console.print(`clear ${e} successfully`)));
                 },
                 time_module: {
                     /*
@@ -4781,8 +4798,8 @@
                         <div
                             id="clock_box"
                             style="
-                                top: 4%;
-                                width: 20%;
+                                top: 3%;
+                                width: 28%;
                                 float: left;
                                 left: 212px;
                                 z-index: 1000;
@@ -4854,7 +4871,7 @@
                 main() {
                     // GM_Objects.registermenucommand('maintain', this._maintain.bind(this));
                     this.time_module.main();
-                    setTimeout(() => this._load_rec_video(), 5000);
+                    setTimeout(() => this._load_database(), 5000);
                 }
             },
             /**
