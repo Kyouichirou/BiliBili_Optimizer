@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.2.3
+// @version      3.2.4
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -574,7 +574,8 @@
     class Web_Request {
         // 需要注意登录与否
         // 携带请求信息
-        constructor() { }
+        #api_pref = null;
+        constructor() { this.#api_pref = 'https://api.bilibili.com/'; }
         #request(url, configs) {
             return new Promise((resolve, reject) => fetch(url, configs)
                 .then(res => res.json())
@@ -582,14 +583,8 @@
                 .catch(e => reject(e))
             );
         }
-        // 评分的视频将用于获取数据作为过滤内容的填充
-        get_related_videos(video_id) {
-            const api = ``;
-        }
-        get_dynamic_data() {
-            const api = `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video&platform=web&page=1`;
-            return this.#request(api, { credentials: "include" });
-        }
+        // up动态
+        get_dynamic_data() { return this.#request(`${this.#api_pref}x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video&platform=web&page=1`, { credentials: "include" }); }
     }
 
     // 暂未启用部分 -----------
@@ -2471,7 +2466,10 @@
             this.#video_player.mediaElement().onended = () => {
                 const i = this.#video_info.videos, id = this.#video_info.video_id;
                 (i === 1 || GM_Objects.window.__INITIAL_STATE__.p === i) && this.#db_instance.delete('pocket_tb', id);
-                if (!this.#menus_funcs.rec_list.includes(id)) this.add_related_video_flag = 2;
+                if (!this.#menus_funcs.rec_list.includes(id)) {
+                    this.#menus_funcs.rec_list.push(id);
+                    this.add_related_video_flag = 2;
+                }
             };
         }
         // 在不登陆的状态下, 切换不同的视频导致原来的video标签失效
@@ -4218,7 +4216,10 @@
                     }
                     // 每三天检查清除掉超过7天的旧数据
                     const { recommend, pocket } = Indexed_DB.tb_name_dic, t = GM_Objects.get_value('clear_database_time', 0), n = Date.now(), d = 1000 * 24 * 60 * 60;
-                    ((n - t) > 3 * d) && [recommend, pocket].forEach(e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(() => Colorful_Console.print(`clear ${e} successfully`)));
+                    ((n - t) > 3 * d) && [recommend, pocket].forEach(e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(() => {
+                        Colorful_Console.print(`clear ${e} successfully`);
+                        GM_Objects.set_value('clear_database_time', n);
+                    }));
                 },
                 time_module: {
                     /*
