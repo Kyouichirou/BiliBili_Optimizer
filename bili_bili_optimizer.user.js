@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.3.2
+// @version      3.3.3
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -746,7 +746,7 @@
         // 微博分享
         _share_weibo() {
             const url = `https://service.weibo.com/share/share.php?url=${GM_Objects.info.script.supportURL}&title=BiliBili_Optimizer, 更好的B站.!&summery=undefined&pic=${Constants_URLs.weibo_url}&#_loginLayer_${Date.now()}`;
-            GM_Objects.openintab(url, { insert: true, active: true });
+            GM_Objects.openintab(url, { insert: 1, active: true });
         },
         // 倒计时
         _timer() {
@@ -2445,9 +2445,9 @@
                         data.length > 0 ? console.table(data) : Colorful_Console.print('no crash log');
                     }
                 },
-                feedback: { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: true, active: true }); } },
+                feedback: { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: 1, active: true }); } },
                 support: { get() { Support_Me.main(); } },
-                manual: { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: true, active: true }); } },
+                manual: { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: 1, active: true }); } },
                 help: {
                     get() {
                         const cmds = [
@@ -3150,6 +3150,25 @@
                             const t = Data_Switch.base_video_info_to_home(data);
                             t ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, t).then(() => this.#configs.control_tips(id, node)) : Colorful_Console.print('fail to switch data to home module', 'crash', true);
                         }).catch(() => Colorful_Console.print('watch_later: get_video_base_info error', 'crash', true));
+                },
+                keydown_action: {
+                    _element_is_inview(el) {
+                        const rect = el.getBoundingClientRect();
+                        return rect.top >= 0 && rect.left >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && rect.right <= (window.innerWidth || document.documentElement.clientWidth);
+                    },
+                    f() {
+                        const btn = document.getElementsByClassName('primary-btn roll-btn')[0];
+                        if (btn && this._element_is_inview(btn)) {
+                            btn.click();
+                        }
+                    },
+                    main(key) {
+                        if (this[key]) {
+                            this[key]();
+                            return true;
+                        }
+                        return false;
+                    }
                 }
             },
             video: {
@@ -3264,6 +3283,23 @@
                             }
                             return [href, p.target];
                         } else if (i++ > 5) return false;
+                    }
+                },
+                keydown_action: {
+                    _exe: (action, arg = undefined) => this.#video_module_initial_flag && (arg === undefined ? this.#video_instance[action]() : this.#video_instance[action](arg)),
+                    p() { this._exe('play_control'); },
+                    l() { this._exe('light_control'); },
+                    t() { this._exe('theatre_mode'); },
+                    u() { this._exe('wide_screen'); },
+                    '='() { this._exe('voice_control', true); },
+                    '-'() { this._exe('voice_control', false); },
+                    _rate(val) { this._exe('key_rate_video', val); },
+                    1() { this._rate(1); },
+                    2() { this._rate(2); },
+                    3() { this._rate(3); },
+                    main(key) {
+                        const f = this[key];
+                        return f ? (f.apply(this), true) : false;
                     }
                 }
             },
@@ -3635,7 +3671,7 @@
                     _disable_body_contextmenu_event: { run_at: 0, run_in: Array.from({ length: 5 }, (_val, index) => index), type: 1 },
                     _fetch: { run_at: 0, run_in: Array.from({ length: 3 }, (_val, index) => index), type: 0 },
                     _xmlrequest: { run_at: 0, run_in: [0, 1], type: 0 },
-                    _search_box_clear: { run_at: 0, run_in: [0, 1, 3, 4, 5, 6], type: 1 },
+                    _search_box_clear: { run_at: 0, run_in: [0, 1, 3, 4, 5, 6, 7], type: 1 },
                     _addeventlistener: { run_at: 0, run_in: [2], type: 1 },
                     _setattribute: { run_at: 1, run_in: [1], type: 1 },
                     _history_replacestate: { run_at: 0, run_in: [1, 5], type: 1 },
@@ -3657,7 +3693,7 @@
         #css_module = {
             // 顶部位置广告, 搜索框广告
             _all: {
-                run_in: Array.from({ length: 6 }, (_val, index) => index),
+                run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
                 css: (_user_is_login) => `
                 .bili-header .left-entry .default-entry,
                 a.download-entry.download-client-trigger,
@@ -3833,6 +3869,7 @@
                 */
                 // 搜索
                 const search = {
+                    run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
                     /**
                      * 获取选中的内容
                      * @returns {string}
@@ -3857,29 +3894,12 @@
                         const url = this[key];
                         if (url) {
                             const s = this._get_content();
-                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._protocols + url + encodeURIComponent(s), { insert: true, activate: true }) : Colorful_Console.print('search content contain black key', 'warning', true));
+                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._protocols + url + encodeURIComponent(s), { insert: 1, active: true }) : Colorful_Console.print('search content contain black key', 'warning', true));
                             return true;
                         }
                         return false;
                     }
                 },
-                    // 视频控制
-                    video_control = {
-                        p: () => this.#video_instance.play_control(),
-                        l: () => this.#video_instance.light_control(),
-                        t: () => this.#video_instance.theatre_mode(),
-                        u: () => this.#video_instance.wide_screen(),
-                        '=': () => this.#video_instance.voice_control(true),
-                        '-': () => this.#video_instance.voice_control(false),
-                        _rate: (val) => this.#video_instance.key_rate_video(val),
-                        1() { this._rate(1); },
-                        2() { this._rate(2); },
-                        3() { this._rate(3); },
-                        main(key) {
-                            const f = this[key];
-                            return f ? (f(), true) : false;
-                        }
-                    },
                     // 管理贝叶斯
                     manage_bayes = {
                         _add_white() {
@@ -3890,6 +3910,7 @@
                     },
                     // 关键词黑名单管理
                     manage_black_key = {
+                        run_in: [0, 2],
                         _func: (data) => {
                             const nodes = document.getElementsByClassName(this.#configs.target_class),
                                 a = this.#utilities_module.get_up_video_info,
@@ -3927,8 +3948,9 @@
                         }
                     },
                     other_funs = {
+                        run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
                         h() {
-                            GM_Objects.openintab('https://www.bilibili.com/account/history', { insert: true, activate: true });
+                            GM_Objects.openintab('https://www.bilibili.com/account/history', { insert: 1, active: true });
                             return true;
                         },
                         main(key) { return this[key]?.(); }
@@ -3942,12 +3964,14 @@
                         if (classname && class_tags.some(e => classname.includes(e))) return true;
                         return false;
                     },
-                    id = this.#configs.id, func = this.#video_module_initial_flag ? video_control.main.bind(video_control) : (id === 0 || id === 2) ? manage_black_key.main.bind(manage_black_key) : () => null;
+                    check_cas = (event) => ['shiftKey', 'ctrlKey', 'altKey'].some(e => event[e]),
+                    id = this.#configs.id, funcs = [search, manage_black_key, other_funs].filter(e => e.run_in.includes(id)).map(e => e.main.bind(e)),
+                    ka = this.#configs.keydown_action;
+                if (ka) funcs.push(ka.main.bind(this.#configs.keydown_action));
                 document.addEventListener('keydown', (event) => {
-                    if (event.shiftKey || event.ctrlKey || event.altKey) return;
-                    if (check_is_input(event.target)) return;
+                    if (check_cas(event) || check_is_input(event.target)) return;
                     const key = event.key.toLowerCase();
-                    if (search.main(key) || other_funs.main(key) || func(key)) {
+                    if (funcs.some(f => f(key))) {
                         event.preventDefault();
                         event.stopPropagation();
                     }
@@ -5222,7 +5246,7 @@
         #html_modules = {
             // 遮罩
             _shade: {
-                run_in: Array.from({ length: 6 }, (_val, index) => index).filter(e => e !== 1),
+                run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index).filter(e => e !== 1),
                 colors: {
                     yellow: "rgb(247, 232, 176)",
                     green: "rgb(202 ,232, 207)",
