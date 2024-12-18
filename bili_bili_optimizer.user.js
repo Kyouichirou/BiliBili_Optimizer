@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.3.3
+// @version      3.4.0
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -172,13 +172,13 @@
          * @param {boolean} mode
          */
         print(content, type = 'info', mode = false) {
-            const bc = this._colors[type];
-            const title = bc ? type : (bc = this._colors.info, 'info');
-            const params = [
-                `%c ${title} %c ${content} `,
-                "padding: 1px; border-radius: 3px 0 0 3px; color: #fff; font-size: 12px; background: #606060;",
-                `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
-            ];
+            let bc = this._colors[type];
+            const title = bc ? type : (bc = this._colors.info, 'info'),
+                params = [
+                    `%c ${title} %c ${content} `,
+                    "padding: 1px; border-radius: 3px 0 0 3px; color: #fff; font-size: 12px; background: #606060;",
+                    `padding: 1px; border-radius: 0 3px 3px 0; color: #fff; font-size: 12px; background: ${bc};`
+                ];
             console.log(...params), mode && GM_Objects.notification(content, type);
             bc === this._colors.crash && Statics_Variant_Manager.add_crash_log(content);
         }
@@ -231,18 +231,22 @@
         },
         _search_title_tags: ['<em class="keyword">', '</em>'],
         _get_data(key, obj) {
-            const d = obj[key];
-            if (d === undefined) {
-                for (const k in obj) {
-                    const tmp = obj[k];
-                    if (tmp && tmp.constructor === Object) {
-                        const m = this._get_data(key, tmp);
-                        if (m === undefined) continue;
-                        return m;
+            try {
+                const d = obj[key];
+                if (d === undefined) {
+                    for (const k in obj) {
+                        const tmp = obj[k];
+                        if (tmp && tmp.constructor === Object) {
+                            const m = this._get_data(key, tmp);
+                            if (m === undefined) continue;
+                            return m;
+                        }
                     }
-                }
-            } else return d.constructor === Object ? d.count : d;
-            return undefined;
+                } else return d.constructor === Object ? d.count : d;
+                return undefined;
+            } catch (error) {
+                debugger;
+            }
         },
         _get_key(module, target) {
             // 递归调用, 遍历清空各层级的内容, 不涉及数组
@@ -625,8 +629,9 @@
     class Web_Request {
         // 需要注意登录与否
         // 携带请求信息
-        #api_pref = null;
-        constructor() { this.#api_pref = 'https://api.bilibili.com/'; }
+        static api_prefix = '//api.bilibili.com/x/';
+        #api_prefix = null;
+        constructor(api_prefix) { this.#api_prefix = 'https:' + api_prefix; }
         #request(url, configs) {
             return new Promise((resolve, reject) => fetch(url, configs)
                 .then(res => res.json())
@@ -639,9 +644,9 @@
             );
         }
         // up动态
-        get_dynamic_data() { return this.#request(`${this.#api_pref}x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video&platform=web&page=1`, { credentials: "include" }); }
+        get_dynamic_data() { return this.#request(`${this.#api_prefix}polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video&platform=web&page=1`, { credentials: "include" }); }
         // 获取视频基本信息
-        get_video_base_info(bvid) { return this.#request(`${this.#api_pref}x/web-interface/view?bvid=${bvid}`, { credentials: "include" }); }
+        get_video_base_info(bvid) { return this.#request(`${this.#api_prefix}web-interface/view?bvid=${bvid}`, { credentials: "include" }); }
     }
 
     // 暂未启用部分 -----------
@@ -2148,7 +2153,7 @@
                 const bvid = info.bvid, data = this.find(e => e.bvid === bvid);
                 if (data && data.rate !== info.rate) {
                     data.rate = info.rate;
-                    this.push(data);
+                    data.last_active_date = info.last_active_date;
                 } else if (!data) this.push(info);
                 else return false;
                 return true;
@@ -3034,7 +3039,7 @@
                 // 目标元素的class_name
                 target_class: 'bili-video-card is-rcmd',
                 // api url 后缀
-                interpose_api_suffix: ['index/top/feed/rcmd', 'wbi/index/top/feed/rcmd'],
+                interpose_api_suffix: ['web-interface/index/top/feed/rcmd', 'web-interface/wbi/index/top/feed/rcmd'],
                 // 初始化数据的键名
                 initial_data_name: '__pinia',
                 /**
@@ -3060,11 +3065,13 @@
                  * 处理api返回的数据
                  * @param {Array} data
                  */
-                request_data_handler: (data, clear_data) => {
+                request_data_handler: (data) => {
+                    const pre_data_check = this.#configs.pre_data_check,
+                        clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module);
                     this.#card_data.length = 0;
                     data.forEach(e => {
                         let id = e.bvid;
-                        if (!id || this.#video_has_added_list.includes(id) || e.business_info || this.#configs.pre_data_check(e)) {
+                        if (!id || this.#video_has_added_list.includes(id) || e.business_info || pre_data_check(e)) {
                             const item = this.#fill_home_videos?.my_pop(), id = item?.bvid;
                             if (id && !this.#video_has_added_list.includes(id)) {
                                 for (const k in e) e[k] = item[k];
@@ -3108,7 +3115,10 @@
                  */
                 add_info_to_node_title(node, val) {
                     const h = node.getElementsByTagName('h3')[0];
-                    h ? (h.innerText = val + h.innerText) : Colorful_Console.print('title element miss', 'crash');
+                    if (h) {
+                        h.title = val + h.innerText;
+                        h.firstChild.style.color = ['', '#32CD32', '#006400'][val];
+                    } else Colorful_Console.print('title element miss', 'crash');
                 },
                 /**
                  * 读取目标节点元素的视频标题和up名称, 由于上面的添加信息到节点的操作, 不能直接读取标题的内容而是悬浮时显示的title
@@ -3126,7 +3136,7 @@
                 click_action: (event_path) => {
                     let iw = false, nw = null, i = 0;
                     for (const p of event_path) {
-                        if (!iw && p.className?.includes('bili-watch-later')) {
+                        if (!iw && p.className?.includes?.('bili-watch-later')) {
                             iw = true;
                             nw = p;
                         } else if (p.localName === 'a') {
@@ -3175,7 +3185,7 @@
                 id: 1,
                 target_class: 'card-box',
                 initial_data_name: '__INITIAL_STATE__',
-                interpose_api_suffix: ['archive/related', 'wbi/view/detail?aid=', 'wbi/view/detail?platform='],
+                interpose_api_suffix: ['web-interface/archive/related', 'web-interface/wbi/view/detail?aid=', 'web-interface/wbi/view/detail?platform='],
                 initial_data_handler: (val) => {
                     const data = val.related;
                     const m = {
@@ -3242,7 +3252,7 @@
                  * @param {string} url
                  * @returns {Function}
                  */
-                handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.includes(this.#configs.interpose_api_prefix + e)) ? (response_content, pre_data_check) => {
+                handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.includes(this.#configs.interpose_api_prefix + e)) ? (response_content) => {
                     const data = response_content.data;
                     if (!data) {
                         Colorful_Console.print("the api of video data has change", 'crash', true);
@@ -3257,7 +3267,7 @@
                             response_content.data = cache_results;
                             return;
                         }
-                        results = this.#configs.request_data_handler(response_content.data, pre_data_check);
+                        results = this.#configs.request_data_handler(response_content.data, this.#configs.pre_data_check);
                         response_content.data = results;
                     } else {
                         if (cache_results) {
@@ -3265,7 +3275,7 @@
                             return;
                         }
                         this.#video_instance?.update_essential_info(data.View.owner, data.View);
-                        results = this.#configs.request_data_handler(data.Related, pre_data_check);
+                        results = this.#configs.request_data_handler(data.Related, this.#configs.pre_data_check);
                         response_content.data.Related = results;
                     }
                     this.#request_data_cache = results;
@@ -3307,7 +3317,7 @@
                 id: 2,
                 parent_class: 'video-list row',
                 target_class: 'bili-video-card',
-                interpose_api_suffix: 'wbi/search/',
+                interpose_api_suffix: 'web-interface/wbi/search/',
                 initial_data_name: '__pinia',
                 initial_data_handler: (val) => {
                     // 需要注意访问的首页不是第一页的时候, 存在cookie, B站也可以直接以html返回数据, 而不是访问api
@@ -3327,10 +3337,6 @@
                     this.#initial_cache = data;
                     return new_data;
                 },
-                add_info_to_node_title(node, val) {
-                    const t = node.getElementsByClassName('title')[0];
-                    t ? t.innerText = val + t.innerText : Colorful_Console.print('title element miss', 'crash');
-                },
                 add_state_to_node(node, v_r) {
                     const html = `
                         <span class="bili-video-card__stats--item" data-v-62f526a6="">
@@ -3345,10 +3351,10 @@
                  * @param {Array} data
                  * @param {Function} clear_data
                  */
-                request_data_handler: (data, clear_data) => {
-                    const lost_pic = this.#configs.lost_pic;
-                    this.#request_data_cache = data.map(e => {
-                        if (this.#configs.pre_data_check(e)) {
+                request_data_handler: (data) => {
+                    const clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module), { lost_pic, pre_data_check } = this.#configs;
+                    this.#card_data = data.map(e => {
+                        if (pre_data_check(e)) {
                             clear_data(e);
                             e.pic = lost_pic;
                             return false;
@@ -3358,6 +3364,7 @@
                         v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(vid);
                         return ((v_r.r !== 0 || v_r.v !== 0) ? v_r : null);
                     });
+                    this.#request_data_cache = data;
                 },
                 get_title_up_name: (node) => this.#site_configs.home.get_title_up_name(node),
                 handle_fetch_url: (url) => {
@@ -3388,7 +3395,8 @@
                 click_action: (event_path) => {
                     let iw = false, nw = null, i = 0;;
                     for (const p of event_path) {
-                        if (!iw && p.className?.includes('bili-watch-later')) {
+                        // 有些classname并不是字符串或者空, 而是object
+                        if (!iw && p.className?.includes?.('bili-watch-later')) {
                             iw = true;
                             nw = p;
                         } else if (p.localName === 'a') {
@@ -3408,11 +3416,11 @@
                 },
                 watch_later: (url, node) => {
                     const id = Base_Info_Match.get_bvid(url), data = (this.#request_data_cache || this.#initial_cache)?.find(e => e && e.bvid == id);
-                    const module = Data_Switch.search_to_home(data);
+                    const module = data ? Data_Switch.search_to_home(data) : null;
                     if (module) {
                         Statics_Variant_Manager.watch_later.add(module);
                         this.#configs.control_tips(id, node);
-                    }
+                    } else Colorful_Console.print('can not find data for watch later in search', 'warning');
                 }
             },
             space: { id: 3 },
@@ -3523,10 +3531,10 @@
                 });
             },
             // 页面中的handleDocumentInitActive, 这个点击函数会导致url被添加追踪参数
-            _addeventlistener() { this.__proxy(document, 'addEventListener', { apply(...args) { !(args.length === 3 && args[2][0] === 'click' && args[2][1]?.name === 'handleDocumentInitActive') && Reflect.apply(...args); } }); },
+            _addeventlistener() { this.__proxy(document, 'addEventListener', { apply(...args) { !(args[2]?.[0] === 'click' && args[2]?.[1]?.name === 'handleDocumentInitActive') && Reflect.apply(...args); } }); },
             // 干预页面进行的href添加追踪参数的操作
             // 由于当前页面的元素已经添加了追踪参数, 所以拦截的操作可以在这里启动, 而不是在页面刚加载的时候启动
-            _setattribute() { this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args.length === 3 && args[2]?.length === 2 && args[2][0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } }); },
+            _setattribute() { this.__proxy(HTMLAnchorElement.prototype, 'setAttribute', { apply(...args) { args[2]?.[0] === 'href' && (args[2][1] = args[2][1].split('?spm_id_from')[0]), Reflect.apply(...args); } }); },
             // 拦截document.body菜单事件
             // 由于事件是由于document.body所创建, 通过window/document无法直接拦截到
             // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦(无法准确及时进行)
@@ -3558,27 +3566,16 @@
                 const fetch = GM_Objects.window.fetch,
                     handle_fetch = async (...args) => {
                         // 拦截fetch返回的结果, 并且进行数据清理
-                        const [url, config] = args,
-                            response = await fetch(url, config),
-                            // 根据配置的函数, 决定是否需要干预, 返回一个处理后续数据的函数
-                            hfu = this.#configs.handle_fetch_url(url),
-                            clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module);
-                        if (hfu) {
-                            // response, 只允许访问一次, clone一份, 在复制上进行操作
-                            response.json = () => response.clone().json().then((response_content) => {
-                                if (response_content.code !== 0) {
-                                    Colorful_Console.print('fail to fetch url: ' + url, 'debug', true);
-                                    return response_content;
-                                }
-                                const results = hfu(response_content),
-                                    spec = response_content.Spec;
-                                // 清除掉这个广告内容
-                                if (spec) clear_data(spec);
-                                if (results) {
-                                    this.#configs.request_data_handler(results, clear_data);
-                                } else Colorful_Console.print('url no match rule: ' + url, 'debug');
-                                return response_content;
-                            });
+                        const [url, config] = args;
+                        if (this.#configs.check_other_requets(url)) return;
+                        // 根据配置的函数, 决定是否需要干预, 返回一个处理后续数据的函数
+                        const response = await fetch(url, config);
+                        // response, 只允许访问一次, clone一份, 在复制上进行操作
+                        if (this.#configs.check_login_request(url)) response.json = () => response.clone().json().then(_ => this.#configs.fake_login_info);
+                        else if (this.#configs.check_other_requets(url)) return;
+                        else {
+                            const hfu = this.#configs.handle_fetch_url(url);
+                            if (hfu) response.json = () => response.clone().json().then((response_content) => (this.#configs.clear_request_data(response_content, url, hfu), response_content));
                         }
                         return response;
                     };
@@ -3595,53 +3592,44 @@
                 // B站视频播放页相关视频的数据请求, 从fetch改回xmlrequest
                 // 首次载入, 加载一次数据, 在登录账户时
                 // 第二次加载相关视频推荐时, 会请求两次数据
-                const handle_fetch_url = this.#configs.handle_fetch_url,
-                    clear_data = this.#utilities_module.clear_data.bind(this.#utilities_module),
-                    pre_data_check = this.#configs.pre_data_check,
-                    check_user_login_api = this.#configs.check_user_login_api,
-                    user_is_login = this.#user_is_login;
+                const {
+                    handle_fetch_url,
+                    fake_login_info,
+                    check_login_request,
+                    check_other_requets,
+                    clear_request_data
+                } = this.#configs, new_fn = (fn, ...args) => fn.apply(this, args); // 用于调用外部的this
                 // 不登陆的状态下, 会发起可能多达3次的请求, 也可能不请求数据, 非常诡异...
                 GM_Objects.window.XMLHttpRequest = class extends GM_Objects.window.XMLHttpRequest {
+                    #exe_action = null;
                     constructor() {
                         super();
-                        // super之后调用this
-                        this.addEventListener('readystatechange', () => {
-                            if (this.readyState === 4 && this.status === 200) {
-                                let json = null;
-                                // 拦截首页的登录弹窗
-                                if (!user_is_login && this.responseURL === check_user_login_api) {
-                                    json = {
-                                        "code": 0,
-                                        "message": "0",
-                                        "ttl": 1,
-                                        "data": {
-                                            "isLogin": true,
-                                            "mid": 441644010,
-                                            "uname": "打着手电筒看书",
-                                            "face": "https://i0.hdslb.com/bfs/face/67ceb14021cfbc0b2a9e40b4b254b0a3be428b46.jpg",
-                                            "face_nft": 0,
-                                            "face_nft_type": 0,
-                                            "wbi_img": {
-                                                "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
-                                                "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png"
-                                            }
-                                        }
-                                    };
-                                } else {
-                                    const url = this.responseURL, func = handle_fetch_url(url);
-                                    if (func) {
-                                        json = JSON.parse(this.responseText);
-                                        if (json.code === 0) {
-                                            const spec = json.Spec;
-                                            func(json, pre_data_check);
-                                            // 清除掉这个广告内容
-                                            if (spec) clear_data(spec);
-                                        } else Colorful_Console.print('fail to fetch url: ' + url, 'debug', true);
-                                    }
-                                }
-                                json && Object.defineProperty(this, 'responseText', { get() { return JSON.stringify(json); }, set(_val) { } });
-                            }
-                        });
+                        // 事件监听必须在这里创建才能准确拦截到responseText返回值
+                        this.#create_event();
+                    }
+                    /**
+                     * @param {string} json
+                     */
+                    #modified_result(json) { Object.defineProperty(this, 'responseText', { get() { return json; }, set(_val) { } }); }
+                    #intercept_login_status(_arg) { this.#modified_result(JSON.stringify(fake_login_info)); }
+                    /**
+                     * 干预请求数据
+                     * @param {Function} func
+                     */
+                    #intercept_requests_data(func) {
+                        const data = clear_request_data(this.responseText, this.responseURL, func);
+                        data && this.#modified_result(data);
+                    }
+                    #create_event() { this.addEventListener('readystatechange', () => this.readyState === 4 && this.status === 200 && this.#exe_action?.()); }
+                    open(...args) {
+                        const url = args[1];
+                        if (check_login_request(url)) this.#exe_action = this.#intercept_login_status.bind(this);
+                        else if (new_fn(check_other_requets, url)) return;
+                        else {
+                            const func = handle_fetch_url(url);
+                            if (func) this.#exe_action = this.#intercept_requests_data.bind(this, func);
+                        }
+                        return super.open(...args);
                     }
                 };
             },
@@ -3766,6 +3754,7 @@
                     (user_is_login ? '' : '.bpx-player-subtitle-panel-text,') + `.video-page-special-card-small,
                     .video-page-operator-card-small,
                     .slide-ad-exp,
+                    .video-card-ad-small,
                     .video-page-game-card-small,
                     a.ad-report.ad-floor-exp.right-bottom-banner,
                     a.ad-report.video-card-ad-small,
@@ -3794,9 +3783,10 @@
             // 右键菜单事件
             _contextmenu: () => {
                 // 隐藏视频的可见, 和是否拉黑视频
+                const check_assist_key = (event) => ['shiftKey', 'ctrlKey', 'altKey'].findIndex(e => event[e]);
                 document.addEventListener('contextmenu', (event) => {
-                    const [shift, ctrl] = [event.shiftKey, event.ctrlKey];
-                    if (!(shift || ctrl)) return;
+                    const ikey = check_assist_key(event);
+                    if (ikey < 0) return;
                     event.preventDefault();
                     event.stopPropagation();
                     const target_name = this.#configs.target_class, cfunc = this.#configs.contextmenu_handle;
@@ -3810,7 +3800,11 @@
                                 this.#configs.add_data_to_node_dataset(p, 'is_hidden', 1);
                                 const info = this.#utilities_module.get_up_video_info(p), vid = info.bvid;
                                 if (vid) {
-                                    shift ? Dynamic_Variants_Manager.block_video(vid) : ((Dynamic_Variants_Manager.cache_block_videos.push(vid)), Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false));
+                                    if (ikey === 0) Dynamic_Variants_Manager.block_video(vid);
+                                    else if (ikey === 1) {
+                                        Dynamic_Variants_Manager.cache_block_videos.push(vid);
+                                        Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false);
+                                    }
                                     this.#configs.delete_data_by_bvid(vid);
                                 }
                                 break;
@@ -4008,13 +4002,15 @@
                     Colorful_Console.print('no initial elements', 'debug');
                     return;
                 }
-                const hide_node = this.#configs.hide_node,
-                    add_info_to_node_title = this.#configs.add_info_to_node_title,
-                    add_data_to_node_dataset = this.#configs.add_data_to_node_dataset,
-                    add_state_to_node = this.#configs.add_state_to_node,
-                    clear_a_link = this.#configs.clear_a_link || ((_node) => null);
-                let i = 0;
+                const {
+                    hide_node,
+                    add_info_to_node_title,
+                    add_data_to_node_dataset,
+                    add_state_to_node,
+                    clear_a_link
+                } = this.#configs;
                 // 首页, api请求的数据被清空, 则在html上是不会创建节点的, 搜索页和播放页上, 假如清空还是会创建节点, 当还创建节点就添加dataset
+                let i = 0;
                 for (const node of nodes) {
                     const info = datalist[i];
                     let f = true;
@@ -4025,12 +4021,13 @@
                             // 这里的false存在是为了适应search中返回的数据
                             info && hide_node(node);
                             f = false;
-                        } else if (type === 'number') add_info_to_node_title(node, `[H-${info}]`);
+                        } else if (type === 'number') add_info_to_node_title(node, info);
                         else if (type === 'object') add_state_to_node(node, info);
                     }
-                    f && clear_a_link(node);
+                    f && clear_a_link?.(node);
                     i++;
                 }
+                datalist.length = 0;
             }, 100),
             // 监听拦截up或者视频的变化, 对整个页面遍历, 检查是否需要拦截
             _block_video_up_data_sync_monitor: () => {
@@ -4187,31 +4184,23 @@
                     // 节点变化监, 用于精确执行操作html元素操作
                     const wrapper = document.getElementsByClassName('search-page-wrapper');
                     wrapper.length > 0 ? new MutationObserver((records) => {
-                        let f = false;
                         for (const r of records) {
                             for (const node of r.addedNodes) {
-                                f = (node.className || '').startsWith('search-page');
-                                if (f) {
-                                    setTimeout(() => {
-                                        this.#page_modules._traversal_video_card(node, this.#request_data_cache);
-                                        this.#request_data_cache = [];
-                                    }, 300);
-                                    break;
+                                if ((node.className || '').startsWith?.('search-page')) {
+                                    setTimeout(() => this.#page_modules._traversal_video_card(node, this.#card_data), 300);
+                                    return;
                                 }
                             }
-                            if (f) break;
                         }
                     }).observe(wrapper[0], { childList: true }) : Colorful_Console.print('search page monitor no target node', 'crash', true);
                     // 第一页的插入节点和请求数据的先后和其他的页面不一样, 所以这里额外处理
                     // 由于首页插入的节点的操作在请求数据之前, 需要额外监听等待数据请求后才执行操作.
+                    // 这种页面很多页面都有类似逻辑
                     const configs = this.#configs;
                     // 私有属性无法直接拦截
                     let tmp = null;
                     Object.defineProperty(configs, 'fetch_flag', {
-                        set: (v) => (tmp = v) && setTimeout(() => {
-                            this.#page_modules._traversal_video_card(document, this.#request_data_cache);
-                            this.#request_data_cache = [];
-                        }, 300),
+                        set: (v) => (tmp = v) && setTimeout(() => this.#page_modules._traversal_video_card(document, this.#card_data), 300),
                         get: () => tmp
                     });
                 }, 300)
@@ -5145,7 +5134,7 @@
                     paused: false,
                     main() { this.clock(); },
                 },
-                _web_init: () => (this.#web_request_instance = new Web_Request()),
+                _web_init: () => (this.#web_request_instance = new Web_Request(Web_Request.api_prefix)),
                 _arr_init: () => {
                     this.#fill_home_videos = [];
                     this.#fill_home_videos.my_pop = () => {
@@ -5361,7 +5350,7 @@
                     if (duration) {
                         const d = Data_Switch.duration_convertor(duration);
                         if (d < this.#configs.video_duration_limit) {
-                            Colorful_Console.print(`the duration of video ${e.bvid} is less than ${this.#configs.video_duration_limit}s: ${d}s, skip it.`);
+                            Colorful_Console.print(`${e.bvid}, less than ${this.#configs.video_duration_limit}s: ${d}s`);
                             return true;
                         }
                     }
@@ -5380,9 +5369,9 @@
                 // 填充没有数据的封面
                 lost_pic: '//i2.hdslb.com/bfs/archive/1e198160b7c9552d3be37f825fbeef377c888450.jpg',
                 // 有时并没有https开头
-                interpose_api_prefix: '//api.bilibili.com/x/web-interface/',
+                interpose_api_prefix: Web_Request.api_prefix,
                 // B站中每个页面都会发起的请求, 用于获取用户信息, 双重验证, 本地cookie & 服务器信息校检
-                check_user_login_api: 'https://api.bilibili.com/x/web-interface/nav',
+                check_user_login_api: 'web-interface/nav',
                 // 如何隐藏节点的方式
                 hide_node: id == 1 ? (node) => (node.style.display = 'none') : (node) => (node.style.visibility = 'hidden'),
                 add_data_to_node_dataset: (node, key, val) => (node.dataset[key] = val),
@@ -5480,6 +5469,55 @@
                         const title = e.title, name = e.author || e.owner?.name || '';
                         return keys.some(e => title.includes(e) || name.includes(e));
                     });
+                },
+                /**
+                 * 清理请求返回的数据
+                 * @param {string|object} response_content
+                 * @param {string} url
+                 * @param {Function} func
+                 * @returns {string|object}
+                 */
+                clear_request_data: (response_content, url, func) => {
+                    // 需要注意搜索页和首页, 视频页之间的处理方式不一样
+                    const is_string = typeof response_content === 'string';
+                    if (is_string) response_content = JSON.parse(response_content);
+                    if (response_content.code !== 0) {
+                        Colorful_Console.print(`fail to request url: ${url}, code: ${response_content.code}`, 'debug', true);
+                        if (is_string) response_content = null;
+                    } else {
+                        const spec = response_content.Spec;;
+                        if (spec) clear_data(spec);
+                        if (this.#configs.id === 1) func(response_content);
+                        else {
+                            const results = func(response_content);
+                            results ? this.#configs.request_data_handler(results) : Colorful_Console.print('url no match rule: ' + url, 'debug');
+                        }
+                        if (is_string) response_content = JSON.stringify(response_content);
+                    }
+                    return response_content;
+                },
+                check_login_request: this.#user_is_login ? (_url) => false : (url) => url.endsWith(this.#configs.check_user_login_api),
+                check_other_requets: this.#user_is_login ? (url) => {
+                    const api_prefix = this.#configs.interpose_api_prefix, i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
+                    if (i < 0) return url.includes(api_prefix + 'web-show/res/locs?');
+                    else this.#video_instance.key_rate_video(i + 1);
+                } : (url) => url.includes(this.#configs.interpose_api_prefix + 'web-show/res/locs?'),
+                fake_login_info: {
+                    "code": 0,
+                    "message": "0",
+                    "ttl": 1,
+                    "data": {
+                        "isLogin": true,
+                        "mid": 441644010,
+                        "uname": "打着手电筒看书",
+                        "face": "https://i0.hdslb.com/bfs/face/67ceb14021cfbc0b2a9e40b4b254b0a3be428b46.jpg",
+                        "face_nft": 0,
+                        "face_nft_type": 0,
+                        "wbi_img": {
+                            "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                            "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png"
+                        }
+                    }
                 }
             };
         }
@@ -5505,12 +5543,12 @@
                 Colorful_Console.print('you are accessing a rubbish page and the script will not run properly.', 'warning');
                 return;
             }
+            this.#user_is_login = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
             // 根据id生成配置
             const id = this.#configs.id;
             // 载入过滤模块的配置
             this.#load_filter_configs(id);
             // 检查用户是否登录
-            this.#user_is_login = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
             // 注入css, 尽快执行
             this.#css_module.inject_css(id, this.#user_is_login);
             // 需要拦截动态数据管理模块的配置
