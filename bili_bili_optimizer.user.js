@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.4.0
+// @version      3.4.1
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2684,7 +2684,7 @@
             // remove, 从评分中将数据移除掉
             4(video_info) {
                 Statics_Variant_Manager.rate_video_part.remove(video_info.bvid);
-                this._change_lable({ 'Rate': 0 });
+                this._change_lable({ Rate: 0 });
                 this._control_db(1);
             },
             // block, 拦截视频
@@ -2699,12 +2699,12 @@
             // unblock, 不拦截视频
             6(video_info) {
                 Dynamic_Variants_Manager.unblock_video(video_info.bvid);
-                this._change_lable({ 'Blocked': 0 });
+                this._change_lable({ Blocked: 0 });
             },
             // 标记已经下载
             8(video_info) {
                 Statics_Variant_Manager.mark_download_video.add({ bvid: video_info.bvid, title: video_info.title });
-                this._change_lable({ 'Downloaded': 1 });
+                this._change_lable({ Downloaded: 1 });
             },
             // 稍后观看
             9(video_info) {
@@ -2715,7 +2715,7 @@
                 }
                 if (!this._watch_list.includes(bvid)) {
                     this._watch_list.push(bvid);
-                    this._change_lable({ 'Pocketed': 1 });
+                    this._change_lable({ Pocketed: 1, Blocked: 0 });
                     this._control_db(0);
                 }
             },
@@ -3162,23 +3162,26 @@
                         }).catch(() => Colorful_Console.print('watch_later: get_video_base_info error', 'crash', true));
                 },
                 keydown_action: {
+                    get _button() { return document.getElementsByClassName('primary-btn roll-btn')[0]; },
                     _element_is_inview(el) {
                         const rect = el.getBoundingClientRect();
                         return rect.top >= 0 && rect.left >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && rect.right <= (window.innerWidth || document.documentElement.clientWidth);
                     },
                     f() {
-                        const btn = document.getElementsByClassName('primary-btn roll-btn')[0];
-                        if (btn && this._element_is_inview(btn)) {
-                            btn.click();
-                        }
+                        const btn = this._button;
+                        btn && this._element_is_inview(btn) && btn.click();
+                        return true;
                     },
-                    main(key) {
-                        if (this[key]) {
-                            this[key]();
-                            return true;
+                    _search_video: (index) => {
+                        const node = document.getElementsByClassName(this.#configs.target_class)[index];
+                        if (node && !node.dataset.is_hidden) {
+                            const href = node.getElementsByTagName('a')[0].href;
+                            href && GM_Objects.openintab(href, { active: true, insert: 1 });
                         }
-                        return false;
-                    }
+                        return true;
+                    },
+                    _open_video(index) { return this._element_is_inview(this._button) ? this._search_video(index) : false; },
+                    main(key) { return !isNaN(parseInt(key)) ? this._open_video(parseInt(key)) : this[key]?.();; }
                 }
             },
             video: {
@@ -3307,6 +3310,7 @@
                     1() { this._rate(1); },
                     2() { this._rate(2); },
                     3() { this._rate(3); },
+                    o() { this._rate(9); },
                     main(key) {
                         const f = this[key];
                         return f ? (f.apply(this), true) : false;
@@ -3791,29 +3795,24 @@
                     event.stopPropagation();
                     const target_name = this.#configs.target_class, cfunc = this.#configs.contextmenu_handle;
                     let i = 0;
-                    try {
-                        for (const p of event.composedPath()) {
-                            const clname = p.className;
-                            if (cfunc(clname, target_name)) {
-                                if (p.dataset.is_hidden) return;
+                    for (const p of event.composedPath()) {
+                        const clname = p.className;
+                        if (cfunc(clname, target_name)) {
+                            if (p.dataset.is_hidden) return;
+                            const info = this.#utilities_module.get_up_video_info(p), vid = info?.bvid;
+                            if (vid) {
                                 this.#configs.hide_node(p);
                                 this.#configs.add_data_to_node_dataset(p, 'is_hidden', 1);
-                                const info = this.#utilities_module.get_up_video_info(p), vid = info.bvid;
-                                if (vid) {
-                                    if (ikey === 0) Dynamic_Variants_Manager.block_video(vid);
-                                    else if (ikey === 1) {
-                                        Dynamic_Variants_Manager.cache_block_videos.push(vid);
-                                        Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false);
-                                    }
-                                    this.#configs.delete_data_by_bvid(vid);
+                                if (ikey === 0) Dynamic_Variants_Manager.block_video(vid);
+                                else if (ikey === 1) {
+                                    Dynamic_Variants_Manager.cache_block_videos.push(vid);
+                                    Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false);
                                 }
-                                break;
+                                this.#configs.delete_data_by_bvid(vid);
                             }
-                            if (++i > 6) break;
+                            break;
                         }
-                    } catch (error) {
-                        console.error(error);
-                        GM_Objects.notification('some error cause on menus event', 'warning');
+                        if (++i > 6) break;
                     }
                 }, true);
             },
@@ -4124,6 +4123,19 @@
             },
             // space页面
             _space_module: {
+                _maintain() {
+                    const data = GM_Objects.get_value('block_ups', []);
+                    if (data.length > 1000) {
+                        const now = Date.now(), c = 1000 * 60 * 60 * 24, item = data.find(e => {
+                            const gap = (now - e.last_active_date) / c;
+                            if (gap > 120) {
+                                const vtimes = e.visited_times;
+                                return vtimes < 2 || (vtimes < 3 && gap > 180);
+                            }
+                        });
+                        if (item) Statics_Variant_Manager.up_part.unblock(item.mid);
+                    }
+                },
                 _create_button(mode) {
                     let button = document.createElement("button");
                     button.id = "AssistButton";
@@ -4162,6 +4174,7 @@
                     };
                 },
                 main() {
+                    this._maintain();
                     setTimeout(() => {
                         const title = document.title;
                         const up_name = title.split('的个人空间')[0];
@@ -4434,32 +4447,6 @@
             },
             // 首页
             _home_module: {
-                _maintain() {
-                    alert('the function has not been opened yet...');
-                    return;
-                    if (!confirm('data maintenance will take some time, start?')) return;
-                    Colorful_Console.print('data maintenance has started', 'info', true), GM_Objects.set_value('maintain', true);
-                    try {
-                        const data = GM_Objects.get_value('block_ups', []);
-                        if (data.length > 1500) {
-                            const now = Date.now();
-                            const tmp = data.filter(e => {
-                                const gap = (now - e.last_active_date) / 1000 / 60 / 60 / 24;
-                                if (gap > 210) return false;
-                                else if (gap > 150) {
-                                    const vtimes = e.visited_times;
-                                    return !(vtimes < 2 || (vtimes < 3 && gap > 180));
-                                }
-                                return true;
-                            });
-                            tmp.length < data.length && GM_Objects.set_value('block_ups', tmp);
-                        }
-                    } catch (error) {
-                        console.error(error);
-                        GM_Objects.set_value('maintain', false), Colorful_Console.print('data maintenance has been completed, close all pages to restart', 'info', true);
-                    }
-                    setTimeout(() => GM_Objects.window_close(), 5000);
-                },
                 _add_data_to_pocket: (data) => {
                     data && data.length > 0 && this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, data).then(() => {
                         Colorful_Console.print('add pocket successfully');
@@ -5187,7 +5174,6 @@
                         this._load_database();
                         this._search_data_monitor();
                     }, 5000);
-                    // GM_Objects.registermenucommand('maintain', this._maintain.bind(this));
                 }
             },
             /**
@@ -5246,20 +5232,19 @@
                 current_opacity: 0,
                 id_name: 'screen_shade_cover',
                 get opacity() {
-                    const h = new Date().getHours();
+                    const date = new Date(), h = date.getHours(), m = date.getMonth();
                     return h > 20
                         ? 0.55
                         : h < 7
                             ? 0.65
                             : h > 15
-                                ? h === 18
+                                ? m > 9 && h > 16 ? 0.35 : h === 18
                                     ? 0.35
                                     : h === 19
                                         ? 0.45
                                         : h === 20
                                             ? 0.5
-                                            : 0.3
-                                : 0.15;
+                                            : 0.3 : 0.15;
                 },
                 get shade_node() { return document.getElementById(this.id_name); },
                 /**
@@ -5579,13 +5564,9 @@
 
     // ----------------- 启动
     {
-        // 假如数据处于维护中, 就不执行脚本
-        if (GM_Objects.get_value('maintain', false)) Colorful_Console.print('data under maintenance, wait a moment', 'warning', true);
-        else {
-            const href = location.href, new_url = Bili_Optimizer.clear_track_tag(href);
-            // 清除直接访问链接带有的追踪参数
-            new_url.length !== href.length ? (window.location.href = new_url) : (new Bili_Optimizer(new_url)).start();
-        }
+        const href = location.href, new_url = Bili_Optimizer.clear_track_tag(href);
+        // 清除直接访问链接带有的追踪参数
+        new_url.length < href.length ? (window.location.href = new_url) : (new Bili_Optimizer(new_url)).start();
     }
     // 启动 -----------------
 })();
