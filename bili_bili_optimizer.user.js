@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.4.1
+// @version      3.4.2
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2624,10 +2624,10 @@
             }
             const lm = 30 * 60 * 1000, vs = this.#video_info.videos, duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
             duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
+                this.#record_id = null;
                 const id = this.#video_info.bvid;
                 Statics_Variant_Manager.add_visited_video(id);
                 this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
-                this.#record_id = null;
             }, duration > lm ? lm : duration);
         }
         // 侧边状态栏html
@@ -2651,11 +2651,11 @@
             } else if (target.nextElementSibling.id === 'status_sider_bar') target.nextElementSibling.remove();
             const vid = this.#video_info.bvid,
                 status_dic = {
-                    'Rate': Statics_Variant_Manager.rate_video_part.check_video_rate(vid),
-                    'Blocked': 0,
-                    'Bayesed': this.#added_bayes_list.includes(vid) ? 1 : 0,
-                    'Pocketed': await this.#db_instance.check('pocket_tb', vid) ? 1 : 0,
-                    'Downloaded': Statics_Variant_Manager.mark_download_video.check(vid) ? 1 : 0
+                    Rate: Statics_Variant_Manager.rate_video_part.check_video_rate(vid),
+                    Blocked: 0,
+                    Bayesed: this.#added_bayes_list.includes(vid) ? 1 : 0,
+                    Pocketed: await this.#db_instance.check(Indexed_DB.tb_name_dic.pocket, vid) ? 1 : 0,
+                    Downloaded: Statics_Variant_Manager.mark_download_video.check(vid) ? 1 : 0
                 };
             status_dic.Blocked = status_dic.Rate === 0 ? Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 1 : 0 : 0;
             setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)), 1500);
@@ -2880,7 +2880,7 @@
         #auto_light = {
             _light_off: false,
             _mode: GM_Objects.get_value('auto_light', 0),
-            _names: ['auto_light_off', 'always_light_off', 'disable_light_off'],
+            _names: ['auto', 'always', 'disable'],
             _mid: null,
             _create_menus() { this._mid = GM_Objects.registermenucommand(this._names[this._mode === 2 ? 0 : this._mode + 1], this._func.bind(this)); },
             _func() {
@@ -2903,10 +2903,8 @@
             main() {
                 let flag = false;
                 if (this._mode === 0) {
-                    const date = new Date();
-                    const m = date.getMonth() + 1;
-                    const h = date.getHours();
-                    flag = h > (m > 8 && m < 4 ? 16 : 17) || h < 7;
+                    const date = new Date(), m = date.getMonth() + 1, h = date.getHours();
+                    flag = h > (m > 8 || m < 4 ? 16 : 17) || h < 7;
                 } else if (this._mode === 1) flag = true;
                 this._monitor();
                 this._create_menus();
@@ -2914,7 +2912,7 @@
             }
         };
         // 判断浏览器是否支持urlchange事件
-        #check_support_urlchange() { return GM_Objects.supportonurlchange === null || (Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true), false); }
+        get #is_support_urlchange() { return GM_Objects.supportonurlchange === null || (Colorful_Console.print('browser does not support url_change event, please update browser', 'warning', true), false); }
         // 监听页面播放发生变化
         #url_change_monitor() {
             window.addEventListener('urlchange', (info) => {
@@ -2932,7 +2930,7 @@
             this.#url_change_monitor();
             // 创建下拉菜单
             this.#add_menus_element();
-            // 关灯控制
+            // 历史访问记录
             this.#visited_record();
             // 创建菜单事件
             this.#regist_menus_command();
@@ -2953,7 +2951,7 @@
                         this.#video_player = val;
                         // 必须回调, 等待对象内容赋值后才能捕获具体
                         setTimeout(() => {
-                            if (this.#check_support_urlchange()) {
+                            if (this.#is_support_urlchange) {
                                 // 尽快执行关灯的动作
                                 this.#auto_light.main() && this.light_control(1);
                                 // 创建视频播放事件或者是监听视频元素变化
@@ -2967,14 +2965,8 @@
                 });
             });
         }
-        /**
-         * @param {Object} data
-         * @param {boolean} user_is_login
-         */
-        constructor(data, user_is_login) {
-            this.#user_is_login = user_is_login;
-            this.#initial_flag = this.update_essential_info(data.upData, data.videoData);
-            // 监听视频信息更新, 需要等待信息更新完成才执行下一步
+        // 监听视频信息更新, 需要等待信息更新完成才执行下一步
+        #create_video_info_update_monitor() {
             let timeout_id = null;
             Object.defineProperty(this, 'video_info_update_flag', {
                 set: (val) => {
@@ -2989,6 +2981,15 @@
                 },
                 get() { }
             });
+        }
+        /**
+         * @param {Object} data
+         * @param {boolean} user_is_login
+         */
+        constructor(data, user_is_login) {
+            this.#user_is_login = user_is_login;
+            this.#initial_flag = this.update_essential_info(data.upData, data.videoData);
+            if (this.#initial_flag) this.#create_video_info_update_monitor();
         }
     }
     // ---------- 视频控制模块
@@ -3478,7 +3479,7 @@
                 const data = this.#configs.get_title_up_name(node);
                 ['title', 'up_name'].forEach(e => (info[e] = data[e].toLowerCase()));
                 // 检查是否存在空的数据, 假如为空, 则表明内容可能不是视频
-                return Object.values(info).every(e => e ? true : Colorful_Console.print(`less data: ${e}`, 'debug')) ? info : null;
+                return Object.entries(info).every(([k, v]) => v ? true : Colorful_Console.print(`less data: ${k}`, 'debug')) ? info : null;
             },
             /**
              * 将拦截对象的数据设置为空
@@ -4250,7 +4251,7 @@
                             }
                         }).observe(node, { childList: true, subtree: true });
                         // 页面已经基本载入完成
-                        setTimeout(() => (this._is_first_time = false), 550);
+                        setTimeout(() => (this._is_first_time = false), 1000);
                     },
                     // 超时不触发上面的事件监听则主动播放
                     _wait_switch() {
@@ -4434,9 +4435,9 @@
                                     const cache = this.#request_data_cache;
                                     if (cache) {
                                         // 将视频的顺序打乱, 洗牌算法
-                                        const shuffle_with_sort = (arr) => arr.sort(() => Math.random() - 0.5), sl = [3, 5, 10, 20][val - 2],
-                                            tmp = shuffle_with_sort(cache.filter(e => e.bvid !== 'BV1P5411T71D'));
-                                        const data = tmp.length > sl ? tmp.slice(0, sl).map(e => Data_Switch.video_to_home(e)).filter(e => e) : null;
+                                        const shuffle_with_sort = (arr) => arr.sort(() => Math.random() - 0.5), sl = [2, 3, 5, 6][val - 2],
+                                            tmp = shuffle_with_sort(cache.filter(e => e.bvid !== 'BV1P5411T71D')),
+                                            data = tmp.length > sl ? tmp.slice(0, sl).map(e => Data_Switch.video_to_home(e)).filter(e => e) : null;
                                         data && this.#indexeddb_instance.add('rec_video_tb', data).then(() => Colorful_Console.print('add rec_video_tb successfully'));
                                     }
                                 }, get: () => null
