@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.4.2
+// @version      3.4.3
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -569,13 +569,17 @@
          */
         batch_del_by_condition(table_name, condition_func, args) {
             return new Promise((resolve, reject) => {
+                let f = false;
                 const table = this.#get_table_obj(table_name, 'readwrite'), request = table.openCursor();
                 request.onsuccess = (e) => {
                     const cursor = e.target.result;
                     if (cursor) {
-                        condition_func(cursor.value, ...args) && table.delete(cursor.key);
+                        if (condition_func(cursor.value, ...args)) {
+                            f = true;
+                            table.delete(cursor.key);
+                        }
                         cursor.continue();
-                    } else resolve();
+                    } else resolve(f);
                 };
                 request.onerror = (e) => reject(this.#error_wrapper(e, 'batch delete error'));
             });
@@ -667,7 +671,7 @@
             const mt = -5;
             return `
                 <div
-                    id="${this.id_name}"
+                    id="${this._id_name}"
                     style="
                         background: darkgray;
                         text-align: justify;
@@ -1854,6 +1858,13 @@
         accumulative_total: GM_Objects.get_value('accumulative_total', 0),
         // 贝叶斯拦截的次数
         accumulative_bayes: GM_Objects.get_value('accumulative_bayes', 0),
+        add_block_data_for_db: (data, type) => {
+            const block_data_db = GM_Objects.get_value('block_data_db', []);
+            if (Array.isArray(data) || !block_data_db.some(e => e.data === data)) {
+                block_data_db.push({ data: data, type: type });
+                GM_Objects.set_value('block_data_db', block_data_db);
+            }
+        },
         // 统计拦截的up的情况
         _block_up_statistics() {
             // 对拦截次数进行排序
@@ -2131,6 +2142,7 @@
                 this.rate_visited_data_sync({ type: 'remove', value: bvid });
             }
             this.has_checked_videos.remove(bvid);
+            this.add_block_data_db(bvid, 'bvid');
             Colorful_Console.print(`add video to block_video list: ${bvid}`);
         },
         // 累积拦截计数记录
@@ -2149,11 +2161,13 @@
             // 检查评分函数
             o.check_rate = function (id) { return this.includes_r(id)?.rate || 0; };
             // 添加函数
-            o.add = function (info) {
+            o.add = function (info, is_force) {
                 const bvid = info.bvid, data = this.find(e => e.bvid === bvid);
                 if (data && data.rate !== info.rate) {
-                    data.rate = info.rate;
-                    data.last_active_date = info.last_active_date;
+                    if (is_force) {
+                        data.rate = info.rate;
+                        data.last_active_date = info.last_active_date;
+                    } else return false;
                 } else if (!data) this.push(info);
                 else return false;
                 return true;
@@ -2177,7 +2191,10 @@
             // 全局启用, 关键词过滤
             this.black_keys._main();
             this.black_keys.a.includes_r = includes_r.call(this.black_keys.a, false), this.black_keys.b.includes_r = includes_r.call(this.black_keys.b, false);
-            if (site_id > 2) return;
+            if (site_id > 2) {
+                if (site_id !== 3) this.add_block_data_for_db = (..._args) => null;
+                return;
+            }
             this.cache_block_ups = [], this.cache_block_ups.includes_r = includes_r.call(this.cache_block_ups, true, 'mid');
             this.cache_block_videos = [], this.cache_block_videos.includes_r = includes_r.call(this.cache_block_videos, true);
             this.block_ups = this.initial_block_ups();
@@ -2189,6 +2206,7 @@
             };
             // 评分信息仅在搜索的页面启用, 播放页不需要, 播放页只需要执行一次, 放置于静态数据管理模块
             if (site_id === 2) this.rate_videos = this.initial_rate_videos();
+            else this.add_block_data_for_db = (..._args) => null;
             if (site_id !== 1) this.visited_videos = this.initial_visited_videos();
             this.initial_session_visited_videos().then((tab) => {
                 this.session_visited_videos = tab?.session_visited_videos || [];
@@ -2243,6 +2261,7 @@
             block(info) {
                 const data = this._data, mid = info.mid;
                 if (data.some(e => e.mid === mid)) return;
+                Dynamic_Variants_Manager.add_block_data_for_db(mid, 'mid');
                 data.push(info), this._info_write(data, mid, true), Dynamic_Variants_Manager.up_video_sync('block', 'up', info);
             },
         },
@@ -2266,11 +2285,11 @@
              * 更新, 全新添加
              * @param {object} info
              */
-            add(info) { this._handle(info, true, info.bvid); },
+            add(info, is_force = true) { this._handle(info, true, info.bvid, is_force); },
             remove(bvid) { this._handle(bvid, false, bvid); },
-            _handle(data, mode, bvid) {
+            _handle(data, mode, bvid, is_force) {
                 const arr = this._data, s_type = mode ? 'add' : 'remove';
-                arr[s_type](data) && (this._info_write(arr, bvid, s_type), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
+                (mode ? arr.add(data, is_force) : arr.remove(data)) && (this._info_write(arr, bvid, s_type), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
             },
             _info_write(data, bvid, s_type, no_write = false) { GM_Objects.set_value('rate_videos', data, true), !no_write && Colorful_Console.print(`${bvid}, successfully ${s_type} bvid to rate_videos`); }
         },
@@ -2422,6 +2441,11 @@
                             ['w', 'white', '添加文本到贝叶斯白名单', '主页, 搜索'],
                             ['a', 'add', '添加拦截关键词', '主页, 搜索'],
                             ['r', 'remove', '移除拦截关键', '主页, 搜索'],
+                            ['f', 'refresh', '刷新页面', '主页'],
+                            ['0-9', '', '打开顶端页面视频', '主页'],
+                            ['h', 'history', '打开历史记录', '主页'],
+                            ['1-3', 'rate', '快捷评分', '视频'],
+                            ['o', '', '添加视频到稍后再看列表', '视频'],
                             ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
                             ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
                             ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
@@ -2565,15 +2589,16 @@
                 target.playbackRate !== this.#video_speed && setTimeout(() => { target.playbackRate = this.#video_speed; }, 3000);
             };
             // 当观看完整, 删除收藏;
-            this.#video_player.mediaElement().onended = () => {
-                const i = this.#video_info.videos, id = this.#video_info.bvid;
-                (i === 1 || GM_Objects.window.__INITIAL_STATE__.p === i) && this.#db_instance.delete(Indexed_DB.tb_name_dic.pocket, id);
-                if (this.end_and_add_flag && !this.#menus_funcs.rec_list.includes(id)) {
-                    this.#menus_funcs.rec_list.push(id);
-                    this.add_related_video_flag = 2;
-                    this.end_and_add_flag = false;
-                }
-            };
+            this.#video_player.mediaElement().onended = () => this.#end_action();
+        }
+        #end_action() {
+            const i = this.#video_info.videos, id = this.#video_info.bvid;
+            if (this.end_and_add_flag && !this.#menus_funcs.rec_list.includes(id) && GM_Objects.window.__INITIAL_STATE__.p === i) {
+                this.#db_instance.delete(Indexed_DB.tb_name_dic.pocket, id);
+                this.#menus_funcs.rec_list.push(id);
+                this.add_related_video_flag = 2;
+                this.end_and_add_flag = false;
+            }
         }
         // 在不登陆的状态下, 切换不同的视频导致原来的video标签失效
         #video_element_change_monitor() {
@@ -2619,16 +2644,26 @@
         // 历史访问记录
         #visited_record() {
             if (this.#record_id) {
-                clearTimeout(this.#record_id);
+                clearInterval(this.#record_id);
                 this.#record_id = null;
             }
-            const lm = 30 * 60 * 1000, vs = this.#video_info.videos, duration = this.#video_info.duration * (vs > 1 ? 1000 / vs : 500);
-            duration === 0 ? Colorful_Console.print('video duration exceptions', 'warning') : this.#record_id = setTimeout(() => {
-                this.#record_id = null;
-                const id = this.#video_info.bvid;
-                Statics_Variant_Manager.add_visited_video(id);
-                this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
-            }, duration > lm ? lm : duration);
+            const lm = 60 * 60 * 1000,
+                vs = this.#video_info.videos,
+                duration = this.#video_info.duration * (vs > 1 ? (1000 / vs) : 1000);
+            let ic = 0, f = true;
+            this.#record_id = setInterval(() => {
+                if (this.#video_player.isPaused()) return;
+                if (++ic > 15 && f) {
+                    const id = this.#video_info.bvid;
+                    Statics_Variant_Manager.add_visited_video(id);
+                    this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
+                    f = false;
+                } else if (ic > 35) {
+                    clearInterval(this.#record_id);
+                    this.#record_id = null;
+                    this.#end_action();
+                }
+            }, parseInt((duration > lm ? lm : duration) / 40));
         }
         // 侧边状态栏html
         #get_sider_status_html(status_dic) {
@@ -2726,7 +2761,7 @@
                 this.add_related_video_flag = val;
             },
             // 添加评分
-            _add_rate: (val, video_info, is_key_send) => {
+            _add_rate: (val, video_info, is_key_send, is_force) => {
                 const id = video_info.bvid;
                 if (!id) {
                     Colorful_Console.print('fail to get bvid', 'warning', true);
@@ -2743,7 +2778,7 @@
                     add_date: now,
                     rate: val
                 };
-                Statics_Variant_Manager.rate_video_part.add(info);
+                Statics_Variant_Manager.rate_video_part.add(info, is_force);
                 // 假如评分的视频是拦截的视频, 则取消拦截
                 Dynamic_Variants_Manager.unblock_video(id);
                 if (!is_key_send && !this.#added_bayes_list.includes(id) && (val === 5 || confirm("add to whitelist of bayes model?"))) {
@@ -2757,7 +2792,7 @@
             // 2 4分
             // 3 5分
             // 7 bbdown, 下载视频
-            _other(val, video_info, is_key_send) {
+            _other(val, video_info, is_key_send, is_force) {
                 const dic = {};
                 if (val === 7) {
                     if (confirm('mark video as downloaded?')) {
@@ -2767,7 +2802,7 @@
                     val = 3;
                 } else {
                     val += 2;
-                    const i = this._add_rate(val, video_info, is_key_send);
+                    const i = this._add_rate(val, video_info, is_key_send, is_force);
                     if (i > 0) {
                         dic.Rate = val;
                         dic.Blocked = 0;
@@ -2799,14 +2834,14 @@
                 }
                 return false;
             },
-            main(val, video_info, is_key_send = false) {
+            main(val, video_info, is_key_send = false, is_force = true) {
                 const f = this[val];
                 // 注意this的丢失, 函数在赋值之后
-                return f ? f.call(this, video_info) : this._other(val, video_info, is_key_send);
+                return f ? f.call(this, video_info) : this._other(val, video_info, is_key_send, is_force);
             }
         };
         // 键盘控制评分
-        key_rate_video(val) { this.#menus_funcs.main(val, this.#video_info, true); }
+        key_rate_video(val, is_force = true) { this.#menus_funcs.main(val, this.#video_info, true, is_force); }
         // 添加评分菜单
         get #select_element() { return document.getElementById('selectWrap').getElementsByTagName('select')[0]; }
         #add_menus_element() {
@@ -2863,8 +2898,8 @@
          * @param {boolean} mode
          */
         voice_control(mode) {
-            let vx = this.#video_player.getVolume(), v = vx;
-            v !== (vx = mode ? (vx += 0.1) > 1 ? 1 : vx : (vx -= 0.1) < 0 ? 0 : vx) && this.#video_player.setVolume(vx);
+            const vx = this.#video_player.getVolume() + (mode ? 0.1 : -0.1);
+            this.#video_player.setVolume(vx > 1 ? 1 : vx < 0 ? 0 : vx);
         }
         // 播放控制
         play_control() { this.#video_player.isPaused() ? this.#video_player.play() : this.#video_player.pause(); }
@@ -3096,7 +3131,7 @@
                         this.#fill_home_videos.push(...results);
                     }
                     if (!results || results.length < 10) {
-                        const rec = await this.#indexeddb_instance.batch_get_by_condition(recommend, (..._args) => Math.ceil(Math.random() * 10000) % 2 === 0, []);
+                        const rec = await this.#indexeddb_instance.batch_get_by_condition(recommend, (..._args) => Math.ceil(Math.random() * 10000) % 11 === 0, []);
                         if (rec) {
                             rec.forEach(e => (e.source = 2));
                             this.#fill_home_videos.push(...rec);
@@ -4473,6 +4508,18 @@
                         Colorful_Console.print(`clear ${e} successfully`);
                         GM_Objects.set_value('clear_database_time', n);
                     }));
+                    const block_data_db = GM_Objects.get_value('block_data_db', []);
+                    if (block_data_db.length > 0) {
+                        const { bvid, mid, key } = block_data_db.reduce((acc, cur) => {
+                            if (acc[cur.name]) acc[cur.name].push(cur.data);
+                            else acc[cur.name] = [cur.data];
+                            return acc;
+                        }, {});
+                        key && this.#configs.delete_data_by_keyword([...new Set(key.reduce((acc, cur) => acc.concat(cur), []))], false);
+                        bvid && this.#configs.delete_data_by_bvid(bvid, false);
+                        mid && this.#configs.delete_data_by_mid(mid, false);
+                        setTimeout(() => GM_Objects.set_value('block_data_db', []), 1500);
+                    }
                 },
                 _time_module: {
                     /*
@@ -5429,29 +5476,47 @@
                         f && Colorful_Console.print(`delete data ${Array.isArray(args) ? args.join(';') : args} from cache`);
                     }
                 },
-                delete_data_by_bvid: (bvid) => {
+                /**
+                 * @param {string | Array} bvid
+                 * @param {boolean} is_dele_cache
+                 */
+                delete_data_by_bvid: (bvid, is_dele_cache = true) => {
+                    const is_array = Array.isArray(bvid);
                     if (this.#indexeddb_instance) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
-                        [recommend, pocket].forEach(tb => this.#indexeddb_instance.delete(tb, bvid).then(() => Colorful_Console.print(`delete ${bvid} from ${tb}`)));
+                        [recommend, pocket].forEach(tb => this.#indexeddb_instance.delete(tb, bvid).then(() => Colorful_Console.print(`delete ${is_array ? bvid.join(';') : bvid} from ${tb}`)));
                     } else Statics_Variant_Manager.watch_later.remove(bvid);
-                    this.#configs._dele_cache(bvid, (e, bvid) => e.bvid === bvid, true);
+                    is_dele_cache && this.#configs._dele_cache(bvid, is_array ? (e, data) => data.includes(e.bvid) : (e, bvid) => e.bvid === bvid, true);
                 },
-                delete_data_by_mid: (mid) => {
+                /**
+                 * @param {number | Array} mid
+                 * @param {boolean} is_dele_cache
+                 */
+                delete_data_by_mid: (mid, is_dele_cache = true) => {
+                    const is_array = Array.isArray(mid);
                     if (this.#indexeddb_instance) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
-                        [recommend, pocket].forEach(tb => this.#indexeddb_instance.batch_del_by_condition(tb, (value, mid) => value.owner.mid === mid, [mid]).then(() => Colorful_Console.print(`delete ${mid} from ${tb}`)));
+                        [recommend, pocket].forEach(tb => this.#indexeddb_instance.batch_del_by_condition(tb, is_array ? (value, data) => data.includes(value.owner.mid) : (value, mid) => value.owner.mid === mid, [mid])
+                            .then((r) => r && Colorful_Console.print(`delete ${is_array ? mid.join(';') : mid} from ${tb}`)));
                     } else Statics_Variant_Manager.watch_later.remove(mid, 'mid');
-                    this.#configs._dele_cache(mid, (e, mid) => (e.mid || e.owner?.mid) === mid);
+                    is_dele_cache && this.#configs._dele_cache(mid, (e, mid) => (e.mid || e.owner?.mid) === mid);
                 },
-                delete_data_by_keyword: (keys) => {
+                /**
+                 * @param {Array} keys
+                 * @param {boolean} is_dele_cache
+                 */
+                delete_data_by_keyword: (keys, is_dele_cache = true) => {
                     if (this.#indexeddb_instance) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
                         [recommend, pocket].forEach(tb => this.#indexeddb_instance.batch_del_by_condition(tb, (value, keys) => {
                             const title = value.title, name = value.owner.name;
                             return keys.some(e => title.includes(e) || name.includes(e));
-                        }, [keys]).then(() => Colorful_Console.print(`delete blackkey from ${tb}`)));
-                    } else Statics_Variant_Manager.watch_later.remove(mid, 'mid');
-                    this.#configs._dele_cache(keys, (e, keys) => {
+                        }, [keys]).then((r) => r && Colorful_Console.print(`delete blackkey from ${tb}`)));
+                    } else {
+                        Dynamic_Variants_Manager.add_block_data_for_db(keys, 'key');
+                        Statics_Variant_Manager.watch_later.remove(keys, 'key');
+                    }
+                    is_dele_cache && this.#configs._dele_cache(keys, (e, keys) => {
                         const title = e.title, name = e.author || e.owner?.name || '';
                         return keys.some(e => title.includes(e) || name.includes(e));
                     });
@@ -5486,7 +5551,7 @@
                 check_other_requets: this.#user_is_login ? (url) => {
                     const api_prefix = this.#configs.interpose_api_prefix, i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
                     if (i < 0) return url.includes(api_prefix + 'web-show/res/locs?');
-                    else this.#video_instance.key_rate_video(i + 1);
+                    else this.#video_instance.key_rate_video(i + 1, false);
                 } : (url) => url.includes(this.#configs.interpose_api_prefix + 'web-show/res/locs?'),
                 fake_login_info: {
                     "code": 0,
