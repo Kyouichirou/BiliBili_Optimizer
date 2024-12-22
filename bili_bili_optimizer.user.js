@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.4.3
+// @version      3.5.0
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2142,7 +2142,7 @@
                 this.rate_visited_data_sync({ type: 'remove', value: bvid });
             }
             this.has_checked_videos.remove(bvid);
-            this.add_block_data_db(bvid, 'bvid');
+            this.add_block_data_for_db(bvid, 'bvid');
             Colorful_Console.print(`add video to block_video list: ${bvid}`);
         },
         // 累积拦截计数记录
@@ -2539,6 +2539,10 @@
         add_related_video_flag = 0;
         // 是否结束并添加侧边栏的视频到数据库, 第一次播放允许添加, 以及手动点击的播放
         end_and_add_flag = true;
+        // 播放进度记录, 播放完成一半则将视频视作已经观看, 当完成80%则将视频视作已经完整观看
+        #record_limits = [15, 32];
+        // 播放是否需要停止, 用于非登陆环境, 等待视频清晰度切换完成
+        #is_need_stop = false;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2570,8 +2574,6 @@
          */
         set download_video_path(path) { this.#download_video_path = path, GM_Objects.set_value('download_video_path', path); }
         get download_video_path() { return this.#download_video_path; }
-        // 播放事件
-        #is_need_stop = false;
         #create_video_event() {
             this.#video_player.mediaElement().oncanplay = (e) => {
                 // 只有当手动更改之后, 才会自动变速
@@ -2590,6 +2592,12 @@
             };
             // 当观看完整, 删除收藏;
             this.#video_player.mediaElement().onended = () => this.#end_action();
+            // 和速度同步变化监听
+            const record_limits = [15, 32];
+            this.#video_player.mediaElement().onratechange = (e) => {
+                const pr = e.target.playbackRate;
+                this.#record_limits = record_limits.map(e => parseInt(e / pr));
+            };
         }
         #end_action() {
             const i = this.#video_info.videos, id = this.#video_info.bvid;
@@ -2653,16 +2661,17 @@
             let ic = 0, f = true;
             this.#record_id = setInterval(() => {
                 if (this.#video_player.isPaused()) return;
-                if (++ic > 15 && f) {
+                if (f && ic > this.#record_limits[0]) {
                     const id = this.#video_info.bvid;
                     Statics_Variant_Manager.add_visited_video(id);
                     this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
                     f = false;
-                } else if (ic > 35) {
+                } else if (ic > this.#record_limits[1]) {
                     clearInterval(this.#record_id);
                     this.#record_id = null;
                     this.#end_action();
                 }
+                ic++;
             }, parseInt((duration > lm ? lm : duration) / 40));
         }
         // 侧边状态栏html
@@ -2984,6 +2993,9 @@
                     get: () => this.#video_player,
                     set: (val) => {
                         this.#video_player = val;
+                        Object.defineProperty(val, 'player', {
+
+                        });
                         // 必须回调, 等待对象内容赋值后才能捕获具体
                         setTimeout(() => {
                             if (this.#is_support_urlchange) {
@@ -4150,12 +4162,8 @@
                     { table_name: Indexed_DB.tb_name_dic.recommend, key_path: 'bvid' },
                     { table_name: Indexed_DB.tb_name_dic.history, key_path: 'bvid' },
                     { table_name: Indexed_DB.tb_name_dic.pocket, key_path: 'bvid' }
-                ];
-                const db = new Indexed_DB('mybili', tables);
-                db.initialize().then(() => {
-                    this.#indexeddb_instance = db;
-                    Colorful_Console.print('indexeddb, init successfully!');
-                });
+                ], db = new Indexed_DB('mybili', tables);
+                db.initialize().then(() => ((this.#indexeddb_instance = db), Colorful_Console.print('indexeddb, init successfully!')));
             },
             // space页面
             _space_module: {
@@ -4478,8 +4486,11 @@
                                 }, get: () => null
                             }
                         });
+                    } else {
+                        const bvid = Base_Info_Match.get_bvid(location.href);
+                        this.#indexeddb_instance ? this.#configs.delete_data_by_bvid(bvid, false) : Dynamic_Variants_Manager.add_block_data_for_db(bvid, 'bvid');
                     }
-                }, 3500)
+                }, 2500)
             },
             // 首页
             _home_module: {
@@ -4491,7 +4502,25 @@
                 },
                 _search_data_monitor() { GM_Objects.addvaluechangeistener('pocket', ((...args) => this._add_data_to_pocket(args[2])).bind(this)); },
                 _load_database: () => {
-                    this.#configs.get_mybili_data();
+                    // 每三天检查清除掉超过7天的旧数据
+                    const { recommend, pocket } = Indexed_DB.tb_name_dic, t = GM_Objects.get_value('clear_database_time', 0),
+                        n = Date.now(), d = 1000 * 24 * 60 * 60;
+                    ((n - t) > 3 * d) && [recommend, pocket].forEach(e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(() => {
+                        Colorful_Console.print(`clear ${e} successfully`);
+                        GM_Objects.set_value('clear_database_time', n);
+                    }));
+                    const block_data_db = GM_Objects.get_value('block_data_db', []);
+                    if (block_data_db.length > 0) {
+                        const { bvid, mid, key } = block_data_db.reduce((acc, cur) => {
+                            if (acc[cur.type]) acc[cur.type].push(cur.data);
+                            else acc[cur.type] = [cur.data];
+                            return acc;
+                        }, {});
+                        key && this.#configs.delete_data_by_keyword([...new Set(key.reduce((acc, cur) => acc.concat(cur), []))], false);
+                        bvid && this.#configs.delete_data_by_bvid(bvid, false);
+                        mid && this.#configs.delete_data_by_mid(mid, false);
+                        setTimeout(() => GM_Objects.set_value('block_data_db', []), 1500);
+                    }
                     // 当登陆的时候获取up的动态更新
                     if (this.#user_is_login) {
                         // 每三个小时更新一次
@@ -4502,24 +4531,7 @@
                             GM_Objects.set_value('dynamic_update_time', n);
                         });
                     }
-                    // 每三天检查清除掉超过7天的旧数据
-                    const { recommend, pocket } = Indexed_DB.tb_name_dic, t = GM_Objects.get_value('clear_database_time', 0), n = Date.now(), d = 1000 * 24 * 60 * 60;
-                    ((n - t) > 3 * d) && [recommend, pocket].forEach(e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(() => {
-                        Colorful_Console.print(`clear ${e} successfully`);
-                        GM_Objects.set_value('clear_database_time', n);
-                    }));
-                    const block_data_db = GM_Objects.get_value('block_data_db', []);
-                    if (block_data_db.length > 0) {
-                        const { bvid, mid, key } = block_data_db.reduce((acc, cur) => {
-                            if (acc[cur.name]) acc[cur.name].push(cur.data);
-                            else acc[cur.name] = [cur.data];
-                            return acc;
-                        }, {});
-                        key && this.#configs.delete_data_by_keyword([...new Set(key.reduce((acc, cur) => acc.concat(cur), []))], false);
-                        bvid && this.#configs.delete_data_by_bvid(bvid, false);
-                        mid && this.#configs.delete_data_by_mid(mid, false);
-                        setTimeout(() => GM_Objects.set_value('block_data_db', []), 1500);
-                    }
+                    this.#configs.get_mybili_data();
                 },
                 _time_module: {
                     /*
