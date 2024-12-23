@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.0
+// @version      3.5.1
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -1256,8 +1256,7 @@
          */
         #cal_bayes(w_pro, b_pro, content) {
             if (content.length < this.#content_len_limit) return -1;
-            const c = Object.entries(this.#word_counter(this.#seg_word(content)));
-            const i = c.length;
+            const c = Object.entries(this.#word_counter(this.#seg_word(content))), i = c.length;
             if (i < this.#configs.feature_length_limit) return -1;
             // 预先计算部分数值
             const { w_t, b_t, w_1, b_1 } = this.#pre_cal_data, sweight = this.#configs.single_weight, alpha = this.#configs.alpha, [bp, wp] = c.reduce((acc, cur) => {
@@ -1285,8 +1284,8 @@
                 Colorful_Console.print('the length of input is less than 7, check your input', 'warning', true);
                 return;
             }
-            const ws = this.#seg_word(content);
-            const [dic, dic_name, len_name, len_data, target] = mode ? [this.#bayes_white_counter, 'bayes_white_counter', 'bayes_white_len', ++this.#bayes_white_len, 'white'] : [this.#bayes_black_counter, 'bayes_black_counter', 'bayes_black_len', ++this.#bayes_black_len, 'black'];
+            const ws = this.#seg_word(content),
+                [dic, dic_name, len_name, len_data, target] = mode ? [this.#bayes_white_counter, 'bayes_white_counter', 'bayes_white_len', ++this.#bayes_white_len, 'white'] : [this.#bayes_black_counter, 'bayes_black_counter', 'bayes_black_len', ++this.#bayes_black_len, 'black'];
             ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
             this.#bayes_total_len += 1;
             GM_Objects.set_value(dic_name, dic);
@@ -1295,7 +1294,7 @@
             this.#update_paramters();
             // 触发重新加载
             this.#trigger_reload(1);
-            Colorful_Console.print(`successfully add content to bayes ${target} list`);
+            Colorful_Console.print(`successfully add content "${content}" to bayes ${target} list`);
         }
         /**
          * 重置模型
@@ -1485,7 +1484,7 @@
          * @param {Array} data
          * @param {number} limit
          */
-        constructor(data, limit) {
+        constructor(data, limit = 999) {
             if (typeof data !== 'object') super();
             else {
                 super(...data);
@@ -2015,8 +2014,7 @@
         _rate_up_status_write_monitor() {
             let up_times = 0, rate_times = 0, tmp = null;
             const write_data = (mode = false) => {
-                const i = mode ? 0 : 4;
-                const x = up_times > i ? rate_times > i ? 3 : 1 : rate_times > i ? 2 : 0;
+                const i = mode ? 0 : 4, x = up_times > i ? rate_times > i ? 3 : 1 : rate_times > i ? 2 : 0;
                 switch (x) {
                     case 3:
                         GM_Objects.set_value('block_ups', this.block_ups, true);
@@ -2043,8 +2041,8 @@
                 },
                 get: () => tmp
             });
-            // 每6秒检查数据的状态, 假如数据变化则写入
-            setInterval(() => write_data(true), 6666);
+            // 每15秒检查数据的状态, 假如数据变化则写入
+            setInterval(() => write_data(true), 15);
         },
         up_video_data_sync_info: null,
         // 数据同步监听
@@ -2446,6 +2444,7 @@
                             ['h', 'history', '打开历史记录', '主页'],
                             ['1-3', 'rate', '快捷评分', '视频'],
                             ['o', '', '添加视频到稍后再看列表', '视频'],
+                            ['alt', '鼠标右键(鼠标放置在需要操作元素上, cent浏览器需要关闭冲突快捷键)', '移除视频(不添加保存, 但从数据库中移除)', '首页'],
                             ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
                             ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
                             ['ctrl', '鼠标正常点击', '自动控制视频加速', '主页, 搜索']
@@ -3049,9 +3048,7 @@
         #configs = null;
         #card_data = null;
         // 请求数据缓存
-        #request_data_cache = null;
-        // 初始化页面缓存
-        #initial_cache = null;
+        #web_data_cache = null;
         // 视频模块
         #video_instance = null;
         // web api请求实例
@@ -3106,7 +3103,7 @@
                         const v = Dynamic_Variants_Manager.check_visited_video(e.bvid);
                         return v > 0 ? v : null;
                     }) : Colorful_Console.print('initial_data object api has changed in home page.', 'crash', true);
-                    this.#initial_cache = data;
+                    this.#web_data_cache = data;
                     return new_data;
                 },
                 /**
@@ -3132,7 +3129,7 @@
                             this.#card_data.push([id, 0, Dynamic_Variants_Manager.check_visited_video(id)]);
                         }
                     });
-                    this.#request_data_cache = data;
+                    this.#web_data_cache = data;
                 },
                 get_mybili_data: async () => {
                     // 首先获取数据库的数据
@@ -3201,12 +3198,12 @@
                     }
                 },
                 watch_later: (url, node) => {
-                    const id = Base_Info_Match.get_bvid(url), data = (this.#request_data_cache || this.#initial_cache)?.find(e => e && e.bvid == id && !e.add_time);
+                    const bvid = Base_Info_Match.get_bvid(url), data = this.#web_data_cache?.find(e => e && e.bvid == bvid && !e.add_time);
                     // 首页滚动下拉, 假如一直保存缓存占用很大, 改用请求数据的方式返回数据
-                    data ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, data).then(() => this.#configs.control_tips(id, node)) :
-                        this.#web_request_instance.get_video_base_info(id).then(data => {
+                    data ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, data).then(() => this.#configs.control_tips(bvid, node)) :
+                        this.#web_request_instance.get_video_base_info(bvid).then(data => {
                             const t = Data_Switch.base_video_info_to_home(data);
-                            t ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, t).then(() => this.#configs.control_tips(id, node)) : Colorful_Console.print('fail to switch data to home module', 'crash', true);
+                            t ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, t).then(() => this.#configs.control_tips(bvid, node)) : Colorful_Console.print('fail to switch data to home module', 'crash', true);
                         }).catch(() => Colorful_Console.print('watch_later: get_video_base_info error', 'crash', true));
                 },
                 keydown_action: {
@@ -3273,7 +3270,7 @@
                             n = data.filter((_v, i) => !tmp[i]), limit = data.length,
                             new_arr = n.length < limit ? [...n, ...new Array(limit).fill(m)].slice(0, limit) : n;
                         val.related = new_arr;
-                        this.#request_data_cache = new_arr;
+                        this.#web_data_cache = new_arr;
                         return tmp;
                     } else Colorful_Console.print('initial_data object api has changed in video page.', 'crash', true);
                 },
@@ -3311,7 +3308,7 @@
                     }
                     let results = null;
                     // 缓存的数据
-                    const cache_results = this.#request_data_cache;
+                    const cache_results = this.#web_data_cache;
                     // 已经取得目标数组
                     if (Array.isArray(data)) {
                         if (cache_results) {
@@ -3329,7 +3326,7 @@
                         results = this.#configs.request_data_handler(data.Related, this.#configs.pre_data_check);
                         response_content.data.Related = results;
                     }
-                    this.#request_data_cache = results;
+                    this.#web_data_cache = results;
                 } : null,
                 contextmenu_handle: (classname, target_name) => classname === target_name,
                 click_action: (event_path) => {
@@ -3386,7 +3383,7 @@
                             v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(vid);
                             return ((v_r.r !== 0 || v_r.v !== 0) ? v_r : null);
                         }) : Colorful_Console.print('initial_data object api has changed in search page.', 'crash', true);
-                    this.#initial_cache = data;
+                    this.#web_data_cache = data;
                     return new_data;
                 },
                 add_state_to_node(node, v_r) {
@@ -3416,7 +3413,7 @@
                         v_r.r = Dynamic_Variants_Manager.rate_videos.check_rate(vid);
                         return ((v_r.r !== 0 || v_r.v !== 0) ? v_r : null);
                     });
-                    this.#request_data_cache = data;
+                    this.#web_data_cache = data;
                 },
                 get_title_up_name: (node) => this.#site_configs.home.get_title_up_name(node),
                 handle_fetch_url: (url) => {
@@ -3467,11 +3464,10 @@
                     }
                 },
                 watch_later: (url, node) => {
-                    const id = Base_Info_Match.get_bvid(url), data = (this.#request_data_cache || this.#initial_cache)?.find(e => e && e.bvid == id);
-                    const module = data ? Data_Switch.search_to_home(data) : null;
+                    const bvid = Base_Info_Match.get_bvid(url), data = this.#web_data_cache?.find(e => e && e.bvid == bvid), module = data ? Data_Switch.search_to_home(data) : null;
                     if (module) {
                         Statics_Variant_Manager.watch_later.add(module);
-                        this.#configs.control_tips(id, node);
+                        this.#configs.control_tips(bvid, node);
                     } else Colorful_Console.print('can not find data for watch later in search', 'warning');
                 }
             },
@@ -3591,7 +3587,7 @@
             // 由于事件是由于document.body所创建, 通过window/document无法直接拦截到
             // 但是document.body要等待body元素的载入, 需要监听body载入的事件颇为麻烦(无法准确及时进行)
             // 通过原型链就可以精确执行拦截的操作
-            _disable_body_contextmenu_event() { this.__proxy(HTMLBodyElement.prototype, 'addEventListener', { apply(...args) { (args.length !== 3 || args[2]?.[0] !== 'contextmenu') && Reflect.apply(...args); } }); },
+            _disable_body_contextmenu_event() { this.__proxy(HTMLBodyElement.prototype, 'addEventListener', { apply(...args) { args[2]?.[0] !== 'contextmenu' && Reflect.apply(...args); } }); },
             // 顶部检索框点击/回车, 操作方式均为window.open(url), 只需要拦截这个函数就可以拦截所有的这些操作
             _search_box_clear() {
                 this.__proxy(GM_Objects.window, 'open', {
@@ -4035,6 +4031,7 @@
              */
             _traversal_video_card: (target, datalist) => datalist && setTimeout(() => {
                 if (datalist.length === 0) return;
+                // 搜索页中存在两个部分的数据, 只取下面的部分
                 const parent_class = this.#configs.parent_class;
                 if (parent_class) {
                     const parent_nodes = document.getElementsByClassName(parent_class), i = parent_nodes.length;
@@ -4468,20 +4465,21 @@
                         Object.defineProperties(this.#video_instance, {
                             // 当监听到url发生改变, 清空缓存
                             // 因为存在多次重复请求数据, 所以需要保持这个缓存
+                            // 需要注意, 当页面切换时, 缓存需要清空
                             url_has_changed: {
-                                set: (_val) => (this.#request_data_cache = null),
+                                set: (_val) => (this.#web_data_cache = null),
                                 get: () => null
                             },
                             add_related_video_flag: {
                                 set: (val) => {
                                     if (val === 0) return;
-                                    const cache = this.#request_data_cache;
+                                    const cache = this.#web_data_cache;
                                     if (cache) {
                                         // 将视频的顺序打乱, 洗牌算法
                                         const shuffle_with_sort = (arr) => arr.sort(() => Math.random() - 0.5), sl = [2, 3, 5, 6][val - 2],
                                             tmp = shuffle_with_sort(cache.filter(e => e.bvid !== 'BV1P5411T71D')),
                                             data = tmp.length > sl ? tmp.slice(0, sl).map(e => Data_Switch.video_to_home(e)).filter(e => e) : null;
-                                        data && this.#indexeddb_instance.add('rec_video_tb', data).then(() => Colorful_Console.print('add rec_video_tb successfully'));
+                                        data && this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.recommend, data).then(() => Colorful_Console.print('add rec_video_tb successfully'));
                                     }
                                 }, get: () => null
                             }
@@ -5460,7 +5458,7 @@
                  * @param {Function} func
                  */
                 _dele_cache: (args, func, is_bvid = false) => {
-                    const data = this.#request_data_cache || this.#initial_cache;
+                    const data = this.#web_data_cache;
                     if (data) {
                         let f = false;
                         if (is_bvid) {
