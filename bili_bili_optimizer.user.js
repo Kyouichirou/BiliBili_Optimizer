@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.1
+// @version      3.5.2
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -13,6 +13,7 @@
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
 // @match        https://search.bilibili.com/*
+// @match        https://message.bilibili.com/*
 // @connect      files.superbed.cn
 // @connect      8.z.wiki
 // @connect      wkphoto.cdn.bcebos.com
@@ -3879,7 +3880,6 @@
                     if (url) {
                         const href = get_cure_href(url);
                         event.ctrlKey && GM_Objects.set_value('speed_up_video', true);
-                        this.#indexeddb_instance?.delete(Indexed_DB.tb_name_dic.recommend, Base_Info_Match.get_bvid(href));
                         if (target === '_blank') GM_Objects.openintab(href, { insert: 1, active: true });
                         else window.location.href = href;
                     }
