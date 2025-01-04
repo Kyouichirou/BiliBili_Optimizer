@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.2
+// @version      3.5.3
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -3201,11 +3201,13 @@
                 watch_later: (url, node) => {
                     const bvid = Base_Info_Match.get_bvid(url), data = this.#web_data_cache?.find(e => e && e.bvid == bvid && !e.add_time);
                     // 首页滚动下拉, 假如一直保存缓存占用很大, 改用请求数据的方式返回数据
-                    data ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, data).then(() => this.#configs.control_tips(bvid, node)) :
-                        this.#web_request_instance.get_video_base_info(bvid).then(data => {
-                            const t = Data_Switch.base_video_info_to_home(data);
-                            t ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, t).then(() => this.#configs.control_tips(bvid, node)) : Colorful_Console.print('fail to switch data to home module', 'crash', true);
-                        }).catch(() => Colorful_Console.print('watch_later: get_video_base_info error', 'crash', true));
+                    if (data) {
+                        data.add_time = Date.now();
+                        this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, data).then(() => this.#configs.control_tips(bvid, node));
+                    } else this.#web_request_instance.get_video_base_info(bvid).then(data => {
+                        const t = Data_Switch.base_video_info_to_home(data);
+                        t ? this.#indexeddb_instance.add(Indexed_DB.tb_name_dic.pocket, t).then(() => this.#configs.control_tips(bvid, node)) : Colorful_Console.print('fail to switch data to home module', 'crash', true);
+                    }).catch(() => Colorful_Console.print('watch_later: get_video_base_info error', 'crash', true));
                 },
                 keydown_action: {
                     get _button() { return document.getElementsByClassName('primary-btn roll-btn')[0]; },
@@ -4503,10 +4505,14 @@
                     // 每三天检查清除掉超过7天的旧数据
                     const { recommend, pocket } = Indexed_DB.tb_name_dic, t = GM_Objects.get_value('clear_database_time', 0),
                         n = Date.now(), d = 1000 * 24 * 60 * 60;
-                    ((n - t) > 3 * d) && [recommend, pocket].forEach(e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(() => {
-                        Colorful_Console.print(`clear ${e} successfully`);
+                    if ((n - t) > 3 * d) {
+                        [recommend, pocket].forEach(
+                            e => this.#indexeddb_instance.batch_del_by_condition(e, (value, now, limit) => (now - value.add_time) > limit, [n, 7 * d]).then(
+                                (r) => r && Colorful_Console.print(`clear old content of ${e} successfully`)
+                            )
+                        );
                         GM_Objects.set_value('clear_database_time', n);
-                    }));
+                    }
                     const block_data_db = GM_Objects.get_value('block_data_db', []);
                     if (block_data_db.length > 0) {
                         const { bvid, mid, key } = block_data_db.reduce((acc, cur) => {
