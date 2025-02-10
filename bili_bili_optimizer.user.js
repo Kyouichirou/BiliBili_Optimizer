@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.3
+// @version      3.5.4
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -112,7 +112,7 @@
          * @param {object} configs
          * @returns {null}
          */
-        openintab: (url, configs) => GM_openInTab(url, configs),
+        openintab: (url, configs = { insert: 1, active: true }) => GM_openInTab(url, configs),
         /**
          * 复制内容到剪切板
          * @param {string} content
@@ -756,7 +756,7 @@
         // 微博分享
         _share_weibo() {
             const url = `https://service.weibo.com/share/share.php?url=${GM_Objects.info.script.supportURL}&title=BiliBili_Optimizer, 更好的B站.!&summery=undefined&pic=${Constants_URLs.weibo_url}&#_loginLayer_${Date.now()}`;
-            GM_Objects.openintab(url, { insert: 1, active: true });
+            GM_Objects.openintab(url);
         },
         // 倒计时
         _timer() {
@@ -2474,9 +2474,9 @@
                         data.length > 0 ? console.table(data) : Colorful_Console.print('no crash log');
                     }
                 },
-                feedback: { get() { GM_Objects.openintab(Constants_URLs.feedback, { insert: 1, active: true }); } },
+                feedback: { get() { GM_Objects.openintab(Constants_URLs.feedback); } },
                 support: { get() { Support_Me.main(); } },
-                manual: { get() { GM_Objects.openintab(Constants_URLs.manual, { insert: 1, active: true }); } },
+                manual: { get() { GM_Objects.openintab(Constants_URLs.manual); } },
                 help: {
                     get() {
                         const cmds = [
@@ -2525,6 +2525,7 @@
         #video_player = null;
         // 历史访问settimeout id
         #record_id = null;
+        #sider_status_id = null;
         // 自动速度控制标记
         #auto_speed_mode = false;
         // 视频基本信息
@@ -2687,6 +2688,10 @@
         async #add_status_siderbar(mode = false) {
             // 检查视频是否下载, 是否拦截, 评分
             // 假如拦截, 就不需要检查评分, 下载还是需要检查
+            if (this.#sider_status_id) {
+                clearTimeout(this.#sider_status_id);
+                this.#sider_status_id = null;
+            }
             mode && (this.#select_element.value = '0');
             const target = document.getElementById('viewbox_report');
             if (!target) {
@@ -2702,7 +2707,10 @@
                     Downloaded: Statics_Variant_Manager.mark_download_video.check(vid) ? 1 : 0
                 };
             status_dic.Blocked = status_dic.Rate === 0 ? Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 1 : 0 : 0;
-            setTimeout(() => target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic)), 1500);
+            this.#sider_status_id = setTimeout(() => {
+                target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic));
+                thios.#sider_status_id = null;
+            }, 3500);
         }
         // 菜单执行函数
         #menus_funcs = {
@@ -3224,7 +3232,7 @@
                         const node = document.getElementsByClassName(this.#configs.target_class)[index];
                         if (node && !node.dataset.is_hidden) {
                             const href = node.getElementsByTagName('a')[0].href;
-                            href && GM_Objects.openintab(href, { active: true, insert: 1 });
+                            href && GM_Objects.openintab(href);
                         }
                         return true;
                     },
@@ -3871,8 +3879,7 @@
                         if (p.localName === 'a') return [p.href, p.target];
                         else if (++i > 5) return false;
                     }
-                }), cure_href_reg = /[&\?](live|spm|from)[\w]+=\d+/,
-                    get_cure_href = (href) => href.startsWith('http') ? href.split(cure_href_reg)?.[0] || href : href;
+                });
                 document.addEventListener('click', (event) => {
                     const r = click_action(event.composedPath());
                     if (!r) return;
@@ -3880,9 +3887,9 @@
                     event.stopImmediatePropagation();
                     const [url, target] = r;
                     if (url) {
-                        const href = get_cure_href(url);
+                        const href = Bili_Optimizer.clear_track_tag(url);
                         event.ctrlKey && GM_Objects.set_value('speed_up_video', true);
-                        if (target === '_blank') GM_Objects.openintab(href, { insert: 1, active: true });
+                        if (target === '_blank') GM_Objects.openintab(href);
                         else window.location.href = href;
                     }
                 }, true);
@@ -3929,11 +3936,12 @@
                     s: `search.bilibili.com/all?keyword=`,
                     z: `www.zhihu.com/search?type=content&q=`,
                     b: `cn.bing.com/search?q=`,
+                    _get_c_url(url, s) { return this._protocols + url + encodeURIComponent(s); },
                     main(key) {
                         const url = this[key];
                         if (url) {
                             const s = this._get_content();
-                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._protocols + url + encodeURIComponent(s), { insert: 1, active: true }) : Colorful_Console.print('search content contain black key', 'warning', true));
+                            s && (Dynamic_Variants_Manager.key_check(s) === 0 ? GM_Objects.openintab(this._get_c_url(url, s)) : Colorful_Console.print('search content contain black key', 'warning', true));
                             return true;
                         }
                         return false;
@@ -3954,7 +3962,7 @@
                             const nodes = document.getElementsByClassName(this.#configs.target_class),
                                 a = this.#utilities_module.get_up_video_info,
                                 b = this.#configs.hide_node,
-                                c = this.#configs.add_data_to_node_datase;
+                                c = this.#configs.add_data_to_node_dataset;
                             for (const node of nodes) {
                                 if (node.dataset.is_hidden) continue;
                                 const info = a(node);
@@ -3989,7 +3997,7 @@
                     other_funs = {
                         run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
                         h() {
-                            GM_Objects.openintab('https://www.bilibili.com/account/history', { insert: 1, active: true });
+                            GM_Objects.openintab('https://www.bilibili.com/account/history');
                             return true;
                         },
                         main(key) { return this[key]?.(); }
