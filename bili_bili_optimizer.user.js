@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.4
+// @version      3.5.5
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -3077,7 +3077,7 @@
         // 启动时需要启动的函数
         #start_load_funcs = [];
         // 追踪标记
-        static track_tags = ['spm_id_from', '?vid', 'vd_source', 'from_spmid'];
+        static track_tags = ['spm_id_from', '?vid', 'vd_source', 'from_spmid', 'buvid'];
         // 清除url中的追踪标记
         static clear_track_tag(url) {
             // static, 相互之间访问的时候, this的指向是class自身而不是实例对象
@@ -5618,15 +5618,15 @@
                 Colorful_Console.print('you are accessing a rubbish page and the script will not run properly.', 'warning');
                 return;
             }
+            // 检查用户是否登录
             this.#user_is_login = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
             // 根据id生成配置
             const id = this.#configs.id;
             // 载入过滤模块的配置
             this.#load_filter_configs(id);
-            // 检查用户是否登录
             // 注入css, 尽快执行
             this.#css_module.inject_css(id, this.#user_is_login);
-            // 需要拦截动态数据管理模块的配置
+            // 控制板连接配置
             Terminal_Module.init(id);
             // 初始化动态数据管理模块
             Dynamic_Variants_Manager.init(id);
@@ -5641,7 +5641,10 @@
                 [this.#html_modules]
             ].forEach(e => (e.length === 1 ? e[0].get_funcs(id) : e[0].get_funcs(id, ...e[1])).forEach(e => (e.start ? this.#end_load_funcs : this.#start_load_funcs).push(e)));
             // 复杂的部分放到pages_module中, 简单的函数放在配置中
-            const ef = this.#configs.end_load_func, sf = this.#configs.start_load_func, c = Constants_URLs.main.bind(Constants_URLs), d = () => !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started');
+            const ef = this.#configs.end_load_func,
+                sf = this.#configs.start_load_func,
+                c = Constants_URLs.main.bind(Constants_URLs),
+                d = () => !Dynamic_Variants_Manager.show_status() && Colorful_Console.print('bili_optimizer has started');
             ef && this.#end_load_funcs.push(ef);
             sf && this.#start_load_funcs.push(sf);
             c.type = 1, d.type = 1;
