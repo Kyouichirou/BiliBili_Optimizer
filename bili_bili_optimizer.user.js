@@ -2709,7 +2709,7 @@
             status_dic.Blocked = status_dic.Rate === 0 ? Dynamic_Variants_Manager.block_videos.includes_r(vid) ? 1 : 0 : 0;
             this.#sider_status_id = setTimeout(() => {
                 target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic));
-                thios.#sider_status_id = null;
+                this.#sider_status_id = null;
             }, 3500);
         }
         // 菜单执行函数
