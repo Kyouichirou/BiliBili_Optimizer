@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.5
+// @version      3.5.6
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -4003,13 +4003,10 @@
                         main(key) { return this[key]?.(); }
                     },
                     // 文本标签, 需要排除输入
-                    local_tags = ["textarea", "input"], class_tags = ['input', 'text', 'editor'],
+                    input_tags = ["input", 'comment', 'text', 'editor'],
                     check_is_input = (target) => {
-                        const localname = (target.localName || '').toLowerCase();
-                        if (localname && local_tags.includes(localname)) return true;
-                        const classname = (target.className || '').toLowerCase();
-                        if (classname && class_tags.some(e => classname.includes(e))) return true;
-                        return false;
+                        const localname = target.localName?.toLowerCase?.() || '', classname = target.className?.toLowerCase?.() || '';
+                        return input_tags.some(e => classname.includes(e) || localname.includes(e));
                     },
                     check_cas = (event) => ['shiftKey', 'ctrlKey', 'altKey'].some(e => event[e]),
                     id = this.#configs.id, funcs = [search, manage_black_key, other_funs].filter(e => e.run_in.includes(id)).map(e => e.main.bind(e)),
