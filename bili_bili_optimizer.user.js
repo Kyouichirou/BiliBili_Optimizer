@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.6
+// @version      3.5.7
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2678,9 +2678,36 @@
         // 侧边状态栏html
         #get_sider_status_html(status_dic) {
             // 下载, 评分, 贝叶斯, 拦截
-            return `<div id="status_sider_bar" style="z-index: 999;margin-left: -90px;position: absolute;">
-                    <div class="s_list" style="display: grid;">
-                    ${Object.entries(status_dic).map(([k, v]) => `<span><label>${k}: ${v}</label><hr></span>`).join('')}
+            const svg_dic = {
+                Rate: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+                        fill="none" stroke="currentColor" -="" width="2" linecap="round" linejoin="round"></path>
+                    </svg>`,
+                Blocked: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd"
+                        d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-1.72 6.97a.75.75 0 10-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 101.06 1.06L12 13.06l1.72 1.72a.75.75 0 101.06-1.06L13.06 12l1.72-1.72a.75.75 0 10-1.06-1.06L12 10.94l-1.72-1.72z"
+                        clip-rule="evenodd"></path>
+                    </svg>`,
+                Bayesed: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="currentColor"></path>
+                        <path d="M0 0h24v24H0z" fill="none"></path>
+                    </svg>`,
+                Pocketed: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" fill="none"
+                        stroke="currentColor" -="" width="2"></path>
+                        <path d="M18 18H6V8h12v10z" fill="none" stroke="currentColor" -="" width="2"></path>
+                        <path d="M12 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4z" fill="none" stroke="currentColor" -="" width="2"></path>
+                    </svg>`,
+                Downloaded: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>`
+            };
+            return `<div id="status_sider_bar">
+                    <div class="s_list">
+                    ${Object.entries(status_dic).map(([k, v]) => `<span>${svg_dic[k]}<label title="${k}"> ${v}</label></span>`).join('')}
                     </div>
                 </div>`;
         }
@@ -2728,8 +2755,8 @@
             _change_lable: (change_dic) => {
                 const lables = document.getElementById('status_sider_bar').getElementsByTagName('label');
                 for (const label of lables) {
-                    const text = label.innerText.split(':')[0];
-                    if (text in change_dic) label.innerText = `${text}: ${change_dic[text]}`;
+                    const text = label.title;
+                    if (text in change_dic) label.innerText = change_dic[text];
                 }
             },
             0(_) { },
@@ -2871,30 +2898,35 @@
                             border: 1px solid #00b5e5;
                             border-radius: 6px;
                         }
-                        .select_wrap dd {
-                            margin-left: 5px;
-                            line-height: 30px;
-                        }
                         select#selectElem {
                             font-size: 14px;
-                            width: 72px;
                             text-align: center;
+                            width: 100%;
+                            border: none;
+                            background-color: transparent;
+                            cursor: pointer;
+                            transition: all 0.3s ease;
+                        }
+                        #selectElem:hover {
+                            background-color: #e9f7ff;
+                        }
+                        #selectElem option:hover {
+                            background-color: #00b5e5;
+                            color: white;
                         }
                     </style>
-                    <dd>
-                        <select id="selectElem">
-                            <option value="0">Menus</option>
-                            <option value="1">Rate: 3</option>
-                            <option value="2">Rate: 4</option>
-                            <option value="3" style="color: blue;">Rate: 5</option>
-                            <option value="4" title="remove video rate">Remove</option>
-                            <option value="5" title="block video" style="color:red;">Block</option>
-                            <option value="6" title="unblock video">unBlock</option>
-                            <option value="7" title="generate download video command of bbdown">BBdown</option>
-                            <option value="8" title="mark video as downloaded" style="color: #FFA500;">Marked</option>
-                            <option value="9" title="watch video later">Pocket</option>
-                        </select>
-                    </dd>
+                    <select id="selectElem">
+                        <option value="0">Menus</option>
+                        <option value="1">Rate: 3</option>
+                        <option value="2">Rate: 4</option>
+                        <option value="3" style="color: blue;">Rate: 5</option>
+                        <option value="4" title="remove video rate">Remove</option>
+                        <option value="5" title="block video" style="color:red;">Block</option>
+                        <option value="6" title="unblock video">unBlock</option>
+                        <option value="7" title="generate download video command of bbdown">BBdown</option>
+                        <option value="8" title="mark video as downloaded" style="color: #FFA500;">Marked</option>
+                        <option value="9" title="watch video later">Pocket</option>
+                    </select>
                 </div>`,
                 toolbar = document.getElementsByClassName('video-toolbar-left');
             if (toolbar.length > 0) {
@@ -3822,7 +3854,39 @@
                     .pop-live-small-mode.part-1{
                         display: none !important;
                     }
-                    .bpx-player-toast-item{opacity: 0.01 !important;}`
+                    .bpx-player-toast-item{opacity: 0.01 !important;}
+                    #status_sider_bar {
+                        z-index: 999;
+                        margin-left: -70px;
+                        position: absolute;
+                        background-color: #f4f4f4;
+                        border-radius: 8px;
+                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                        padding: 7px;
+                    }
+                    .s_list {
+                        display: grid;
+                        gap: 6px;
+                    }
+                    .s_list span {
+                        font-family: Arial, sans-serif;
+                        font-size: 12px;
+                        color: #333;
+                        display: flex;
+                        align-items: center;
+                    }
+                    .s_list hr {
+                        border: none;
+                        border-top: 1px solid #ccc;
+                        margin: 6px 0;
+                        width: 100%;
+                    }
+                    .s_list svg {
+                        width: 18px;
+                        height: 18px;
+                        margin-right: 8px;
+                        fill: lightgray;
+                    }`
             },
             _search: {
                 run_in: [2],
