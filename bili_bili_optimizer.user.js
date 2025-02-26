@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.7
+// @version      3.5.8
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2544,6 +2544,8 @@
         #record_limits = [15, 32];
         // 播放是否需要停止, 用于非登陆环境, 等待视频清晰度切换完成
         #is_need_stop = false;
+        #video_rate = 0;
+        video_filter_ratio = 0;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2551,6 +2553,7 @@
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
         update_essential_info(user_data, video_data) {
+            this.#video_rate = this.#get_video_rate(video_data.stat);
             this.#home_video_info = Data_Switch.video_to_home([user_data, video_data]);
             return this.video_info_update_flag = Object.entries({
                 bvid: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
@@ -2675,6 +2678,61 @@
                 ic++;
             }, parseInt((duration > lm ? lm : duration) / 40));
         }
+        #get_video_rate(data) {
+            const views = data.view;
+            if (views < 1e3) return 0;
+            const view = {
+                weight: 0.08,
+                value_range: [1e3, 1e7]
+            }, items = {
+                coin: {
+                    weight: 0.32,
+                    value_range: [0.0001, 1.2]
+                },
+                danmaku: {
+                    weight: 0.22,
+                    value_range: [0.0001, 0.1]
+                },
+                share: {
+                    weight: 0.21,
+                    value_range: [0.0001, 0.1]
+                },
+                like: {
+                    weight: 0.024,
+                    value_range: [0.0001, 0.8]
+
+                },
+                reply: {
+                    weight: 0.12,
+                    value_range: [0.0001, 0.1]
+                },
+                favorite: {
+                    weight: 0.025,
+                    value_range: [0.0001, 0.2]
+                }
+            },
+                adjust_val = (val, val_range) => val < val_range[0] ? val_range[0] : val > val_range[1] ? val_range[1] : val,
+                // 视频播放量归一化, 因为这个数值一般比较大, 需要消除这个参数对整体过度影响
+                normal_view = (adjust_val(views, view.value_range) - view.value_range[0]) / (view.value_range[1] - view.value_range[0]);
+            return ((normal_view * view.weight + this.video_filter_ratio * 0.001 + Object.entries(items).reduce((b, [k, v]) => {
+                const val = adjust_val(data[k] / views, v.value_range);
+                return b += v.weight * val;
+            }, 0)) * 1000);
+        };
+        #add_video_rate_element_to_title() {
+            const node = document.getElementsByClassName('video-info-title-inner')[0];
+            if (node) {
+                node.getElementsByClassName('star-container')[0]?.remove();
+                if (this.#video_rate > 0) {
+                    const c = Math.ceil(this.#video_rate / 10),
+                        html = `
+                    <div class="star-container">
+                        <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_rate.toFixed(1)}</span></div>
+                    </div>`;
+                    setTimeout(() => node.insertAdjacentHTML('beforeend', html), 25);
+                }
+            } else Colorful_Console.print('failed to find video title element', 'crash', true);
+        }
         // 侧边状态栏html
         #get_sider_status_html(status_dic) {
             // 下载, 评分, 贝叶斯, 拦截
@@ -2737,6 +2795,7 @@
             this.#sider_status_id = setTimeout(() => {
                 target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic));
                 this.#sider_status_id = null;
+                this.#add_video_rate_element_to_title();
             }, 3500);
         }
         // 菜单执行函数
@@ -3073,8 +3132,9 @@
          * @param {Object} data
          * @param {boolean} user_is_login
          */
-        constructor(data, user_is_login) {
+        constructor(data, user_is_login, filter_ratio) {
             this.#user_is_login = user_is_login;
+            this.video_filter_ratio = filter_ratio;
             this.#initial_flag = this.update_essential_info(data.upData, data.videoData);
             if (this.#initial_flag) this.#create_video_info_update_monitor();
         }
@@ -3104,6 +3164,7 @@
         #video_has_added_list = [];
         // 视频模块成功加载标志
         #video_module_initial_flag = false;
+        #video_filter_ratio = 0;
         // 需要等待页面加载完成后加载的函数
         #end_load_funcs = [];
         // 启动时需要启动的函数
@@ -3310,9 +3371,10 @@
                         // 数据的长度最好是和原数据一致, 并不是所有的视频都有40组视频
                         // 少了或者多了均可能导致页面崩溃, 数据少于20的, 多了导致页面崩溃; 数据多于20, 少了会导致页面崩溃
                         const tmp = data.map(e => this.#configs.pre_data_check(e) ? (this.#utilities_module.clear_data(e), true) : null),
-                            n = data.filter((_v, i) => !tmp[i]), limit = data.length,
-                            new_arr = n.length < limit ? [...n, ...new Array(limit).fill(m)].slice(0, limit) : n;
+                            n = data.filter((_v, i) => !tmp[i]), limit = data.length, nl = n.length,
+                            new_arr = nl < limit ? [...n, ...new Array(limit).fill(m)].slice(0, limit) : n;
                         val.related = new_arr;
+                        this.#video_filter_ratio = nl / limit;
                         this.#web_data_cache = new_arr;
                         return tmp;
                     } else Colorful_Console.print('initial_data object api has changed in video page.', 'crash', true);
@@ -3365,8 +3427,11 @@
                             response_content.data.Related = cache_results;
                             return;
                         }
-                        this.#video_instance?.update_essential_info(data.View.owner, data.View);
                         results = this.#configs.request_data_handler(data.Related, this.#configs.pre_data_check);
+                        if (this.#video_instance) {
+                            this.#video_instance.video_filter_ratio = results.length / data.Related.length;
+                            this.#video_instance.update_essential_info(data.View.owner, data.View);
+                        }
                         response_content.data.Related = results;
                     }
                     this.#web_data_cache = results;
@@ -3851,6 +3916,7 @@
                     a.ad-report.video-card-ad-small,
                     a#right-bottom-banner,
                     .watch-later-video.van-watchlater.black,
+                    .ad-floor-exp .ad-floor-cover,
                     .pop-live-small-mode.part-1{
                         display: none !important;
                     }
@@ -3886,6 +3952,26 @@
                         height: 18px;
                         margin-right: 8px;
                         fill: lightgray;
+                    }
+                    /* 五角星容器样式 */
+                    .star-container {
+                        position: absolute;
+                        right: 50px;
+                        z-index: 1;
+                    }
+                    /* 五角星样式 */
+                    .star {
+                        width: 34px;
+                        height: 34px;
+                        position: relative;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        opacity: 0.85;
+                        font-size: 12px;
+                        border-radius: 50%;
+                        background-color: lightgray;
+                        transform-origin: center;
                     }`
             },
             _search: {
@@ -4201,7 +4287,7 @@
                             if (val.spec) clear_data(val.spec);
                             initial_data = val;
                             if (id === 1) {
-                                const v = new Video_Module(val, this.#user_is_login);
+                                const v = new Video_Module(val, this.#user_is_login, this.#video_filter_ratio);
                                 if (v.initial_flag) {
                                     this.#video_instance = v;
                                     this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
