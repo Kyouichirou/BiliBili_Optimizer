@@ -776,7 +776,7 @@
             this._opacity_change(0);
             document.documentElement.insertAdjacentHTML("beforeend", this._html);
             setTimeout(() => {
-                this._support = document.getElementById(this.id_name);
+                this._support = document.getElementById(this._id_name);
                 this._tips = this._support.getElementsByClassName("timeout")[0];
                 this._click_event();
                 this._timer();
@@ -2724,7 +2724,7 @@
             if (node) {
                 node.getElementsByClassName('star-container')[0]?.remove();
                 if (this.#video_rate > 0) {
-                    const c = Math.ceil(this.#video_rate / 10),
+                    const c = Math.ceil((this.#video_rate + 1) / 10),
                         html = `
                     <div class="star-container">
                         <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_rate.toFixed(1)}</span></div>
