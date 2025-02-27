@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.8
+// @version      3.5.9
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -3185,6 +3185,7 @@
                 id: 0,
                 // 目标元素的class_name
                 target_class: 'bili-video-card is-rcmd',
+                top_target_class: 'feed-card',
                 // api url 后缀
                 interpose_api_suffix: ['web-interface/index/top/feed/rcmd', 'web-interface/wbi/index/top/feed/rcmd'],
                 // 初始化数据的键名
@@ -3322,7 +3323,7 @@
                         return true;
                     },
                     _search_video: (index) => {
-                        const node = document.getElementsByClassName(this.#configs.target_class)[index];
+                        const node = document.getElementsByClassName(this.#configs.top_target_class)[index];
                         if (node && !node.dataset.is_hidden) {
                             const href = node.getElementsByTagName('a')[0].href;
                             href && GM_Objects.openintab(href);
@@ -3901,6 +3902,9 @@
                 .floor-single-card,
                 section.channel-floor.bili-grid.no-margin{
                     display: none !important;
+                }
+                .recommended-container_floor-aside .container>*:nth-of-type(7){
+                    margin-top: 40px !important;
                 }`
             },
             _video: {
