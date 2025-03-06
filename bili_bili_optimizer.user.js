@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.5.9
+// @version      3.6.0
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2726,7 +2726,7 @@
                 if (this.#video_rate > 0) {
                     const c = Math.ceil((this.#video_rate + 1) / 10),
                         html = `
-                    <div class="star-container">
+                    <div class="star-container" title="comprehensive rating of video">
                         <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_rate.toFixed(1)}</span></div>
                     </div>`;
                     setTimeout(() => node.insertAdjacentHTML('beforeend', html), 25);
@@ -2796,7 +2796,7 @@
                 target.insertAdjacentHTML('afterend', this.#get_sider_status_html(status_dic));
                 this.#sider_status_id = null;
                 this.#add_video_rate_element_to_title();
-            }, 3500);
+            }, 3000);
         }
         // 菜单执行函数
         #menus_funcs = {
@@ -3962,6 +3962,7 @@
                         position: absolute;
                         right: 50px;
                         z-index: 1;
+                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
                     }
                     /* 五角星样式 */
                     .star {
