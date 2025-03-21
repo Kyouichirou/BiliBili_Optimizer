@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.0
+// @version      3.6.1
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -16,6 +16,8 @@
 // @match        https://message.bilibili.com/*
 // @connect      files.superbed.cn
 // @connect      8.z.wiki
+// @connect      pic.imgdb.cn
+// @connect      files.superbed.cc
 // @connect      wkphoto.cdn.bcebos.com
 // @grant        GM_info
 // @grant        GM_getTab
@@ -419,7 +421,7 @@
                 GM_Objects.set_value('pic_check_date', Date.now());
             });
         },
-        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 10 && this._check_pic(), 10000); }
+        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 0 && this._check_pic(), 10000); }
     };
     // 链接常量 ---------------
 
@@ -2681,43 +2683,44 @@
         #get_video_rate(data) {
             const views = data.view;
             if (views < 1e3) return 0;
-            const view = {
-                weight: 0.08,
-                value_range: [1e3, 1e7]
-            }, items = {
-                coin: {
-                    weight: 0.32,
-                    value_range: [0.0001, 1.2]
-                },
-                danmaku: {
-                    weight: 0.22,
-                    value_range: [0.0001, 0.1]
-                },
-                share: {
-                    weight: 0.21,
-                    value_range: [0.0001, 0.1]
-                },
-                like: {
-                    weight: 0.024,
-                    value_range: [0.0001, 0.8]
+            const gap = Math.floor(((Date.now() - data.pubdate * 1000) / 1000 / 24 / 60 / 60 / 7)),
+                view = {
+                    weight: 0.08,
+                    value_range: [1e3, 1e7]
+                }, items = {
+                    coin: {
+                        weight: 0.32,
+                        value_range: [0.0001, 1.2]
+                    },
+                    danmaku: {
+                        weight: 0.22,
+                        value_range: [0.0001, 0.1]
+                    },
+                    share: {
+                        weight: 0.21,
+                        value_range: [0.0001, 0.1]
+                    },
+                    like: {
+                        weight: 0.024,
+                        value_range: [0.0001, 0.8]
 
+                    },
+                    reply: {
+                        weight: 0.12,
+                        value_range: [0.0001, 0.1]
+                    },
+                    favorite: {
+                        weight: 0.025,
+                        value_range: [0.0001, 0.2]
+                    }
                 },
-                reply: {
-                    weight: 0.12,
-                    value_range: [0.0001, 0.1]
-                },
-                favorite: {
-                    weight: 0.025,
-                    value_range: [0.0001, 0.2]
-                }
-            },
                 adjust_val = (val, val_range) => val < val_range[0] ? val_range[0] : val > val_range[1] ? val_range[1] : val,
                 // 视频播放量归一化, 因为这个数值一般比较大, 需要消除这个参数对整体过度影响
                 normal_view = (adjust_val(views, view.value_range) - view.value_range[0]) / (view.value_range[1] - view.value_range[0]);
             return ((normal_view * view.weight + this.video_filter_ratio * 0.001 + Object.entries(items).reduce((b, [k, v]) => {
                 const val = adjust_val(data[k] / views, v.value_range);
                 return b += v.weight * val;
-            }, 0)) * 1000);
+            }, 0)) * 1000) * (gap < 8 ? 1.09 - gap * 0.01 : 1);
         };
         #add_video_rate_element_to_title() {
             const node = document.getElementsByClassName('video-info-title-inner')[0];
@@ -3155,6 +3158,7 @@
         // web api请求实例
         #web_request_instance = null;
         // indexed数据库
+        indexeddb_init_flag = false;
         #indexeddb_instance = null;
         // 游标指针位置
         #indexeddb_cursor_index = 0;
@@ -4322,7 +4326,11 @@
                     { table_name: Indexed_DB.tb_name_dic.history, key_path: 'bvid' },
                     { table_name: Indexed_DB.tb_name_dic.pocket, key_path: 'bvid' }
                 ], db = new Indexed_DB('mybili', tables);
-                db.initialize().then(() => ((this.#indexeddb_instance = db), Colorful_Console.print('indexeddb, init successfully!')));
+                db.initialize().then(() => {
+                    this.#indexeddb_instance = db;
+                    this.indexeddb_init_flag = true;
+                    Colorful_Console.print('indexeddb, init successfully!');
+                });
             },
             // space页面
             _space_module: {
@@ -4622,7 +4630,7 @@
                 },
                 // 这里的时间不敏感
                 main: () => setTimeout(() => {
-                    if (this.#video_module_initial_flag) {
+                    const db_main = () => {
                         this.#video_instance.main(this.#indexeddb_instance);
                         Object.defineProperties(this.#video_instance, {
                             // 当监听到url发生改变, 清空缓存
@@ -4646,7 +4654,9 @@
                                 }, get: () => null
                             }
                         });
-                    } else {
+                    };
+                    if (this.#video_module_initial_flag) this.#indexeddb_instance ? db_main() : Object.defineProperty(this, 'indexeddb_init_flag', { set: (val) => val && db_main(), get: () => null });
+                    else {
                         const bvid = Base_Info_Match.get_bvid(location.href);
                         this.#indexeddb_instance ? this.#configs.delete_data_by_bvid(bvid, false) : Dynamic_Variants_Manager.add_block_data_for_db(bvid, 'bvid');
                     }
