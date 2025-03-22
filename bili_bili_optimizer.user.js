@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.1
+// @version      3.6.2
 // @description  control and enjoy bilibili!
 // @author       Lian, https://kyouichirou.github.io/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -248,7 +248,7 @@
                 } else return d.constructor === Object ? d.count : d;
                 return undefined;
             } catch (error) {
-                debugger;
+                console.error(error);
             }
         },
         _get_key(module, target) {
@@ -421,7 +421,7 @@
                 GM_Objects.set_value('pic_check_date', Date.now());
             });
         },
-        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 0 && this._check_pic(), 10000); }
+        main() { setTimeout(() => (Date.now() - GM_Objects.get_value('pic_check_date', 0)) / 1000 / 60 / 60 / 24 > 10 && this._check_pic(), 10000); }
     };
     // 链接常量 ---------------
 
@@ -4655,10 +4655,10 @@
                             }
                         });
                     };
-                    if (this.#video_module_initial_flag) this.#indexeddb_instance ? db_main() : Object.defineProperty(this, 'indexeddb_init_flag', { set: (val) => val && db_main(), get: () => null });
+                    if (this.#video_module_initial_flag) this.indexeddb_init_flag ? db_main() : Object.defineProperty(this, 'indexeddb_init_flag', { set: (val) => val && db_main(), get: () => null });
                     else {
                         const bvid = Base_Info_Match.get_bvid(location.href);
-                        this.#indexeddb_instance ? this.#configs.delete_data_by_bvid(bvid, false) : Dynamic_Variants_Manager.add_block_data_for_db(bvid, 'bvid');
+                        this.indexeddb_init_flag ? this.#configs.delete_data_by_bvid(bvid, false) : Dynamic_Variants_Manager.add_block_data_for_db(bvid, 'bvid');
                     }
                 }, 2500)
             },
@@ -5668,7 +5668,7 @@
                  */
                 delete_data_by_bvid: (bvid, is_dele_cache = true) => {
                     const is_array = Array.isArray(bvid);
-                    if (this.#indexeddb_instance) {
+                    if (this.indexeddb_init_flag) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
                         [recommend, pocket].forEach(tb => this.#indexeddb_instance.delete(tb, bvid).then(() => Colorful_Console.print(`delete ${is_array ? bvid.join(';') : bvid} from ${tb}`)));
                     } else Statics_Variant_Manager.watch_later.remove(bvid);
@@ -5680,7 +5680,7 @@
                  */
                 delete_data_by_mid: (mid, is_dele_cache = true) => {
                     const is_array = Array.isArray(mid);
-                    if (this.#indexeddb_instance) {
+                    if (this.indexeddb_init_flag) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
                         [recommend, pocket].forEach(tb => this.#indexeddb_instance.batch_del_by_condition(tb, is_array ? (value, data) => data.includes(value.owner.mid) : (value, mid) => value.owner.mid === mid, [mid])
                             .then((r) => r && Colorful_Console.print(`delete ${is_array ? mid.join(';') : mid} from ${tb}`)));
@@ -5692,7 +5692,7 @@
                  * @param {boolean} is_dele_cache
                  */
                 delete_data_by_keyword: (keys, is_dele_cache = true) => {
-                    if (this.#indexeddb_instance) {
+                    if (this.indexeddb_init_flag) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
                         [recommend, pocket].forEach(tb => this.#indexeddb_instance.batch_del_by_condition(tb, (value, keys) => {
                             const title = value.title, name = value.owner.name;
