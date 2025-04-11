@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.2
+// @version      3.6.3
 // @description  control and enjoy bilibili!
-// @author       Lian, https://kyouichirou.github.io/
+// @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
 // @homepage     https://github.com/Kyouichirou/BiliBili_Optimizer
 // @updateURL    https://github.com/Kyouichirou/BiliBili_Optimizer/raw/main/bili_bili_optimizer.user.js
@@ -155,7 +155,8 @@
         // 判断是否支持监听url的改变
         supportonurlchange: window.onurlchange,
         // httprequest, 可跨越
-        xmlhttprequest: GM_xmlhttpRequest
+        xmlhttprequest: GM_xmlhttpRequest,
+        author_bili_id: '441644010'
     };
     // GM内置函数/对象 ---------------
 
@@ -1839,6 +1840,8 @@
             _get_data() { return GM_Objects.get_value('black_keys'); },
             _main() { this._get_data()?.forEach(e => this.a.push(e)); }
         },
+        _user_id: null,
+        _author_id: GM_Objects.author_bili_id,
         bayes_module: null,
         // 手动拉黑的up, 重要数据, 结构 [{}], 跨标签通信
         block_ups: null,
@@ -2116,7 +2119,8 @@
             // 3. 拦截关键词, 如果包含a类关键词, 拉黑up在缓存
             // 4. 最后检查拦截视频
             const { title, mid, bvid, up_name } = info;
-            if (this.has_checked_videos.includes(bvid)) return false;
+            if (this._user_id === mid || this._author_id === mid) return false;
+            else if (this.has_checked_videos.includes(bvid)) return false;
             else if (this.block_ups.includes_r(mid) || this.cache_block_ups.includes_r(mid) || this.block_videos.includes_r(bvid) || this.cache_block_videos.includes_r(bvid)) return true;
             const r = this.key_check(title + "_" + up_name);
             if (r > 0) {
@@ -2187,8 +2191,10 @@
         /**
         * 数据初始化
         * @param {number} site_id
+        * @param {string} user_id
         */
-        init(site_id) {
+        init(site_id, user_id) {
+            this._user_id = user_id;
             // 全局启用, 关键词过滤
             this.black_keys._main();
             this.black_keys.a.includes_r = includes_r.call(this.black_keys.a, false), this.black_keys.b.includes_r = includes_r.call(this.black_keys.b, false);
@@ -2543,21 +2549,22 @@
         // 是否结束并添加侧边栏的视频到数据库, 第一次播放允许添加, 以及手动点击的播放
         end_and_add_flag = true;
         // 播放进度记录, 播放完成一半则将视频视作已经观看, 当完成80%则将视频视作已经完整观看
-        #record_limits = [15, 32];
+        #record_limits = [15, 31];
         // 播放是否需要停止, 用于非登陆环境, 等待视频清晰度切换完成
         #is_need_stop = false;
         #video_rate = 0;
         video_filter_ratio = 0;
+        #is_own_videos = [false, false];
         /**
          * 视频基础信息
          * @returns {object}
          */
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
-        update_essential_info(user_data, video_data) {
-            this.#video_rate = this.#get_video_rate(video_data.stat);
+        update_essential_info(user_data, video_data, user_id) {
+            this.#video_rate = this.#get_video_score(video_data.stat);
             this.#home_video_info = Data_Switch.video_to_home([user_data, video_data]);
-            return this.video_info_update_flag = Object.entries({
+            this.video_info_update_flag = Object.entries({
                 bvid: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
                 title: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.title),
                 mid: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, parseInt(user_data.mid)),
@@ -2565,6 +2572,9 @@
                 videos: (_arg) => video_data.videos,
                 is_collection: ((arg) => (arg === undefined ? undefined : arg > 1 ? true : false)).bind(null, video_data.videos)
             }).every(([k, v]) => (this.#video_info[k] = v()) === undefined ? (Colorful_Console.print(`failed to obtain basic video information: ${k}`, 'crash', true), false) : true);
+            this.#is_own_videos[0] = this.#is_own_videos[1];
+            this.#is_own_videos[1] = user_id === this.#video_info.mid;
+            return this.video_info_update_flag;
         }
         // 初始化成功标记
         get initial_flag() { return this.#initial_flag; }
@@ -2680,9 +2690,11 @@
                 ic++;
             }, parseInt((duration > lm ? lm : duration) / 40));
         }
-        #get_video_rate(data) {
+        // 视频的综合评分
+        #get_video_score(data) {
             const views = data.view;
             if (views < 1e3) return 0;
+            // 当前的视频比未来的视频更值钱
             const gap = Math.floor(((Date.now() - data.pubdate * 1000) / 1000 / 24 / 60 / 60 / 7)),
                 view = {
                     weight: 0.08,
@@ -2722,14 +2734,15 @@
                 return b += v.weight * val;
             }, 0)) * 1000) * (gap < 8 ? 1.09 - gap * 0.01 : 1);
         };
+        #get_star_container(node = null) { return (node || document).getElementsByClassName('star-container')[0]; }
         #add_video_rate_element_to_title() {
             const node = document.getElementsByClassName('video-info-title-inner')[0];
             if (node) {
-                node.getElementsByClassName('star-container')[0]?.remove();
+                this.#get_star_container(node)?.remove();
                 if (this.#video_rate > 0) {
                     const c = Math.ceil((this.#video_rate + 1) / 10),
                         html = `
-                    <div class="star-container" title="comprehensive rating of video">
+                    <div class="star-container" title="comprehensive score of video">
                         <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_rate.toFixed(1)}</span></div>
                     </div>`;
                     setTimeout(() => node.insertAdjacentHTML('beforeend', html), 25);
@@ -2772,6 +2785,7 @@
                     </div>
                 </div>`;
         }
+        get #sider_bar() { return document.getElementById('status_sider_bar'); }
         // 添加侧边状态栏
         async #add_status_siderbar(mode = false) {
             // 检查视频是否下载, 是否拦截, 评分
@@ -2780,7 +2794,7 @@
                 clearTimeout(this.#sider_status_id);
                 this.#sider_status_id = null;
             }
-            mode && (this.#select_element.value = '0');
+            mode && (this.#select_target.value = '0');
             const target = document.getElementById('viewbox_report');
             if (!target) {
                 Colorful_Console.print('fail to insert element of status', 'crash', true);
@@ -2868,6 +2882,7 @@
             },
             // 添加评分
             _add_rate: (val, video_info, is_key_send, is_force) => {
+                if (this.#is_own_videos[1]) return -1;
                 const id = video_info.bvid;
                 if (!id) {
                     Colorful_Console.print('fail to get bvid', 'warning', true);
@@ -2913,6 +2928,9 @@
                         dic.Rate = val;
                         dic.Blocked = 0;
                         i === 2 && (dic.Bayesed = 1);
+                    } else if (i < 0) {
+                        Colorful_Console.print('not allowed to operate your own video', 'debug');
+                        return;
                     }
                 }
                 const params = [];
@@ -2949,7 +2967,8 @@
         // 键盘控制评分
         key_rate_video(val, is_force = true) { this.#menus_funcs.main(val, this.#video_info, true, is_force); }
         // 添加评分菜单
-        get #select_element() { return document.getElementById('selectWrap').getElementsByTagName('select')[0]; }
+        get #select_element() { return document.getElementById('selectWrap'); }
+        get #select_target() { return this.#select_element?.getElementsByTagName('select')[0]; }
         #add_menus_element() {
             const html = `
                 <div class="select_wrap" id="selectWrap">
@@ -2995,7 +3014,7 @@
                 this.#add_status_siderbar();
                 // insertAdjacentHTML, 这个函数不会返回插入生成的节点, 返回空值
                 toolbar[0].insertAdjacentHTML('beforeend', html);
-                setTimeout(() => this.#select_element.onchange = (e) => this.#menus_funcs.main(parseInt(e.target.value), this.#video_info), 300);
+                setTimeout(() => this.#select_target.onchange = (e) => this.#menus_funcs.main(parseInt(e.target.value), this.#video_info), 300);
             } else Colorful_Console.print('fail to insert rate element', 'crash', true);
         }
         // 点击执行
@@ -3075,7 +3094,7 @@
             // urlchange监听
             this.#url_change_monitor();
             // 创建下拉菜单
-            this.#add_menus_element();
+            !this.#is_own_videos[1] && this.#add_menus_element();
             // 历史访问记录
             this.#visited_record();
             // 创建菜单事件
@@ -3114,6 +3133,21 @@
                 });
             });
         }
+        #handle_status_change() {
+            /*
+            0, 0, 更新侧边栏, 不需要插入下拉, 基本操作
+            0, 1, 删除侧边栏, 删除下拉, 删除score
+            1, 0, 插入侧边栏, 插入下拉, 插入score
+            1, 1, 不需要任何操作
+            */
+            if (!(this.#is_own_videos[0] || this.#is_own_videos[1])) this.#add_status_siderbar(true);
+            else if (!this.#is_own_videos[0] && this.#is_own_videos[1]) {
+                this.#select_element?.remove();
+                this.#sider_bar?.remove();
+                this.#get_star_container()?.remove();
+            }
+            else if (this.#is_own_videos[0] && !this.#is_own_videos[1]) this.#add_menus_element();
+        }
         // 监听视频信息更新, 需要等待信息更新完成才执行下一步
         #create_video_info_update_monitor() {
             let timeout_id = null;
@@ -3124,7 +3158,7 @@
                         timeout_id = setTimeout(() => {
                             timeout_id = null;
                             this.#visited_record();
-                            this.#add_status_siderbar(true);
+                            this.#handle_status_change();
                         }, 1000);
                     }
                 },
@@ -3134,11 +3168,12 @@
         /**
          * @param {Object} data
          * @param {boolean} user_is_login
+         * @param {string} user_id
          */
-        constructor(data, user_is_login, filter_ratio) {
+        constructor(data, user_is_login, filter_ratio, user_id) {
             this.#user_is_login = user_is_login;
             this.video_filter_ratio = filter_ratio;
-            this.#initial_flag = this.update_essential_info(data.upData, data.videoData);
+            this.#initial_flag = this.update_essential_info(data.upData, data.videoData, user_id);
             if (this.#initial_flag) this.#create_video_info_update_monitor();
         }
     }
@@ -3148,6 +3183,8 @@
     class Bili_Optimizer {
         // 是否登录账号
         #user_is_login = false;
+        // 登陆账号id
+        #user_id = null;
         // 执行配置
         #configs = null;
         #card_data = null;
@@ -3157,8 +3194,9 @@
         #video_instance = null;
         // web api请求实例
         #web_request_instance = null;
-        // indexed数据库
+        // indexed数据库初始化标记
         indexeddb_init_flag = false;
+        // indexed数据库实例
         #indexeddb_instance = null;
         // 游标指针位置
         #indexeddb_cursor_index = 0;
@@ -3168,6 +3206,7 @@
         #video_has_added_list = [];
         // 视频模块成功加载标志
         #video_module_initial_flag = false;
+        // 视频过滤率
         #video_filter_ratio = 0;
         // 需要等待页面加载完成后加载的函数
         #end_load_funcs = [];
@@ -3435,7 +3474,7 @@
                         results = this.#configs.request_data_handler(data.Related, this.#configs.pre_data_check);
                         if (this.#video_instance) {
                             this.#video_instance.video_filter_ratio = results.length / data.Related.length;
-                            this.#video_instance.update_essential_info(data.View.owner, data.View);
+                            this.#video_instance.update_essential_info(data.View.owner, data.View, this.#user_id);
                         }
                         response_content.data.Related = results;
                     }
@@ -3920,7 +3959,7 @@
                     .slide-ad-exp,
                     .video-card-ad-small,
                     .video-page-game-card-small,
-                    a.ad-report.ad-floor-exp.right-bottom-banner,
+                    .ad-report.ad-floor-exp.right-bottom-banner,
                     a.ad-report.video-card-ad-small,
                     a#right-bottom-banner,
                     .watch-later-video.van-watchlater.black,
@@ -4046,7 +4085,7 @@
                     event.stopImmediatePropagation();
                     const [url, target] = r;
                     if (url) {
-                        const href = Bili_Optimizer.clear_track_tag(url);
+                        const href = this.constructor.clear_track_tag(url);
                         event.ctrlKey && GM_Objects.set_value('speed_up_video', true);
                         if (target === '_blank') GM_Objects.openintab(href);
                         else window.location.href = href;
@@ -4296,7 +4335,7 @@
                             if (val.spec) clear_data(val.spec);
                             initial_data = val;
                             if (id === 1) {
-                                const v = new Video_Module(val, this.#user_is_login, this.#video_filter_ratio);
+                                const v = new Video_Module(val, this.#user_is_login, this.#video_filter_ratio, this.#user_id);
                                 if (v.initial_flag) {
                                     this.#video_instance = v;
                                     this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
@@ -4384,21 +4423,25 @@
                         mode = !mode;
                     };
                 },
+                _check_user: (mid) => mid === GM_Objects.author_bili_id ? "author's page, whitelist" : mid === this.#user_id ? "your page, whitelist" : null,
                 main() {
                     this._maintain();
                     setTimeout(() => {
-                        const title = document.title;
-                        const up_name = title.split('的个人空间')[0];
-                        if (up_name === 'undefined' || up_name.length === title.length) return;
+                        const title = document.title, up_name = title.split('的个人空间')[0];
+                        if (up_name === 'undefined' || up_name.length === title.length) {
+                            Colorful_Console.print('fail to get the upname', 'debug');
+                            return;
+                        }
                         const mid = Base_Info_Match.get_mid(location.href);
                         if (mid) {
-                            if (mid === '441644010') {
-                                Colorful_Console.print("author's page, whitelist", 'debug');
+                            const info = this._check_user(mid);
+                            if (info) {
+                                Colorful_Console.print(info, 'debug');
                                 return;
                             }
                             const mode = Statics_Variant_Manager.up_part.check(mid);
                             this._create_event(this._create_button(mode), mode, mid, up_name);
-                        }
+                        } else Colorful_Console.print('mid is null', 'debug');
                     }, 3000);
                 }
             },
@@ -5781,7 +5824,8 @@
                 return;
             }
             // 检查用户是否登录
-            this.#user_is_login = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1] ?? '' ? true : false;
+            this.#user_id = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1];
+            this.#user_is_login = this.#user_id ? true : false;
             // 根据id生成配置
             const id = this.#configs.id;
             // 载入过滤模块的配置
@@ -5791,7 +5835,7 @@
             // 控制板连接配置
             Terminal_Module.init(id);
             // 初始化动态数据管理模块
-            Dynamic_Variants_Manager.init(id);
+            Dynamic_Variants_Manager.init(id, this.#user_id);
             // 配置启动函数
             // init, 表示该函数需要在html载入前执行
             // main, 表示该函数需要在html载入后执行
