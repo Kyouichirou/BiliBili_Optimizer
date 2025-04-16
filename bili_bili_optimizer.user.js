@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.3
+// @version      3.6.4
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -161,6 +161,66 @@
     // GM内置函数/对象 ---------------
 
     // --------------- 通用函数
+    // 文本转语音模块
+    const TTS_Module = {
+        // 判断是否为中文(不包含中文字符)
+        _chinese_reg: /[\u4e00-\u9fa5]/,
+        _create_event(utterance) {
+            utterance.onstart = () => Colorful_Console.print('tts start');
+            utterance.onerror = (e) => console.log(e);
+            utterance.onend = () => Colorful_Console.print('tts end');
+        },
+        /**
+         * 配置文件
+         * @param {string} text
+         * @param {string} lang
+         * @param {number} rate
+         * @param {number} volume
+         * @param {number} pitch 间隔, 控制播放速度, 数值越大, 播放速度越慢
+         * @returns {SpeechSynthesisUtterance}
+         */
+        _get_tts_utterance(text, lang, rate = 1, volume = 1, pitch = 2) {
+            const utterance = new window.SpeechSynthesisUtterance();
+            utterance.text = text;
+            utterance.rate = rate;
+            utterance.pitch = pitch;
+            utterance.volume = volume;
+            utterance.lang = lang;
+            return utterance;
+        },
+        // 这是最坑的点, 调试时是看不出异步操作的, 在控制台上是直接同步输出内容, 但是实际上很可能还是异步的
+        _get_voices() {
+            return new Promise((resolve, _reject) => {
+                const voices = speechSynthesis.getVoices();
+                voices.length === 0 ? speechSynthesis.onvoiceschanged = () => resolve(speechSynthesis.getVoices()) :
+                    resolve(voices);
+            });
+        },
+        async init() {
+            // 初始化判断浏览器是否支持
+            // 是否为edge浏览器
+            // 获取所有语音(本地), 判断是否支持中文和英文
+            // 假如是edge浏览器, 假如本地没有对应的语音包, 会自动调用azure的在线合成
+            if (!'speechSynthesis' in window) return (_text) => Colorful_Console.print('browser is not support tts', 'warning');
+            const voices_list = await this._get_voices(),
+                local_voices = ['zh-CN', 'en-US'].filter(navigator.userAgent.includes('Edg') ? () => 1 : ((e) => voices_list.filter(v => v.localService && v.lang === e).length));
+            this.speak = local_voices.length > 0 ? ((voices, text) => {
+                const lang = this._chinese_reg.test(text) ? 'zh-CN' : 'en-US';
+                if (!voices.includes(lang)) return Colorful_Console.print(`${lang} is not support`, 'warning');
+                speechSynthesis.speaking && speechSynthesis.cancel();
+                const utterance = this._get_tts_utterance(text, lang);
+                speechSynthesis.speak(utterance);
+                this._create_event(utterance);
+            }).bind(this, local_voices) : (_text) => Colorful_Console.print('lack of language pack', 'warning');
+            return this.speak;
+        },
+        /**
+         * 语音合成
+         * @param {string} text
+         */
+        speak(_text) { }
+    };
+
     // 自定义打印内容
     const Colorful_Console = {
         _colors: {
@@ -1284,10 +1344,7 @@
          * @param {boolean} mode
          */
         add_new_content(content, mode) {
-            if (content.length < this.#content_len_limit) {
-                Colorful_Console.print('the length of input is less than 7, check your input', 'warning', true);
-                return;
-            }
+            if (content.length < this.#content_len_limit) return Colorful_Console.print('the length of input is less than 7, check your input', 'warning', true);
             const ws = this.#seg_word(content),
                 [dic, dic_name, len_name, len_data, target] = mode ? [this.#bayes_white_counter, 'bayes_white_counter', 'bayes_white_len', ++this.#bayes_white_len, 'white'] : [this.#bayes_black_counter, 'bayes_black_counter', 'bayes_black_len', ++this.#bayes_black_len, 'black'];
             ws.forEach(e => dic[e] ? ++dic[e] : (dic[e] = 1));
@@ -1386,11 +1443,8 @@
          */
         set_enable_state(state) {
             const s = typeof state;
-            if (s !== 'boolean' || (s === 'number' && state !== 0 || state !== 1)) {
-                Colorful_Console.print('enable state must be a boolean or a number: 0 | 1', 'warning');
-                return;
-            }
-            if (state == this.enable_state) return;
+            if (s !== 'boolean' || (s === 'number' && state !== 0 || state !== 1)) return Colorful_Console.print('enable state must be a boolean or a number: 0 | 1', 'warning');
+            else if (state == this.enable_state) return;
             Colorful_Console.print(`setup bayes to ${state} from ${this.enable_state}; enable will take effect after reload; disable will take effect now.`, 'info');
             if (!state) {
                 this.#cancel_monitor_module();
@@ -1698,7 +1752,6 @@
                 '\u6c88\u817e',
                 '\u4e07\u7c89',
                 '\u5b59\u7b11\u5ddd',
-                '\u65b0\u4e09\u56fd',
                 '\u6c11\u5ba3\u90e8',
                 '\u5c40\u5ea7',
                 '\u5f20\u53ec\u5fe0',
@@ -1742,16 +1795,12 @@
                 '\u81ea\u5b66\u7ecf\u9a8c',
                 '\u5fe0\u544a',
                 '\u6234\u5efa\u4e1a',
-                '\u5f20\u4e1c\u5347',
-                '\u6731\u671d\u9633',
-                '\u91cd\u542f',
                 '\u592e\u89c6',
                 '\u7f8e\u5986',
                 '\u85aa\u916c',
                 '\u85aa\u8d44',
                 '\u5f85\u9047',
                 '\u5e74\u85aa',
-                '\u53f7\u5458\u5de5',
                 '\u5de5\u8d44',
                 '\u526f\u4e1a',
                 '\u5916\u5305',
@@ -1875,10 +1924,10 @@
             // 对拦截次数进行排序
             if (this.block_ups.length === 0) return [];
             this.block_ups.sort((a, b) => a.visited_times - b.visited_times);
-            const i = this.block_ups.length;
-            // 各个百分段的拦截次数
-            const data = [0.25, 0.5, 0.75].map(e => ' ' + e * 100 + '% block times less than: ' + this.block_ups[Math.floor(e * i)].visited_times + ';');
-            const a = this.block_ups[i - 1];
+            const i = this.block_ups.length,
+                // 各个百分段的拦截次数
+                data = [0.25, 0.5, 0.75].map(e => ' ' + e * 100 + '% block times less than: ' + this.block_ups[Math.floor(e * i)].visited_times + ';'),
+                a = this.block_ups[i - 1];
             data.push(' up of most block: ' + a.up_name + ', ' + a.visited_times + ';');
             data.push('-'.repeat(42));
             return data;
@@ -1900,14 +1949,15 @@
             // 被拦截up的访问状况
             // splice(), 支持删除和插入指定位置的元素
             details.splice(4, 0, ...this._block_up_statistics());
-            const i = GM_Objects.get_value('install_date', 0);
-            i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push('install_date: ' + new Date(i).toDateString() + ';');
-            const script = GM_Objects.info.script;
-            ['version', 'author', 'lastModified', 'homepage'].forEach(e => details.push(e + ': ' + script[e] + ';'));
+            const i = GM_Objects.get_value('install_date', 0), script = GM_Objects.info.script;
+            i === 0 ? GM_Objects.set_value('install_date', Date.now()) : details.push(
+                'install_date: ' + new Date(i).toDateString() + ';',
+                'lastModified: ' + new Date(script.lastModified).toDateString() + ';'
+            );
+            ['version', 'author', 'homepage'].forEach(e => details.push(e + ': ' + script[e] + ';'));
             details.push('-'.repeat((s.length + 4) * 2));
             console.log(details.join('\n'));
-            const title = 'make thing better and simpler.';
-            const params = [
+            const title = 'make thing better and simpler.', params = [
                 `%c ${title}`,
                 "padding: 1px; border-radius: 3px 0 0 3px; color: #00a1d6; font-family: Monotype Corsiva; font-size: 12px;",
             ];
@@ -2440,6 +2490,9 @@
                             ['+', '', '视频声音调大', '视频'],
                             ['-', '', '视频声音调小', '视频'],
                             ['u', '', '视频页面内全屏', '视频'],
+                            ['j', '', '播放速度降低0.25', '视频'],
+                            ['k', '', '播放速度增加0.25', '视频'],
+                            ['n', 'normal', '恢复播放速度1', '视频'],
                             ['f', 'fullscreen', '视频全屏', '视频'],
                             ['m', 'mute', '静音', '视频'],
                             ['b', 'bing', '必应搜索', '全站'],
@@ -2525,10 +2578,6 @@
         #download_audio_path = GM_Objects.get_value('download_audio_path', 'E:\\Audio\\voice book');
         // 下载视频的路径
         #download_video_path = GM_Objects.get_value('download_video_path', 'E:\\videos');
-        // 菜单控制速度, 是否点击
-        #is_first = true;
-        // 控制的初始速度
-        #video_speed = 2;
         // 视频控制组件
         #video_player = null;
         // 历史访问settimeout id
@@ -2538,7 +2587,9 @@
         #auto_speed_mode = false;
         // 视频基本信息
         #video_info = {};
+        // 将数据转换为首页显示需要的数据
         #home_video_info = null;
+        // 数据库实例对象
         #db_instance = null;
         // url切换
         url_has_changed = false;
@@ -2552,9 +2603,10 @@
         #record_limits = [15, 31];
         // 播放是否需要停止, 用于非登陆环境, 等待视频清晰度切换完成
         #is_need_stop = false;
-        #video_rate = 0;
+        #video_score = 0;
         video_filter_ratio = 0;
         #is_own_videos = [false, false];
+        #speed_time_id = null;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2562,7 +2614,7 @@
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
         update_essential_info(user_data, video_data, user_id) {
-            this.#video_rate = this.#get_video_score(video_data.stat);
+            this.#video_score = this.#get_video_score(video_data.stat);
             this.#home_video_info = Data_Switch.video_to_home([user_data, video_data]);
             this.video_info_update_flag = Object.entries({
                 bvid: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
@@ -2591,6 +2643,7 @@
         set download_video_path(path) { this.#download_video_path = path, GM_Objects.set_value('download_video_path', path); }
         get download_video_path() { return this.#download_video_path; }
         #create_video_event() {
+            // canplay只要产生加载行为就会触发
             this.#video_player.mediaElement().oncanplay = (e) => {
                 // 只有当手动更改之后, 才会自动变速
                 if (this.#is_need_stop) {
@@ -2601,15 +2654,11 @@
                         return;
                     }
                 }
-                if (this.#is_first) return;
-                const target = e.target;
-                this.#auto_speed_mode = false;
-                target.playbackRate !== this.#video_speed && setTimeout(() => { target.playbackRate = this.#video_speed; }, 3000);
             };
             // 当观看完整, 删除收藏;
             this.#video_player.mediaElement().onended = () => this.#end_action();
             // 和速度同步变化监听
-            const record_limits = [15, 32];
+            const record_limits = [15, 31];
             this.#video_player.mediaElement().onratechange = (e) => {
                 const pr = e.target.playbackRate;
                 this.#record_limits = record_limits.map(e => parseInt(e / pr));
@@ -2636,25 +2685,13 @@
                 }
             }).observe(node[0], { childList: true, subtree: true }) : Colorful_Console.print('failed to find video parent element', 'crash', true);
         }
-        /**
-         * 播放速度控制
-         * @param {boolean} mode
-         */
-        #speed_control(mode) {
-            this.#is_first = false;
-            // 假如手动设置速度, 则取消自动变速
-            this.#auto_speed_mode = false;
-            this.#video_speed += (mode ? 0.5 : -0.5);
-            0 < this.#video_speed && this.#video_speed < 5 && this.#video_player.setPlaybackRate(this.#video_speed);
-            // 当速度调节小于2时, 重新恢复第一次的标记
-            this.#is_first = this.#video_speed < 2;
-        }
         // 自动速度控制, 用于快速观看视频
         #auto_speed_up() {
             this.#auto_speed_mode = true;
             const ids = [[15000, 1.25], [75000, 1.5], [125000, 2], [155000, 2.5], [185000, 3]].map((e, i) => setTimeout(() => {
                 // 当自动调速停止, 则清除所有settimeout
                 if (!this.#auto_speed_mode) {
+                    Colorful_Console.print('auto speed up video cancel', 'info');
                     ids.forEach(id => id && clearTimeout(id));
                     return;
                 }
@@ -2663,8 +2700,6 @@
             }, e[0]));
             GM_Objects.set_value('speed_up_video', false);
         }
-        // 速度控制, 菜单函数
-        #regist_menus_command() { [['speed +', true], ['speed -', false]].forEach(e => GM_Objects.registermenucommand(e[0], this.#speed_control.bind(this, e[1]))); }
         // 历史访问记录
         #visited_record() {
             if (this.#record_id) {
@@ -2677,7 +2712,7 @@
             let ic = 0, f = true;
             this.#record_id = setInterval(() => {
                 if (this.#video_player.isPaused()) return;
-                if (f && ic > this.#record_limits[0]) {
+                else if (f && ic > this.#record_limits[0]) {
                     const id = this.#video_info.bvid;
                     Statics_Variant_Manager.add_visited_video(id);
                     this.#db_instance.delete(Indexed_DB.tb_name_dic.recommend, id);
@@ -2735,16 +2770,17 @@
             }, 0)) * 1000) * (gap < 8 ? 1.09 - gap * 0.01 : 1);
         };
         #get_star_container(node = null) { return (node || document).getElementsByClassName('star-container')[0]; }
+        // 添加视频评分节点添加到标题节点上
         #add_video_rate_element_to_title() {
             const node = document.getElementsByClassName('video-info-title-inner')[0];
             if (node) {
                 this.#get_star_container(node)?.remove();
-                if (this.#video_rate > 0) {
-                    const c = Math.ceil((this.#video_rate + 1) / 10),
+                if (this.#video_score > 0) {
+                    const c = Math.ceil((this.#video_score + 1) / 10),
                         html = `
-                    <div class="star-container" title="comprehensive score of video">
-                        <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_rate.toFixed(1)}</span></div>
-                    </div>`;
+                            <div class="star-container" title="comprehensive score of video">
+                                <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_score.toFixed(1)}</span></div>
+                            </div>`;
                     setTimeout(() => node.insertAdjacentHTML('beforeend', html), 25);
                 }
             } else Colorful_Console.print('failed to find video title element', 'crash', true);
@@ -2796,10 +2832,8 @@
             }
             mode && (this.#select_target.value = '0');
             const target = document.getElementById('viewbox_report');
-            if (!target) {
-                Colorful_Console.print('fail to insert element of status', 'crash', true);
-                return;
-            } else if (target.nextElementSibling.id === 'status_sider_bar') target.nextElementSibling.remove();
+            if (!target) return Colorful_Console.print('fail to insert element of status', 'crash', true);
+            else if (target.nextElementSibling.id === 'status_sider_bar') target.nextElementSibling.remove();
             const vid = this.#video_info.bvid,
                 status_dic = {
                     Rate: Statics_Variant_Manager.rate_video_part.check_video_rate(vid),
@@ -2928,10 +2962,7 @@
                         dic.Rate = val;
                         dic.Blocked = 0;
                         i === 2 && (dic.Bayesed = 1);
-                    } else if (i < 0) {
-                        Colorful_Console.print('not allowed to operate your own video', 'debug');
-                        return;
-                    }
+                    } else if (i < 0) return Colorful_Console.print('not allowed to operate your own video', 'debug');
                 }
                 const params = [];
                 // 只有当页面的视频为合集的状态才会生成相应的参数
@@ -3019,28 +3050,6 @@
         }
         // 点击执行
         #click_target(classname) { document.getElementsByClassName(classname)[0]?.click(); }
-        // 全屏
-        wide_screen() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-web'); }
-        // 影院宽屏模式
-        theatre_mode() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-wide'); }
-        /**
-         * 声音控制
-         * @param {boolean} mode
-         */
-        voice_control(mode) {
-            const vx = this.#video_player.getVolume() + (mode ? 0.1 : -0.1);
-            this.#video_player.setVolume(vx > 1 ? 1 : vx < 0 ? 0 : vx);
-        }
-        // 播放控制
-        play_control() { this.#video_player.isPaused() ? this.#video_player.play() : this.#video_player.pause(); }
-        /**
-         * 自动关灯控制控制
-         * @param {*} mode 0, 默认状态; 1, 根据时间自动调节 2. 取消自动关灯灯光
-         */
-        light_control(mode = 0) {
-            const is_lightoff = this.#video_player.getLightOff();
-            !((mode === 1 && is_lightoff) || (mode === 2 && !is_lightoff)) && this.#video_player.setLightOff(!is_lightoff);
-        }
         //自动关灯
         #auto_light = {
             _light_off: false,
@@ -3089,50 +3098,7 @@
                 } else Colorful_Console.print('url_change event error', 'crash', true);
             });
         }
-        main(db_instance) {
-            this.#db_instance = db_instance;
-            // urlchange监听
-            this.#url_change_monitor();
-            // 创建下拉菜单
-            !this.#is_own_videos[1] && this.#add_menus_element();
-            // 历史访问记录
-            this.#visited_record();
-            // 创建菜单事件
-            this.#regist_menus_command();
-            // 自动速度控制
-            GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
-            // 设置为不自动播放会出现一个问题, 就是play()这个操作会被浏览器拦截, 假如没有和页面产生交互的情况下
-            // 这个问题主要出现在edge浏览器中
-            // play()操作大概率因为页面没有和浏览器产生交互, 浏览器会拦截这个操作, 导致无法播放
-            // 但是在chrome上这种情况并不明显
-            setTimeout(() => this.#video_player.setAutoplay(this.#user_is_login), 5500);
-        }
-        // 初始化模块
-        init() {
-            return new Promise((resolve, reject) => {
-                Object.defineProperty(unsafeWindow, 'player', {
-                    get: () => this.#video_player,
-                    set: (val) => {
-                        this.#video_player = val;
-                        Object.defineProperty(val, 'player', {
-
-                        });
-                        // 必须回调, 等待对象内容赋值后才能捕获具体
-                        setTimeout(() => {
-                            if (this.#is_support_urlchange) {
-                                // 尽快执行关灯的动作
-                                this.#auto_light.main() && this.light_control(1);
-                                // 创建视频播放事件或者是监听视频元素变化
-                                this.#user_is_login ? this.#create_video_event() : this.#video_element_change_monitor();
-                                resolve(true);
-                            } else reject('url_change_event_not_support');
-                        });
-                    },
-                    configurable: true,
-                    enumerable: true
-                });
-            });
-        }
+        // 状态改变处理
         #handle_status_change() {
             /*
             0, 0, 更新侧边栏, 不需要插入下拉, 基本操作
@@ -3140,13 +3106,14 @@
             1, 0, 插入侧边栏, 插入下拉, 插入score
             1, 1, 不需要任何操作
             */
+            this.#auto_speed_mode = false;
+            this.#visited_record();
             if (!(this.#is_own_videos[0] || this.#is_own_videos[1])) this.#add_status_siderbar(true);
             else if (!this.#is_own_videos[0] && this.#is_own_videos[1]) {
                 this.#select_element?.remove();
                 this.#sider_bar?.remove();
                 this.#get_star_container()?.remove();
-            }
-            else if (this.#is_own_videos[0] && !this.#is_own_videos[1]) this.#add_menus_element();
+            } else if (this.#is_own_videos[0] && !this.#is_own_videos[1]) this.#add_menus_element();
         }
         // 监听视频信息更新, 需要等待信息更新完成才执行下一步
         #create_video_info_update_monitor() {
@@ -3157,7 +3124,6 @@
                         timeout_id && clearTimeout(timeout_id);
                         timeout_id = setTimeout(() => {
                             timeout_id = null;
-                            this.#visited_record();
                             this.#handle_status_change();
                         }, 1000);
                     }
@@ -3165,9 +3131,84 @@
                 get() { }
             });
         }
+        // 全屏
+        wide_screen() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-web'); }
+        // 影院宽屏模式
+        theatre_mode() { this.#click_target('bpx-player-ctrl-btn bpx-player-ctrl-wide'); }
+        /**
+         * 声音控制
+         * @param {boolean} mode
+         */
+        voice_control(mode) {
+            const vx = this.#video_player.getVolume() + (mode ? 0.1 : -0.1);
+            this.#video_player.setVolume(vx > 1 ? 1 : vx < 0 ? 0 : vx);
+        }
+        // 播放控制
+        play_control() { this.#video_player.isPaused() ? this.#video_player.play() : this.#video_player.pause(); }
+        /**
+         * 自动关灯控制控制
+         * @param {*} mode 0, 默认状态; 1, 根据时间自动调节 2. 取消自动关灯灯光
+         */
+        light_control(mode = 0) {
+            const is_lightoff = this.#video_player.getLightOff();
+            !((mode === 1 && is_lightoff) || (mode === 2 && !is_lightoff)) && this.#video_player.setLightOff(!is_lightoff);
+        }
+        /**
+         * 播放速度控制
+         * @param {number} mode 0, 1, 2
+         */
+        speed_control(mode) {
+            if (mode === 2) return this.#video_player.setPlaybackRate(1);
+            else if (this.#speed_time_id) clearTimeout(this.#speed_time_id);
+            this.#speed_time_id = setTimeout(() => {
+                this.#speed_time_id = null;
+                // 假如手动设置速度, 则取消自动变速
+                this.#auto_speed_mode = false;
+                const s = this.#video_player.getPlaybackRate() + (mode ? 0.25 : -0.25);
+                0 < s && s < 5 && this.#video_player.setPlaybackRate(s);
+            }, 300);
+        }
+        main(db_instance) {
+            this.#db_instance = db_instance;
+            // urlchange监听
+            this.#url_change_monitor();
+            // 创建下拉菜单
+            !this.#is_own_videos[1] && this.#add_menus_element();
+            // 历史访问记录
+            this.#visited_record();
+            // 自动速度控制
+            GM_Objects.get_value('speed_up_video', false) && this.#auto_speed_up();
+            // 设置为不自动播放会出现一个问题, 就是play()这个操作会被浏览器拦截, 假如没有和页面产生交互的情况下
+            // 这个问题主要出现在edge浏览器中
+            // play()操作大概率因为页面没有和浏览器产生交互, 浏览器会拦截这个操作, 导致无法播放
+            // 但是在chrome上这种情况并不明显
+            setTimeout(() => this.#video_player.setAutoplay(this.#user_is_login), 5500);
+        }
+        // 初始化模块
+        init() {
+            return new Promise((resolve, reject) => Object.defineProperty(unsafeWindow, 'player', {
+                get: () => this.#video_player,
+                set: (val) => {
+                    this.#video_player = val;
+                    // 必须回调, 等待对象内容赋值后才能捕获具体
+                    setTimeout(() => {
+                        if (this.#is_support_urlchange) {
+                            // 尽快执行关灯的动作
+                            this.#auto_light.main() && this.light_control(1);
+                            // 创建视频播放事件或者是监听视频元素变化
+                            this.#user_is_login ? this.#create_video_event() : this.#video_element_change_monitor();
+                            resolve(true);
+                        } else reject('url_change_event_not_support');
+                    });
+                },
+                configurable: true,
+                enumerable: true
+            }));
+        }
         /**
          * @param {Object} data
          * @param {boolean} user_is_login
+         * @param {number} filter_ratio
          * @param {string} user_id
          */
         constructor(data, user_is_login, filter_ratio, user_id) {
@@ -3356,6 +3397,7 @@
                 },
                 keydown_action: {
                     get _button() { return document.getElementsByClassName('primary-btn roll-btn')[0]; },
+                    // 判断元素是否在可视区域内
                     _element_is_inview(el) {
                         const rect = el.getBoundingClientRect();
                         return rect.top >= 0 && rect.left >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && rect.right <= (window.innerWidth || document.documentElement.clientWidth);
@@ -3451,10 +3493,7 @@
                  */
                 handle_fetch_url: (url) => this.#configs.interpose_api_suffix.some(e => url.includes(this.#configs.interpose_api_prefix + e)) ? (response_content) => {
                     const data = response_content.data;
-                    if (!data) {
-                        Colorful_Console.print("the api of video data has change", 'crash', true);
-                        return;
-                    }
+                    if (!data) return Colorful_Console.print("the api of video data has change", 'crash', true);
                     let results = null;
                     // 缓存的数据
                     const cache_results = this.#web_data_cache;
@@ -3501,6 +3540,9 @@
                     l() { this._exe('light_control'); },
                     t() { this._exe('theatre_mode'); },
                     u() { this._exe('wide_screen'); },
+                    k() { this._exe('speed_control', 1); },
+                    j() { this._exe('speed_control', 0); },
+                    n() { this._exe('speed_control', 2); },
                     '='() { this._exe('voice_control', true); },
                     '-'() { this._exe('voice_control', false); },
                     _rate(val) { this._exe('key_rate_video', val); },
@@ -3663,10 +3705,8 @@
                     const href = a.href || '';
                     // 广告, 小课堂的内容清除掉
                     if (href) {
-                        if (href.includes('cm.bilibili.com') || href.includes('/cheese')) {
-                            Colorful_Console.print(`advertisement clear: ${href}`);
-                            return null;
-                        } else if (!info.bvid) info.bvid = Base_Info_Match.get_bvid(href);
+                        if (href.includes('cm.bilibili.com') || href.includes('/cheese')) return Colorful_Console.print(`advertisement clear: ${href}`);
+                        else if (!info.bvid) info.bvid = Base_Info_Match.get_bvid(href);
                         else if (!info.mid) info.mid = Base_Info_Match.get_mid(href);
                         else break;
                     }
@@ -3748,10 +3788,7 @@
                         const url = args[2]?.[0]?.split('&')[0] || '';
                         if (url) {
                             // 检查搜索的内容是否包含垃圾
-                            if (Dynamic_Variants_Manager.key_check(decodeURIComponent(url))) {
-                                Colorful_Console.print('search content contain black key', 'warning', true);
-                                return;
-                            }
+                            if (Dynamic_Variants_Manager.key_check(decodeURIComponent(url))) return Colorful_Console.print('search content contain black key', 'warning', true);
                             args[2][0] = url;
                         }
                         Reflect.apply(...args);
@@ -3970,7 +4007,7 @@
                     .bpx-player-toast-item{opacity: 0.01 !important;}
                     #status_sider_bar {
                         z-index: 999;
-                        margin-left: -70px;
+                        margin-left: -65px;
                         position: absolute;
                         background-color: #f4f4f4;
                         border-radius: 8px;
@@ -4241,16 +4278,10 @@
                 if (parent_class) {
                     const parent_nodes = document.getElementsByClassName(parent_class), i = parent_nodes.length;
                     if (i > 0) target = parent_nodes[i - 1];
-                    else {
-                        Colorful_Console.print('without traversable nodes.', 'debug');
-                        return;
-                    }
+                    else return Colorful_Console.print('without traversable nodes.', 'debug');
                 }
                 const nodes = target.getElementsByClassName(this.#configs.target_class);
-                if (nodes.length === 0) {
-                    Colorful_Console.print('no initial elements', 'debug');
-                    return;
-                }
+                if (nodes.length === 0) return Colorful_Console.print('no initial elements', 'debug');
                 const {
                     hide_node,
                     add_info_to_node_title,
@@ -4423,22 +4454,16 @@
                         mode = !mode;
                     };
                 },
-                _check_user: (mid) => mid === GM_Objects.author_bili_id ? "author's page, whitelist" : mid === this.#user_id ? "your page, whitelist" : null,
+                _check_whitelist_user: (mid) => mid === GM_Objects.author_bili_id ? "author's page, whitelist" : mid === this.#user_id ? "your page, whitelist" : null,
                 main() {
                     this._maintain();
                     setTimeout(() => {
                         const title = document.title, up_name = title.split('的个人空间')[0];
-                        if (up_name === 'undefined' || up_name.length === title.length) {
-                            Colorful_Console.print('fail to get the upname', 'debug');
-                            return;
-                        }
+                        if (up_name === 'undefined' || up_name.length === title.length) return Colorful_Console.print('fail to get the upname', 'debug');
                         const mid = Base_Info_Match.get_mid(location.href);
                         if (mid) {
-                            const info = this._check_user(mid);
-                            if (info) {
-                                Colorful_Console.print(info, 'debug');
-                                return;
-                            }
+                            const info = this._check_whitelist_user(mid);
+                            if (info) return Colorful_Console.print(info, 'debug');
                             const mode = Statics_Variant_Manager.up_part.check(mid);
                             this._create_event(this._create_button(mode), mode, mid, up_name);
                         } else Colorful_Console.print('mid is null', 'debug');
@@ -5820,8 +5845,7 @@
             if (this.#configs.check_search?.(href)) {
                 confirm("hey, bro, don't waste your time on rubbish, close current page?") && GM_Objects.window_close();
                 // 无法关闭浏览器的最后一个标签, 所以这里还需要拦截后续的操作
-                Colorful_Console.print('you are accessing a rubbish page and the script will not run properly.', 'warning');
-                return;
+                return Colorful_Console.print('you are accessing a rubbish page and the script will not run properly.', 'warning');
             }
             // 检查用户是否登录
             this.#user_id = document?.cookie?.split?.(';')?.find?.(item => item.includes('DedeUserID'))?.split?.('=')?.[1];
