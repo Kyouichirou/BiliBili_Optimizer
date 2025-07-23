@@ -416,7 +416,7 @@
          * @param {string} href
          * @returns {string}
          */
-        get_bvid(href) { this._match(this._bvid_reg, href); },
+        get_bvid(href) { return this._match(this._bvid_reg, href); },
         /**
          * 匹配up id
          * @param {string} href
