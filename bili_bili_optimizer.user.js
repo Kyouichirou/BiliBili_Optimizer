@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.4
+// @version      3.6.5
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -401,7 +401,7 @@
     // 基本信息匹配
     const Base_Info_Match = {
         // video id
-        _bvid_reg: /[a-z\d]{10,}/i,
+        _bvid_reg: /BV[a-z\d]{10,}/i,
         // up uid, up的长度范围很广从1位数到16位数
         _mid_reg: /(?<=com\/)\d+/,
         /**
@@ -416,7 +416,7 @@
          * @param {string} href
          * @returns {string}
          */
-        get_bvid(href) { return href.includes('/video/') ? this._match(this._bvid_reg, href) : ''; },
+        get_bvid(href) { this._match(this._bvid_reg, href); },
         /**
          * 匹配up id
          * @param {string} href
@@ -424,6 +424,8 @@
          */
         get_mid(href) { return href.includes('space.bilibili') ? parseInt(this._match(this._mid_reg, href)) : 0; }
     };
+
+    console.log(Base_Info_Match.get_bvid('https://www.bilibili.com/list/ml1727248600?oid=114110100406484&bvid=BV1WD9oYCEhT'));
     // 通用函数 ---------------
 
     // ---------------- 链接常量
@@ -2170,8 +2172,9 @@
             // 4. 最后检查拦截视频
             const { title, mid, bvid, up_name } = info;
             if (this._user_id === mid || this._author_id === mid) return false;
+            else if (this.block_ups.includes_r(mid) || this.cache_block_ups.includes_r(mid)) return true;
             else if (this.has_checked_videos.includes(bvid)) return false;
-            else if (this.block_ups.includes_r(mid) || this.cache_block_ups.includes_r(mid) || this.block_videos.includes_r(bvid) || this.cache_block_videos.includes_r(bvid)) return true;
+            else if (this.block_videos.includes_r(bvid) || this.cache_block_videos.includes_r(bvid)) return true;
             const r = this.key_check(title + "_" + up_name);
             if (r > 0) {
                 r == 2 && this.cache_block_ups.push(mid);
@@ -2342,11 +2345,15 @@
              * 更新, 全新添加
              * @param {object} info
              */
-            add(info, is_force = true) { this._handle(info, true, info.bvid, is_force); },
+            add(info, is_force = true) { return this._handle(info, true, info.bvid, is_force); },
             remove(bvid) { this._handle(bvid, false, bvid); },
             _handle(data, mode, bvid, is_force) {
-                const arr = this._data, s_type = mode ? 'add' : 'remove';
-                (mode ? arr.add(data, is_force) : arr.remove(data)) && (this._info_write(arr, bvid, s_type), Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data }));
+                const arr = this._data, s_type = mode ? 'add' : 'remove', f = mode ? arr.add(data, is_force) : arr.remove(data)
+                if (f) {
+                    this._info_write(arr, bvid, s_type);
+                    Dynamic_Variants_Manager.rate_visited_data_sync({ type: s_type, value: data });
+                }
+                return f;
             },
             _info_write(data, bvid, s_type, no_write = false) { GM_Objects.set_value('rate_videos', data, true), !no_write && Colorful_Console.print(`${bvid}, successfully ${s_type} bvid to rate_videos`); }
         },
@@ -2614,7 +2621,7 @@
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
         update_essential_info(user_data, video_data, user_id) {
-            this.#video_score = this.#get_video_score(video_data.stat);
+            this.#video_score = video_data.is_upower_exclusive ? 0 : this.#get_video_score(video_data.stat, video_data.pubdate);
             this.#home_video_info = Data_Switch.video_to_home([user_data, video_data]);
             this.video_info_update_flag = Object.entries({
                 bvid: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
@@ -2726,11 +2733,11 @@
             }, parseInt((duration > lm ? lm : duration) / 40));
         }
         // 视频的综合评分
-        #get_video_score(data) {
+        #get_video_score(data, pubdate) {
             const views = data.view;
             if (views < 1e3) return 0;
             // 当前的视频比未来的视频更值钱
-            const gap = Math.floor(((Date.now() - data.pubdate * 1000) / 1000 / 24 / 60 / 60 / 7)),
+            const gap = Math.floor(((Date.now() - pubdate * 1000) / 1000 / 24 / 60 / 60 / 7)),
                 view = {
                     weight: 0.08,
                     value_range: [1e3, 1e7]
@@ -2775,14 +2782,12 @@
             const node = document.getElementsByClassName('video-info-title-inner')[0];
             if (node) {
                 this.#get_star_container(node)?.remove();
-                if (this.#video_score > 0) {
-                    const c = Math.ceil((this.#video_score + 1) / 10),
-                        html = `
+                const c = Math.ceil((this.#video_score + 1) / 10),
+                    html = `
                             <div class="star-container" title="comprehensive score of video">
                                 <div class="star"><span style="color: ${['blue', "black", "green", 'red'][c > 3 ? 3 : c - 1]};">${this.#video_score.toFixed(1)}</span></div>
                             </div>`;
-                    setTimeout(() => node.insertAdjacentHTML('beforeend', html), 25);
-                }
+                setTimeout(() => node.insertAdjacentHTML('beforeend', html), 25);
             } else Colorful_Console.print('failed to find video title element', 'crash', true);
         }
         // 侧边状态栏html
@@ -2831,7 +2836,7 @@
                 this.#sider_status_id = null;
             }
             mode && (this.#select_target.value = '0');
-            const target = document.getElementById('viewbox_report');
+            const target = document.getElementById('viewbox_report') || document.getElementsByClassName('video-info-container win')[0];
             if (!target) return Colorful_Console.print('fail to insert element of status', 'crash', true);
             else if (target.nextElementSibling.id === 'status_sider_bar') target.nextElementSibling.remove();
             const vid = this.#video_info.bvid,
@@ -2933,15 +2938,15 @@
                     add_date: now,
                     rate: val
                 };
-                Statics_Variant_Manager.rate_video_part.add(info, is_force);
+                const f = Statics_Variant_Manager.rate_video_part.add(info, is_force) ? 0 : 2;
                 // 假如评分的视频是拦截的视频, 则取消拦截
                 Dynamic_Variants_Manager.unblock_video(id);
                 if (!is_key_send && !this.#added_bayes_list.includes(id) && (val === 5 || confirm("add to whitelist of bayes model?"))) {
                     Dynamic_Variants_Manager.bayes_module.add_new_content(video_info.title, true);
                     this.#added_bayes_list.push(id);
-                    return 2;
+                    return 2 + f;
                 }
-                return 1;
+                return 1 + f;
             },
             // 1 3分
             // 2 4分
@@ -2957,9 +2962,10 @@
                     val = 3;
                 } else {
                     val += 2;
-                    const i = this._add_rate(val, video_info, is_key_send, is_force);
+                    let i = this._add_rate(val, video_info, is_key_send, is_force);
                     if (i > 0) {
-                        dic.Rate = val;
+                        if (i < 3) dic.Rate = val;
+                        else i -= 2;
                         dic.Blocked = 0;
                         i === 2 && (dic.Bayesed = 1);
                     } else if (i < 0) return Colorful_Console.print('not allowed to operate your own video', 'debug');
@@ -3214,7 +3220,8 @@
         constructor(data, user_is_login, filter_ratio, user_id) {
             this.#user_is_login = user_is_login;
             this.video_filter_ratio = filter_ratio;
-            this.#initial_flag = this.update_essential_info(data.upData, data.videoData, user_id);
+            const updata = data.upData || data.upInfo;
+            this.#initial_flag = this.update_essential_info(updata, data.videoData, user_id);
             if (this.#initial_flag) this.#create_video_info_update_monitor();
         }
     }
@@ -3233,6 +3240,7 @@
         #web_data_cache = null;
         // 视频模块
         #video_instance = null;
+        #web_socket_instance = null;
         // web api请求实例
         #web_request_instance = null;
         // indexed数据库初始化标记
@@ -3460,7 +3468,7 @@
                             n = data.filter((_v, i) => !tmp[i]), limit = data.length, nl = n.length,
                             new_arr = nl < limit ? [...n, ...new Array(limit).fill(m)].slice(0, limit) : n;
                         val.related = new_arr;
-                        this.#video_filter_ratio = nl / limit;
+                        this.#video_filter_ratio = limit > 0 ? nl / limit : 0;
                         this.#web_data_cache = new_arr;
                         return tmp;
                     } else Colorful_Console.print('initial_data object api has changed in video page.', 'crash', true);
@@ -3554,7 +3562,8 @@
                         const f = this[key];
                         return f ? (f.apply(this), true) : false;
                     }
-                }
+                },
+                rpc(val) { this.keydown_action.main(val); }
             },
             search: {
                 id: 2,
@@ -5838,7 +5847,7 @@
                 'play',
                 'read',
                 'history'
-            ].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : 'other');
+            ].find(e => href.includes(e)) || (href.endsWith('.com/') && href.includes('www.') ? 'home' : href.includes('/list/') ? 'video' : 'other'); // 需要额外处理一下首页, /list/ 收藏夹
             // 确定配置参数, 载入配置
             this.#configs = this.#site_configs[site];
             // 检查搜索链接是否包含垃圾
