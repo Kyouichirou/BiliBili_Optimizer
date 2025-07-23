@@ -424,8 +424,6 @@
          */
         get_mid(href) { return href.includes('space.bilibili') ? parseInt(this._match(this._mid_reg, href)) : 0; }
     };
-
-    console.log(Base_Info_Match.get_bvid('https://www.bilibili.com/list/ml1727248600?oid=114110100406484&bvid=BV1WD9oYCEhT'));
     // 通用函数 ---------------
 
     // ---------------- 链接常量
