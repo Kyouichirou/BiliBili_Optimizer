@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.6
+// @version      3.6.7
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2585,6 +2585,8 @@
                             ['n', 'normal', '恢复播放速度1', '视频'],
                             ['f', 'fullscreen', '视频全屏', '视频'],
                             ['m', 'mute', '静音', '视频'],
+                            [',', '', '最低画质', '视频'],
+                            ['.', '', '最高画质', '视频'],
                             ['b', 'bing', '必应搜索', '全站'],
                             ['s', 'search', '哔哩搜索', '全站'],
                             ['z', 'zhihu', '知乎搜索', '全站'],
@@ -2693,10 +2695,15 @@
         #record_limits = [15, 31];
         // 播放是否需要停止, 用于非登陆环境, 等待视频清晰度切换完成
         #is_need_stop = false;
+        // 视频自定义评分
         #video_score = 0;
+        // 视频侧边栏拦截率
         video_filter_ratio = 0;
+        // 视频是不是自己发布的
         #is_own_videos = [false, false];
         #speed_time_id = null;
+        // 判断当前是否为有声书籍
+        #audio_book_status = 0;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2704,8 +2711,11 @@
         get video_base_info() { return this.#video_info; }
         // 更新视频基础信息
         update_essential_info(user_data, video_data, user_id) {
+            // 假如是付费内容, 标记为0
             this.#video_score = video_data.is_upower_exclusive ? 0 : this.#get_video_score(video_data.stat, video_data.pubdate);
+            // 将当前数据转为首页结构的数据,
             this.#home_video_info = Data_Switch.video_to_home([user_data, video_data]);
+            // 准确提取到需要的内容
             this.video_info_update_flag = Object.entries({
                 bvid: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.bvid),
                 title: ((arg) => (arg === undefined ? undefined : arg + '')).bind(null, video_data.title),
@@ -2714,12 +2724,31 @@
                 videos: (_arg) => video_data.videos,
                 is_collection: ((arg) => (arg === undefined ? undefined : arg > 1 ? true : false)).bind(null, video_data.videos)
             }).every(([k, v]) => (this.#video_info[k] = v()) === undefined ? (Colorful_Console.print(`failed to obtain basic video information: ${k}`, 'crash', true), false) : true);
+            // 判断是否为用户自己发布的视频
             this.#is_own_videos[0] = this.#is_own_videos[1];
             this.#is_own_videos[1] = user_id === this.#video_info.mid;
             // 缓存拦截的up, 不拦截当前视频播放的
             Dynamic_Variants_Manager.current_video_mid = this.#video_info.mid;
             return this.video_info_update_flag;
         }
+        /**
+         * @param {string} title
+         * @param {*} tags
+         */
+        update_audio_book_status(title, tags) {
+            if (this.#audio_book_status > 7) return;
+            const book_tags = ['有声书', '广播剧', '有声读物', '有声小说', '小说演播'];
+            let i = book_tags.some(e => title.includes(e)) ? 2 : 0;
+            for (const tag of tags) {
+                const tags_name = tag.tag_name;
+                i += book_tags.some(e => tags_name.includes(e)) ? 2 : 0;
+            }
+            this.#audio_book_status += i;
+        }
+        /**
+         * @param {number} val
+         */
+        set audio_book_status(val) { this.#audio_book_status = val; }
         // 初始化成功标记
         get initial_flag() { return this.#initial_flag; }
         /**
@@ -2735,6 +2764,7 @@
         set download_video_path(path) { this.#download_video_path = path, GM_Objects.set_value('download_video_path', path); }
         get download_video_path() { return this.#download_video_path; }
         #create_video_event() {
+            this.#user_is_login && (this.#video_player.mediaElement().onloadeddata = (_) => this.#auto_quality());
             // canplay只要产生加载行为就会触发
             this.#video_player.mediaElement().oncanplay = (e) => {
                 // 只有当手动更改之后, 才会自动变速
@@ -3070,17 +3100,7 @@
                 this._change_lable(dic);
                 this._bbdown(id, params, is_audio, v);
             },
-            // 判断是否是音频类视频
-            _voice_keys: ['有声', '小说剧', '广播剧', '播讲', '听书'],
-            _check_is_audio() {
-                const nodes = document.getElementsByClassName('title');
-                let ic = 0;
-                for (const title of nodes) {
-                    const t = title.innerHTML.replaceAll(' ', '');
-                    if ((ic += (this._voice_keys.some(e => t.includes(e)) ? 1 : 0)) > 4) return true;
-                }
-                return false;
-            },
+            _check_is_audio: () => this.#audio_book_status > 5,
             main(val, video_info, is_key_send = false, is_force = true) {
                 const f = this[val];
                 // 注意this的丢失, 函数在赋值之后
@@ -3186,6 +3206,7 @@
                 if (bvid) {
                     this.#is_need_stop = !this.#user_is_login;
                     if (bvid === this.#video_info.bvid) return;
+                    this.#auto_quality();
                     this.url_has_changed = true;
                 } else Colorful_Console.print('url_change event error', 'crash', true);
             });
@@ -3245,6 +3266,21 @@
             const is_lightoff = this.#video_player.getLightOff();
             !((mode === 1 && is_lightoff) || (mode === 2 && !is_lightoff)) && this.#video_player.setLightOff(!is_lightoff);
         }
+        // 设置视频清晰度
+        set_quality(mode) {
+            const qs = this.#video_player.getSupportedQualityList(), i = qs.length;
+            if (i < 2) return;
+            const bpx = localStorage.getItem('bpx_player_profile');
+            let q = qs[mode ? i - 1 : 0];
+            if (bpx) {
+                const obj = JSON.parse(bpx), x = obj.media?.quality;
+                if (x === q) return;
+                else if (x > q) q = x;
+            }
+            this.#video_player.requestQuality(q);
+        }
+        // 自动切换清晰度, 用于处理听书时不需要高清的情况, 只有当用户登录时才执行
+        #auto_quality() { setTimeout(() => this.set_quality(this.#audio_book_status > 7), 300); }
         /**
          * 播放速度控制
          * @param {number} mode 0, 1, 2
@@ -3307,8 +3343,7 @@
             this.#user_is_login = user_is_login;
             this.video_filter_ratio = filter_ratio;
             const updata = data.upData || data.upInfo;
-            this.#initial_flag = this.update_essential_info(updata, data.videoData, user_id);
-            if (this.#initial_flag) this.#create_video_info_update_monitor();
+            (this.#initial_flag = this.update_essential_info(updata, data.videoData, user_id)) && this.#create_video_info_update_monitor();
         }
     }
     // ---------- 视频控制模块
@@ -3363,6 +3398,7 @@
                 id: 0,
                 // 目标元素的class_name
                 target_class: 'bili-video-card is-rcmd',
+                // 上一层级的目标元素id
                 top_target_class: 'feed-card',
                 // api url 后缀
                 interpose_api_suffix: ['web-interface/index/top/feed/rcmd', 'web-interface/wbi/index/top/feed/rcmd'],
@@ -3412,6 +3448,7 @@
                     });
                     this.#web_data_cache = data;
                 },
+                // 读取本地数据库的数据用于填充过滤掉的内容
                 get_mybili_data: async () => {
                     // 首先获取数据库的数据
                     const { pocket, recommend } = Indexed_DB.tb_name_dic, results = await this.#indexeddb_instance.batch_get(pocket, 10, this.#indexeddb_cursor_index);
@@ -3519,14 +3556,13 @@
                 initial_data_name: '__INITIAL_STATE__',
                 interpose_api_suffix: ['web-interface/archive/related', 'web-interface/wbi/view/detail?aid=', 'web-interface/wbi/view/detail?platform='],
                 initial_data_handler: (val) => {
-                    const data = val.related;
-                    const m = {
+                    const data = val.related, m = {
                         "aid": 461236586,
                         "cid": 357129641,
                         "bvid": "BV1P5411T71D",
                         "duration": 749,
                         "pic": "http:\u002F\u002Fi1.hdslb.com\u002Fbfs\u002Farchive\u002Fc826072903444fd12e62de3b4cfec319399c547f.jpg",
-                        "title": "【漫漫说】推理小说中最震撼的杀人诡计！恐怖诡异宛如恶魔降临！",
+                        "title": "[stuff]推理小说中最震撼的杀人诡计！恐怖诡异宛如恶魔降临！",
                         "owner": {
                             "name": "汉森白JW",
                             "mid": 98666360
@@ -3604,10 +3640,13 @@
                             response_content.data.Related = cache_results;
                             return;
                         }
+                        this.#configs.check_is_book.reset();
                         results = this.#configs.request_data_handler(data.Related, this.#configs.pre_data_check);
                         if (this.#video_instance) {
                             this.#video_instance.video_filter_ratio = results.length / data.Related.length;
                             this.#video_instance.update_essential_info(data.View.owner, data.View, this.#user_id);
+                            this.#configs.check_is_book.update();
+                            this.#video_instance.update_audio_book_status(data.View.title, data.Tags);
                         }
                         response_content.data.Related = results;
                     }
@@ -3640,6 +3679,8 @@
                     '='() { this._exe('voice_control', true); },
                     '-'() { this._exe('voice_control', false); },
                     _rate(val) { this._exe('key_rate_video', val); },
+                    ','() { this._exe('set_quality', false); },
+                    '.'() { this._exe('set_quality', true); },
                     1() { this._rate(1); },
                     2() { this._rate(2); },
                     3() { this._rate(3); },
@@ -3649,7 +3690,31 @@
                         return f ? (f.apply(this), true) : false;
                     }
                 },
-                rpc(val) { this.keydown_action.main(val); }
+                rpc(val) { this.keydown_action.main(val); },
+                check_is_book: {
+                    _index: 0,
+                    _book_ic: 0,
+                    _check_time: 19,
+                    _limit: 7,
+                    _tags_data: ['有声', '小说剧', '广播剧', '播讲', '听书'],
+                    _update_video_status: (val) => (this.#video_instance.audio_book_status = val),
+                    _check(title) { return this._tags_data.some(e => title.includes(e)) ? 1 : 0; },
+                    _reset() { this.func = (_title) => { }; },
+                    _o_func(title) {
+                        // 避免遍历所有的侧边栏视频
+                        if ((this._index += 1) > this._check_time) this._reset();
+                        else if ((this._book_ic += this._check(title)) > this._limit) this._reset();
+                    },
+                    func(_title) { },
+                    reset() {
+                        this._update_video_status(0);
+                        this.index = 0;
+                        this.book_ic = 0;
+                        this.func = this._o_func;
+                    },
+                    update() { this._update_video_status(this._book_ic); },
+                    init() { this.func = this._o_func; }
+                }
             },
             search: {
                 id: 2,
@@ -4464,6 +4529,8 @@
                                 const v = new Video_Module(val, this.#user_is_login, this.#video_filter_ratio, this.#user_id);
                                 if (v.initial_flag) {
                                     this.#video_instance = v;
+                                    this.#configs.check_is_book.update();
+                                    v.update_audio_book_status(val.videoData.title, val.tags);
                                     this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
                                 }
                             }
@@ -5838,6 +5905,12 @@
             // 搜索页中的请求数据返回时已经带有标签, 需要清除掉
             const search_tag_clear = id == 2 ? Data_Switch.search_title_clear.bind(Data_Switch) : (title) => title,
                 check_data = (val) => val ? val + '' : false;
+            let cib_func = (_title) => { };
+            const check_is_book = this.#configs.check_is_book;
+            if (check_is_book) {
+                check_is_book.init();
+                cib_func = check_is_book.func.bind(check_is_book);
+            }
             // 预检查数据是否满足要求
             this.#configs = {
                 ...this.#configs,
@@ -5863,6 +5936,7 @@
                     this.#get_data_list.push(info.bvid);
                     // 搜索页的title需要去掉多余的标签
                     info.title = search_tag_clear(info.title);
+                    cib_func(info.title);
                     return Dynamic_Variants_Manager.completed_check(info);
                 },
                 // 填充没有数据的封面
