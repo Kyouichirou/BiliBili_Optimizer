@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.7
+// @version      3.6.8
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2308,7 +2308,13 @@
                     if (is_force) {
                         data.rate = info.rate;
                         data.last_active_date = info.last_active_date;
-                    } else return false;
+                    } else {
+                        // 避免手动评分后, 通过拦截操作的评分被覆盖
+                        if (info.rate > data.rate) {
+                            data.rate = info.rate;
+                            data.last_active_date = info.last_active_date;
+                        } else return false;
+                    };
                 } else if (!data) this.push(info);
                 else return false;
                 return true;
@@ -2731,7 +2737,7 @@
             Dynamic_Variants_Manager.current_video_mid = this.#video_info.mid;
             return this.video_info_update_flag;
         }
-        /**
+        /** 更新视频是否为有声书籍的数据
          * @param {string} title
          * @param {*} tags
          */
@@ -2749,6 +2755,7 @@
          * @param {number} val
          */
         set audio_book_status(val) { this.#audio_book_status = val; }
+        get audio_book_status() { return this.#audio_book_status; }
         // 初始化成功标记
         get initial_flag() { return this.#initial_flag; }
         /**
@@ -6089,7 +6096,9 @@
                 },
                 check_login_request: this.#user_is_login ? (_url) => false : (url) => url.endsWith(this.#configs.check_user_login_api),
                 check_other_requets: this.#user_is_login ? (url) => {
-                    const api_prefix = this.#configs.interpose_api_prefix, i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
+                    // 点赞可以取消, 这里不对post的内容拦截来判断到底是点赞还是取消点赞, 硬币不可撤销, 这里不处理取消点赞操作
+                    const api_prefix = this.#configs.interpose_api_prefix,
+                    i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
                     if (i < 0) return url.includes(api_prefix + 'web-show/res/locs?');
                     else this.#video_instance.key_rate_video(i + 1, false);
                 } : (url) => url.includes(this.#configs.interpose_api_prefix + 'web-show/res/locs?'),
