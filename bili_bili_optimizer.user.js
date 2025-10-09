@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.8
+// @version      3.6.9
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2670,6 +2670,7 @@
         // 初始化成功与否的标记
         #initial_flag = false;
         #user_is_login = false;
+        #is_vip_user = GM_Objects.get_value('is_vip_user', false);
         // 贝叶斯添加标记
         #added_bayes_list = [];
         // 下载音频的路径
@@ -2710,6 +2711,7 @@
         #speed_time_id = null;
         // 判断当前是否为有声书籍
         #audio_book_status = 0;
+        #first_play_flag = true;
         /**
          * 视频基础信息
          * @returns {object}
@@ -2733,28 +2735,26 @@
             // 判断是否为用户自己发布的视频
             this.#is_own_videos[0] = this.#is_own_videos[1];
             this.#is_own_videos[1] = user_id === this.#video_info.mid;
-            // 缓存拦截的up, 不拦截当前视频播放的
-            Dynamic_Variants_Manager.current_video_mid = this.#video_info.mid;
             return this.video_info_update_flag;
         }
         /** 更新视频是否为有声书籍的数据
          * @param {string} title
          * @param {*} tags
+         * @param {number} book_status
          */
-        update_audio_book_status(title, tags) {
-            if (this.#audio_book_status > 7) return;
-            const book_tags = ['有声书', '广播剧', '有声读物', '有声小说', '小说演播'];
-            let i = book_tags.some(e => title.includes(e)) ? 2 : 0;
-            for (const tag of tags) {
-                const tags_name = tag.tag_name;
-                i += book_tags.some(e => tags_name.includes(e)) ? 2 : 0;
+        update_audio_book_status(title, tags, book_status) {
+            if (book_status < 8) {
+                const book_tags = ['有声书', '广播剧', '有声读物', '有声小说', '小说演播'];
+                book_status += book_tags.some(e => title.includes(e)) ? 2 : 0;
+                for (const tag of tags) {
+                    const tags_name = tag.tag_name;
+                    book_status += book_tags.some(e => tags_name.includes(e)) ? 2 : 0;
+                }
             }
-            this.#audio_book_status += i;
+            this.#audio_book_status = book_status;
+            // 需要等待信息加载到位才调整分辨率设置, 和首次载入页面不一样
+            !this.#first_play_flag && this.#auto_quality();
         }
-        /**
-         * @param {number} val
-         */
-        set audio_book_status(val) { this.#audio_book_status = val; }
         get audio_book_status() { return this.#audio_book_status; }
         // 初始化成功标记
         get initial_flag() { return this.#initial_flag; }
@@ -2771,8 +2771,15 @@
         set download_video_path(path) { this.#download_video_path = path, GM_Objects.set_value('download_video_path', path); }
         get download_video_path() { return this.#download_video_path; }
         #create_video_event() {
-            this.#user_is_login && (this.#video_player.mediaElement().onloadeddata = (_) => this.#auto_quality());
-            // canplay只要产生加载行为就会触发
+            this.#user_is_login && (this.#video_player.mediaElement().onloadeddata = () => {
+                if (this.#first_play_flag) {
+                    // 多视频的页面, 分辨率设置会自动维持, 不会因为其他页面修改localstorage导致分辨率在播放下一个视频时发生变化
+                    // 需要尽可能快调整分辨率的设置
+                    // 当首次载入页面时, 由于基本信息已经随着页面加载到位, 所以检测到播放时, 尝试自动调整分辨率
+                    this.#first_play_flag = false;
+                    this.#auto_quality();
+                }
+            });
             this.#video_player.mediaElement().oncanplay = (e) => {
                 // 只有当手动更改之后, 才会自动变速
                 if (this.#is_need_stop) {
@@ -3213,7 +3220,6 @@
                 if (bvid) {
                     this.#is_need_stop = !this.#user_is_login;
                     if (bvid === this.#video_info.bvid) return;
-                    this.#auto_quality();
                     this.url_has_changed = true;
                 } else Colorful_Console.print('url_change event error', 'crash', true);
             });
@@ -3276,18 +3282,19 @@
         // 设置视频清晰度
         set_quality(mode) {
             const qs = this.#video_player.getSupportedQualityList(), i = qs.length;
-            if (i < 2) return;
-            const bpx = localStorage.getItem('bpx_player_profile');
-            let q = qs[mode ? i - 1 : 0];
-            if (bpx) {
-                const obj = JSON.parse(bpx), x = obj.media?.quality;
-                if (x === q) return;
-                else if (x > q) q = x;
+            if (i > 1) {
+                let q = qs[mode ? i - 1 : 0];
+                if (!this.#is_vip_user && q > 80) q = 80;
+                const bpx = localStorage.getItem('bpx_player_profile');
+                if (bpx) {
+                    const obj = JSON.parse(bpx), x = obj.media?.quality;
+                    if (x === q || (!mode && q < x)) return;
+                }
+                this.#video_player.requestQuality(q);
             }
-            this.#video_player.requestQuality(q);
         }
         // 自动切换清晰度, 用于处理听书时不需要高清的情况, 只有当用户登录时才执行
-        #auto_quality() { setTimeout(() => this.set_quality(this.#audio_book_status > 7), 300); }
+        #auto_quality() { this.set_quality(this.#audio_book_status > 7); }
         /**
          * 播放速度控制
          * @param {number} mode 0, 1, 2
@@ -3346,8 +3353,9 @@
          * @param {number} filter_ratio
          * @param {string} user_id
          */
-        constructor(data, user_is_login, filter_ratio, user_id) {
+        constructor(data, user_is_login, filter_ratio, user_id, is_vip_user) {
             this.#user_is_login = user_is_login;
+            this.#is_vip_user = is_vip_user;
             this.video_filter_ratio = filter_ratio;
             const updata = data.upData || data.upInfo;
             (this.#initial_flag = this.update_essential_info(updata, data.videoData, user_id)) && this.#create_video_info_update_monitor();
@@ -3360,6 +3368,7 @@
         #get_data_list = [];
         // 是否登录账号
         #user_is_login = false;
+        #is_vip_user = false;
         // 登陆账号id
         #user_id = null;
         // 执行配置
@@ -3593,6 +3602,7 @@
                     if (data) {
                         // 数据的长度最好是和原数据一致, 并不是所有的视频都有40组视频
                         // 少了或者多了均可能导致页面崩溃, 数据少于20的, 多了导致页面崩溃; 数据多于20, 少了会导致页面崩溃
+                        Dynamic_Variants_Manager.current_video_mid = parseInt(val.upData.mid);
                         const tmp = data.map(e => this.#configs.pre_data_check(e) ? (this.#utilities_module.clear_data(e), true) : null),
                             n = data.filter((_v, i) => !tmp[i]), limit = data.length, nl = n.length,
                             new_arr = nl < limit ? [...n, ...new Array(limit).fill(m)].slice(0, limit) : n;
@@ -3640,6 +3650,7 @@
                             response_content.data = cache_results;
                             return;
                         }
+                        // 貌似这种请求返回结果的方式已经被废弃, 暂时保留这部分代码
                         results = this.#configs.request_data_handler(response_content.data, this.#configs.pre_data_check);
                         response_content.data = results;
                     } else {
@@ -3648,12 +3659,12 @@
                             return;
                         }
                         this.#configs.check_is_book.reset();
+                        Dynamic_Variants_Manager.current_video_mid = parseInt(data.View.owner.mid);
                         results = this.#configs.request_data_handler(data.Related, this.#configs.pre_data_check);
                         if (this.#video_instance) {
                             this.#video_instance.video_filter_ratio = results.length / data.Related.length;
                             this.#video_instance.update_essential_info(data.View.owner, data.View, this.#user_id);
-                            this.#configs.check_is_book.update();
-                            this.#video_instance.update_audio_book_status(data.View.title, data.Tags);
+                            this.#video_instance.update_audio_book_status(data.View.title, data.Tags, this.#configs.check_is_book.book_status);
                         }
                         response_content.data.Related = results;
                     }
@@ -3704,7 +3715,7 @@
                     _check_time: 19,
                     _limit: 7,
                     _tags_data: ['有声', '小说剧', '广播剧', '播讲', '听书'],
-                    _update_video_status: (val) => (this.#video_instance.audio_book_status = val),
+                    get book_status() { return this._book_ic; },
                     _check(title) { return this._tags_data.some(e => title.includes(e)) ? 1 : 0; },
                     _reset() { this.func = (_title) => { }; },
                     _o_func(title) {
@@ -3714,12 +3725,10 @@
                     },
                     func(_title) { },
                     reset() {
-                        this._update_video_status(0);
-                        this.index = 0;
-                        this.book_ic = 0;
+                        this._index = 0;
+                        this._book_ic = 0;
                         this.func = this._o_func;
                     },
-                    update() { this._update_video_status(this._book_ic); },
                     init() { this.func = this._o_func; }
                 }
             },
@@ -3973,9 +3982,15 @@
                         const [url, config] = args;
                         if (this.#configs.check_other_requets(url)) return;
                         // 根据配置的函数, 决定是否需要干预, 返回一个处理后续数据的函数
-                        const response = await fetch(url, config);
+                        const response = await fetch(url, config), x = this.#configs.check_login_request(url);
                         // response, 只允许访问一次, clone一份, 在复制上进行操作
-                        if (this.#configs.check_login_request(url)) response.json = () => response.clone().json().then(_ => this.#configs.fake_login_info);
+                        if (x === 1) response.json = () => response.clone().json().then(_ => this.#configs.fake_login_info);
+                        else if (x === 2) response.json = () => response.clone().json().then(r => {
+                            const f = r.data?.vip?.vip_pay_type > 0;
+                            this.#is_vip_user = f;
+                            GM_Objects.set_value('is_vip_user', f);
+                            return r;
+                        });
                         else if (this.#configs.check_other_requets(url)) return;
                         else {
                             const hfu = this.#configs.handle_fetch_url(url);
@@ -4002,7 +4017,13 @@
                     check_login_request,
                     check_other_requets,
                     clear_request_data
-                } = this.#configs, new_fn = (fn, ...args) => fn.apply(this, args); // 用于调用外部的this
+                } = this.#configs,
+                    set_vip_func = ((flag) => {
+                        this.#is_vip_user = flag;
+                        GM_Objects.set_value('is_vip_user', flag);
+                    }).bind(this),
+                    new_fn = (fn, ...args) => fn.apply(this, args); // 用于调用外部的this
+
                 // 不登陆的状态下, 会发起可能多达3次的请求, 也可能不请求数据, 非常诡异...
                 GM_Objects.window.XMLHttpRequest = class extends GM_Objects.window.XMLHttpRequest {
                     #exe_action = null;
@@ -4016,6 +4037,10 @@
                      */
                     #modified_result(json) { Object.defineProperty(this, 'responseText', { get() { return json; }, set(_val) { } }); }
                     #intercept_login_status(_arg) { this.#modified_result(JSON.stringify(fake_login_info)); }
+                    #get_user_vip_status() {
+                        const obj = JSON.parse(this.responseText);
+                        set_vip_func(obj.data?.vip?.vip_pay_type > 0);
+                    }
                     /**
                      * 干预请求数据
                      * @param {Function} func
@@ -4026,8 +4051,9 @@
                     }
                     #create_event() { this.addEventListener('readystatechange', () => this.readyState === 4 && this.status === 200 && this.#exe_action?.()); }
                     open(...args) {
-                        const url = args[1];
-                        if (check_login_request(url)) this.#exe_action = this.#intercept_login_status.bind(this);
+                        const url = args[1], x = check_login_request(url);
+                        if (x === 1) this.#exe_action = this.#intercept_login_status.bind(this);
+                        else if (x === 2) this.#exe_action = this.#get_user_vip_status.bind(this);
                         else if (new_fn(check_other_requets, url)) return;
                         else {
                             const func = handle_fetch_url(url);
@@ -4533,11 +4559,10 @@
                             if (val.spec) clear_data(val.spec);
                             initial_data = val;
                             if (id === 1) {
-                                const v = new Video_Module(val, this.#user_is_login, this.#video_filter_ratio, this.#user_id);
+                                const v = new Video_Module(val, this.#user_is_login, this.#video_filter_ratio, this.#user_id, this.#is_vip_user);
                                 if (v.initial_flag) {
                                     this.#video_instance = v;
-                                    this.#configs.check_is_book.update();
-                                    v.update_audio_book_status(val.videoData.title, val.tags);
+                                    v.update_audio_book_status(val.videoData.title, val.tags, this.#configs.check_is_book.book_status);
                                     this.#video_instance.init().then(() => (this.#video_module_initial_flag = true));
                                 }
                             }
@@ -6094,11 +6119,11 @@
                     }
                     return response_content;
                 },
-                check_login_request: this.#user_is_login ? (_url) => false : (url) => url.endsWith(this.#configs.check_user_login_api),
+                check_login_request: this.#user_is_login ? (url) => url.endsWith(this.#configs.check_user_login_api) ? 2 : 0 : (url) => url.endsWith(this.#configs.check_user_login_api) ? 1 : 0,
                 check_other_requets: this.#user_is_login ? (url) => {
                     // 点赞可以取消, 这里不对post的内容拦截来判断到底是点赞还是取消点赞, 硬币不可撤销, 这里不处理取消点赞操作
                     const api_prefix = this.#configs.interpose_api_prefix,
-                    i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
+                        i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
                     if (i < 0) return url.includes(api_prefix + 'web-show/res/locs?');
                     else this.#video_instance.key_rate_video(i + 1, false);
                 } : (url) => url.includes(this.#configs.interpose_api_prefix + 'web-show/res/locs?'),
