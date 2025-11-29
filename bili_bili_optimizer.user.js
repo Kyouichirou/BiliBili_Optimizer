@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.6.9
+// @version      3.7.0
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -3102,7 +3102,7 @@
                 }
                 const params = [];
                 // 只有当页面的视频为合集的状态才会生成相应的参数
-                video_info.is_collection && params.push('-p ALL');
+                params.push(video_info.is_collection ? '--multi-file-pattern "<bvid>_<videoTitle>/<pageNumber>_<pageTitle>"': '--file-pattern "<bvid>_<videoTitle>"');
                 const is_audio = this._check_is_audio();
                 is_audio && params.push('--audio-only');
                 const id = video_info.bvid;
