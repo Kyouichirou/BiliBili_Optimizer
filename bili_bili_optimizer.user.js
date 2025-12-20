@@ -2232,7 +2232,7 @@
                     run_in: Array.from({ length: 3 }, (_val, index) => index),
                     f: (...args) => {
                         const data = args[2];
-                        (data.type === 'up' ? this.block_ups : this.rate_videos).update_active_status(data.value);
+                        (data.type === 'mid' ? this.block_ups : this.rate_videos).update_active_status(data.value);
                     }
                 },
 
