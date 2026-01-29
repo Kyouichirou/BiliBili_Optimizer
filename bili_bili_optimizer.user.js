@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.7.0
+// @version      3.7.1
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -422,7 +422,15 @@
          * @param {string} href
          * @returns {number}
          */
-        get_mid(href) { return href.includes('space.bilibili') ? parseInt(this._match(this._mid_reg, href)) : 0; }
+        get_mid(href) { return href.includes('space.bilibili') ? parseInt(this._match(this._mid_reg, href)) : 0; },
+        get_cookie_by_name(name) {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [key, value] = cookie.split('=');
+                if (key.trim() === name) return value.trim();
+            }
+            return null;
+        }
     };
     // 通用函数 ---------------
 
@@ -752,51 +760,166 @@
             // https://api.bilibili.com/x/space/upstat?mid=39392104&web_location=333.1387
             return this.#request(`space/upstat?mid=${mid}`, { credentials: "include" });
         }
+        dislike_video(args_dic, data) {
+            // web-interface/feedback/dislike
+            return this.#request(`web-interface/feedback/dislike?${new URLSearchParams(args_dic).toString()}`, {
+                method: 'POST',
+                body: data,
+                credentials: 'include' // 关键：携带Cookie（对应curl的-b参数）
+            });
+        }
     }
 
-    const LocalDB = {
-        _prefix: 'http://127.0.0.1:8080/',
-        _local_network: false,
-        _send_request(url_suffix, configs) {
-            return new Promise((resolve, reject) =>
-                fetch(this._prefix + url_suffix, configs)
-                    .then(res => configs.method === 'HEAD' ? resolve(true) : res.json())
-                    .then(data => resolve(data))
-                    .catch(e => reject(e))
-            );
-        },
-        add_video_detail(video_info) {
-            this._send_request('api/video_info/', {
-                method: 'POST',
-                body: JSON.stringify(video_info),
-                headers: { 'Content-Type': 'application/json' }
-            }).then(data => Colorful_Console.print(`successfully added video detail to local database: ${video_info.bvid}, ${data.code}`));
-        },
-        async check_video_exist(bvid) {
-            const r = await this._send_request(f`api/search/video?keyword=${bvid}`, { method: 'GET' });
-            return r.result;
-        },
-        async init() {
-            this._local_network = await new Promise((resolve, _reject) => GM_Objects.get_tabs((tabs) => resolve(Object.values(tabs).find(tab => tab.local_network_is_ok))));
-            if (!this._local_network) {
-                const controller = new AbortController();
-                let tid = setTimeout(() => {
-                    controller.abort();
-                    tid = null;
-                }, 5000);
-                const r = await this._send_request(
-                    'online/',
-                    { method: 'HEAD', signal: controller.signal }
-                );
-                if (tid) clearTimeout(tid);
-                if (r) {
-                    GM_Objects.set_tab('local_network_is_ok', true);
-                    this._local_network = r;
-                }
-                return r;
-            }
-            return true;
+    // md5 hash
+    class MD5 {
+        #hexcase = 0;
+        #chrsz = 8;
+        #md5_cmn(q, a, b, x, s, t) { return this.#safe_add(this.#bit_rol(this.#safe_add(this.#safe_add(a, q), this.#safe_add(x, t)), s), b); }
+        #md5_ff(a, b, c, d, x, s, t) { return this.#md5_cmn((b & c) | ((~b) & d), a, b, x, s, t); }
+        #md5_gg(a, b, c, d, x, s, t) { return this.#md5_cmn((b & d) | (c & (~d)), a, b, x, s, t); }
+        #md5_hh(a, b, c, d, x, s, t) { return this.#md5_cmn(b ^ c ^ d, a, b, x, s, t); }
+        #md5_ii(a, b, c, d, x, s, t) { return this.#md5_cmn(c ^ (b | (~d)), a, b, x, s, t); }
+        #safe_add(x, y) {
+            const lsw = (x & 0xFFFF) + (y & 0xFFFF), msw = (x >> 16) + (y >> 16) + (lsw >> 16);
+            return (msw << 16) | (lsw & 0xFFFF);
         }
+        #bit_rol(num, cnt) { return (num << cnt) | (num >>> (32 - cnt)); }
+        #str2binl(str) {
+            const bin = [], mask = (1 << this.#chrsz) - 1;
+            for (let i = 0; i < str.length * this.#chrsz; i += this.#chrsz) { bin[i >> 5] |= (str.charCodeAt(i / this.#chrsz) & mask) << (i % 32); }
+            return bin;
+        }
+        #core_md5(x, len) {
+            x[len >> 5] |= 0x80 << (len % 32);
+            x[(((len + 64) >>> 9) << 4) + 14] = len;
+
+            let a = 1732584193, b = -271733879, c = -1732584194, d = 271733878;
+
+            for (let i = 0; i < x.length; i += 16) {
+                const olda = a, oldb = b, oldc = c, oldd = d;
+
+                a = this.#md5_ff(a, b, c, d, x[i + 0], 7, -680876936);
+                d = this.#md5_ff(d, a, b, c, x[i + 1], 12, -389564586);
+                c = this.#md5_ff(c, d, a, b, x[i + 2], 17, 606105819);
+                b = this.#md5_ff(b, c, d, a, x[i + 3], 22, -1044525330);
+                a = this.#md5_ff(a, b, c, d, x[i + 4], 7, -176418897);
+                d = this.#md5_ff(d, a, b, c, x[i + 5], 12, 1200080426);
+                c = this.#md5_ff(c, d, a, b, x[i + 6], 17, -1473231341);
+                b = this.#md5_ff(b, c, d, a, x[i + 7], 22, -45705983);
+                a = this.#md5_ff(a, b, c, d, x[i + 8], 7, 1770035416);
+                d = this.#md5_ff(d, a, b, c, x[i + 9], 12, -1958414417);
+                c = this.#md5_ff(c, d, a, b, x[i + 10], 17, -42063);
+                b = this.#md5_ff(b, c, d, a, x[i + 11], 22, -1990404162);
+                a = this.#md5_ff(a, b, c, d, x[i + 12], 7, 1804603682);
+                d = this.#md5_ff(d, a, b, c, x[i + 13], 12, -40341101);
+                c = this.#md5_ff(c, d, a, b, x[i + 14], 17, -1502002290);
+                b = this.#md5_ff(b, c, d, a, x[i + 15], 22, 1236535329);
+
+                a = this.#md5_gg(a, b, c, d, x[i + 1], 5, -165796510);
+                d = this.#md5_gg(d, a, b, c, x[i + 6], 9, -1069501632);
+                c = this.#md5_gg(c, d, a, b, x[i + 11], 14, 643717713);
+                b = this.#md5_gg(b, c, d, a, x[i + 0], 20, -373897302);
+                a = this.#md5_gg(a, b, c, d, x[i + 5], 5, -701558691);
+                d = this.#md5_gg(d, a, b, c, x[i + 10], 9, 38016083);
+                c = this.#md5_gg(c, d, a, b, x[i + 15], 14, -660478335);
+                b = this.#md5_gg(b, c, d, a, x[i + 4], 20, -405537848);
+                a = this.#md5_gg(a, b, c, d, x[i + 9], 5, 568446438);
+                d = this.#md5_gg(d, a, b, c, x[i + 14], 9, -1019803690);
+                c = this.#md5_gg(c, d, a, b, x[i + 3], 14, -187363961);
+                b = this.#md5_gg(b, c, d, a, x[i + 8], 20, 1163531501);
+                a = this.#md5_gg(a, b, c, d, x[i + 13], 5, -1444681467);
+                d = this.#md5_gg(d, a, b, c, x[i + 2], 9, -51403784);
+                c = this.#md5_gg(c, d, a, b, x[i + 7], 14, 1735328473);
+                b = this.#md5_gg(b, c, d, a, x[i + 12], 20, -1926607734);
+
+                a = this.#md5_hh(a, b, c, d, x[i + 5], 4, -378558);
+                d = this.#md5_hh(d, a, b, c, x[i + 8], 11, -2022574463);
+                c = this.#md5_hh(c, d, a, b, x[i + 11], 16, 1839030562);
+                b = this.#md5_hh(b, c, d, a, x[i + 14], 23, -35309556);
+                a = this.#md5_hh(a, b, c, d, x[i + 1], 4, -1530992060);
+                d = this.#md5_hh(d, a, b, c, x[i + 4], 11, 1272893353);
+                c = this.#md5_hh(c, d, a, b, x[i + 7], 16, -155497632);
+                b = this.#md5_hh(b, c, d, a, x[i + 10], 23, -1094730640);
+                a = this.#md5_hh(a, b, c, d, x[i + 13], 4, 681279174);
+                d = this.#md5_hh(d, a, b, c, x[i + 0], 11, -358537222);
+                c = this.#md5_hh(c, d, a, b, x[i + 3], 16, -722521979);
+                b = this.#md5_hh(b, c, d, a, x[i + 6], 23, 76029189);
+                a = this.#md5_hh(a, b, c, d, x[i + 9], 4, -640364487);
+                d = this.#md5_hh(d, a, b, c, x[i + 12], 11, -421815835);
+                c = this.#md5_hh(c, d, a, b, x[i + 15], 16, 530742520);
+                b = this.#md5_hh(b, c, d, a, x[i + 2], 23, -995338651);
+
+                a = this.#md5_ii(a, b, c, d, x[i + 0], 6, -198630844);
+                d = this.#md5_ii(d, a, b, c, x[i + 7], 10, 1126891415);
+                c = this.#md5_ii(c, d, a, b, x[i + 14], 15, -1416354905);
+                b = this.#md5_ii(b, c, d, a, x[i + 5], 21, -57434055);
+                a = this.#md5_ii(a, b, c, d, x[i + 12], 6, 1700485571);
+                d = this.#md5_ii(d, a, b, c, x[i + 3], 10, -1894986606);
+                c = this.#md5_ii(c, d, a, b, x[i + 10], 15, -1051523);
+                b = this.#md5_ii(b, c, d, a, x[i + 1], 21, -2054922799);
+                a = this.#md5_ii(a, b, c, d, x[i + 8], 6, 1873313359);
+                d = this.#md5_ii(d, a, b, c, x[i + 15], 10, -30611744);
+                c = this.#md5_ii(c, d, a, b, x[i + 6], 15, -1560198380);
+                b = this.#md5_ii(b, c, d, a, x[i + 13], 21, 1309151649);
+                a = this.#md5_ii(a, b, c, d, x[i + 4], 6, -145523070);
+                d = this.#md5_ii(d, a, b, c, x[i + 11], 10, -1120210379);
+                c = this.#md5_ii(c, d, a, b, x[i + 2], 15, 718787259);
+                b = this.#md5_ii(b, c, d, a, x[i + 9], 21, -343485551);
+
+                a = this.#safe_add(a, olda);
+                b = this.#safe_add(b, oldb);
+                c = this.#safe_add(c, oldc);
+                d = this.#safe_add(d, oldd);
+            }
+
+            return [a, b, c, d];
+        }
+        #binl2hex(binarray) {
+            const hex_tab = this.#hexcase ? "0123456789ABCDEF" : "0123456789abcdef";
+            let str = "";
+            for (let i = 0; i < binarray.length * 4; i++) {
+                str += hex_tab.charAt((binarray[i >> 2] >> ((i % 4) * 8 + 4)) & 0xF) +
+                    hex_tab.charAt((binarray[i >> 2] >> ((i % 4) * 8)) & 0xF);
+            }
+            return str;
+        }
+        hex_md5(s) { return this.#binl2hex(this.#core_md5(this.#str2binl(s), s.length * this.#chrsz)); }
+    }
+
+    // 风控模块
+    const Risk_Sign = {
+        _mixin: null,
+        _md5: null,
+        _mixin_constants: [
+            46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45,
+            35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38,
+            41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60,
+            51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
+            20, 34, 44, 52
+        ],
+        _get_img_val(url) { return url.split("/").pop().split(".")[0]; },
+        _get_local_img_info() {
+            const local_imgs = localStorage.getItem('wbi_img_urls');
+            return local_imgs ? local_imgs.split('-').map(e => this._get_img_val(e)).join('') : Colorful_Console.print("localstorage no wbi_img_urls", "warning");
+        },
+        _get_mixin() {
+            if (this._mixin) return this._mixin;
+            const img_info = this._get_local_img_info();
+            if (img_info) {
+                this._mixin = this._mixin_constants.reduce((s, v) => s + img_info[v], "").substring(0, 32);
+                return this._mixin;
+            }
+        },
+        // 将获得的数据进行md5哈希化
+        get_w_rid(args_dic) {
+            const m = this._get_mixin();
+            if (m) {
+                const args_str = Object.keys(args_dic).sort().map(key => `${key}=${args_dic[key]}`).join('&');
+                return this._md5.hex_md5(args_str + m);
+            }
+        },
+        get wts() { return Math.floor(Date.now() / 1000); },
+        init() { this._md5 = new MD5(); }
     };
 
     // 暂未启用部分 -----------
@@ -3102,7 +3225,7 @@
                 }
                 const params = [];
                 // 只有当页面的视频为合集的状态才会生成相应的参数
-                params.push(video_info.is_collection ? '--multi-file-pattern "<bvid>_<videoTitle>/<pageNumber>_<pageTitle>"': '--file-pattern "<bvid>_<videoTitle>"');
+                params.push(video_info.is_collection ? '--multi-file-pattern "<bvid>_<videoTitle>/<pageNumber>_<pageTitle>"' : '--file-pattern "<bvid>_<videoTitle>"');
                 const is_audio = this._check_is_audio();
                 is_audio && params.push('--audio-only');
                 const id = video_info.bvid;
@@ -3564,7 +3687,27 @@
                     },
                     _open_video(index) { return this._element_is_inview(this._button) ? this._search_video(index) : false; },
                     main(key) { return !isNaN(parseInt(key)) ? this._open_video(parseInt(key)) : this[key]?.();; }
-                }
+                },
+                dislike_video: (data) => {
+                    const body = {
+                        'app_id': '100',
+                        'platform': '5',
+                        'from_spmid': '',
+                        'spmid': '',
+                        'goto': data.goto,
+                        'id': data.id,
+                        'mid': data.mid,
+                        'track_id': '',
+                        'feedback_page': '1',
+                        'reason_id': '1',
+                        'csrf': Base_Info_Match.get_cookie_by_name('bili_jct')
+                    }, args_dic = { wts: Risk_Sign.wts };
+                    args_dic.w_rid = Risk_Sign.get_w_rid(args_dic);
+                    this.#web_request_instance.dislike_video(Object.entries(args_dic).sort().reduce((acc, cur) => {
+                        acc[cur[0]] = cur[1];
+                        return acc;
+                    }, {}), body);
+                },
             },
             video: {
                 id: 1,
@@ -4291,7 +4434,7 @@
                                     Dynamic_Variants_Manager.cache_block_videos.push(vid);
                                     Dynamic_Variants_Manager.bayes_module.add_new_content(info.title, false);
                                 }
-                                this.#configs.delete_data_by_bvid(vid);
+                                this.#configs.delete_data_by_bvid(vid, true, this.#configs.dislike_video.bind(this));
                             }
                             break;
                         }
@@ -5660,127 +5803,12 @@
                         }
                     }).observe(node[0], { childList: true }) : Colorful_Console.print("no container is-version8", "crash", true);
                 },
-                risk_sign: {
-                    _jwt_time_stamp: 0,
-                    _jwt: null,
-                    _mixin: null,
-                    wbi_img: null,
-                    _send_requets: (request_name, args) => {
-                        return args ? this.#web_request_instance[request_name](...args) : this.#web_request_instance[request_name]();
-                    },
-                    get wts() { return Math.floor(Date.now() / 1000); },
-                    async get_jwt(user_id) {
-                        if (this._jwt_time_stamp && Date.now() - this._jwt_time_stamp < 3600 * 1000) return this.jwt;
-                        const text = await this._send_requets('get_user_home_page', [user_id]),
-                            parser = new DOMParser(),
-                            html = parser.parseFromString(text, "text/html"),
-                            render = html.getElementById("__RENDER_DATA__");
-                        if (render) return JSON.parse(decodeURIComponent(dataEl.innerText))?.access_id;
-                        this._jwt_time_stamp = Date.now();
-                        return this._jwt;
-                    },
-                    async get_mixin() {
-                        if (this._mixin) return this._mixin;
-                        const constants = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45,
-                            35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38,
-                            41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60,
-                            51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
-                            20, 34, 44, 52];
-                        // 这组数据貌似不会发生变化
-                        let img_info = this.wbi_img || GM_Objects.get_value('wbi_img'),
-                            img_val = '',
-                            sub_val = '';
-                        if (!img_info) {
-                            img_info = await this._send_requets('get_login_user_info').data.wbi_img;
-                            img_val = img_info["img_url"].split("/").pop().split(".")[0];
-                            sub_val = img_info["sub_url"].split("/").pop().split(".")[0];
-                            this.wbi_img = {
-                                'img_val': img_val,
-                                'sub_val': sub_val
-                            };
-                            GM_Objects.set_value('wbi_img', this.wbi_img);
-                        } else {
-                            img_val = img_info["img_val"];
-                            sub_val = img_info["sub_val"];
-                        }
-                        const val = img_val + sub_val;
-                        this._mixin = constants.reduce((s, v) => s + val[v], "").substring(0, 32);
-                        return this._mixin;
-                    },
-                    async get_w_rid(args_str) { return md5(args_str + await this.get_mixin()); },
-                },
-                _get_data_to_local: {
-                    video_detail: async () => {
-                        // 返回指定范围的随机值
-                        const randonm_time = () => Math.floor(Math.random() * 5000) + 300;
-                        while (this.#get_data_list.length) {
-                            const bvid = this.#get_data_list.pop();
-                            setTimeout(async () => {
-                                const info = await this.#web_request_instance.get_video_base_info(bvid),
-                                    video_data = info.data,
-                                    args_dic = {
-                                        bvid: video_data.bvid,
-                                        cid: video_data.cid,
-                                        up_mid: video_data.owner.mid,
-                                        wts: this.#page_modules._home_module.risk_sign.wts
-                                    },
-                                    args_str = Object.keys(args_dic).sort().map(key => `${key}=${args_dic[key]}`).join('&'),
-                                    w_rid = await this.#page_modules._home_module.risk_sign.get_w_rid(args_str),
-                                    url_suffix = `${args_str}&w_rid=${w_rid}}`,
-                                    tags = this.#web_request_instance.get_video_tags(bvid),
-                                    ai = await this.#web_request_instance.get_ai_conclusion(url_suffix);
-                                await Promise.all([tags, ai]).then(async ([tags, conclusion]) => {
-                                    const data_tags = tags.data, ai_data = conclusion.data.model_result;
-                                    video_data.tags = data_tags.tags;
-                                    if (video_data.pages.length > 1) {
-                                        delete ai_data.outline;
-                                        delete ai_data.subtitle;
-                                    }
-                                    video_data.ai_conclusion = ai_data;
-                                    // 将数据添加到本地数据库
-                                    const up_info = {
-                                        mid: video_data.owner.mid,
-                                        name: video_data.owner.name
-                                    };
-                                    // 请求up信息
-                                });
-
-                            }, randonm_time());
-                        }
-                    },
-                    up_detail: async (up_info) => {
-                        const mid = up_info.mid,
-                            a = this.#web_request_instance.get_up_nav(mid),
-                            b = this.#web_request_instance.get_up_stat(mid),
-                            c = this.#web_request_instance.get_up_upstat(mid);
-                        await Promise.all([a, b, c]).then(async (results) => {
-                            const skipKeys = new Set(['vt', 'black', 'enable_vt', 'whisper']),
-                                data = results.reduce((acc, obj) => {
-                                    const flatten = (current_obj, parent_key = '') => {
-                                        Object.entries(current_obj).forEach(([k, v]) => {
-                                            const key = parent_key ? `${k}_${parent_key}` : k;
-                                            if (typeof v === 'object' && v !== null) {
-                                                flatten(v, key);
-                                            } else if (!skipKeys.has(k)) {
-                                                acc[key] = v;
-                                            }
-                                        });
-                                    };
-                                    flatten(obj.data);
-                                    return acc;
-                                }, {});
-                            // 将数据提交到本地数据库
-                        });
-                    },
-                    main() {
-
-                    }
-                },
                 main() {
                     this._arr_init();
                     this._web_init();
                     this._node_monitor();
                     this._time_module.main();
+                    Risk_Sign.init();
                     setTimeout(() => {
                         this._add_data_to_pocket(Statics_Variant_Manager.watch_later.data);
                         this._load_database();
@@ -6018,8 +6046,10 @@
                  * 删除缓存数据
                  * @param {string | Array} args
                  * @param {Function} func
+                 * @param {boolean} is_bvid
+                 * @param {Function | null} call_back
                  */
-                _dele_cache: (args, func, is_bvid = false) => {
+                _dele_cache: (args, func, is_bvid = false, call_back = null) => {
                     const data = this.#web_data_cache;
                     if (data) {
                         let f = false;
@@ -6027,7 +6057,8 @@
                             const i = data.findIndex((e) => func(e, args));
                             if (i >= 0) {
                                 f = true;
-                                data.splice(i, 1);
+                                const tmp = data.splice(i, 1);
+                                call_back && call_back(tmp[0]);
                             }
                         } else {
                             const remove_multi_elements = (arr, condition_fn, args) => {
@@ -6052,13 +6083,13 @@
                  * @param {string | Array} bvid
                  * @param {boolean} is_dele_cache
                  */
-                delete_data_by_bvid: (bvid, is_dele_cache = true) => {
+                delete_data_by_bvid: (bvid, is_dele_cache = true, call_back = null) => {
                     const is_array = Array.isArray(bvid);
                     if (this.indexeddb_init_flag) {
                         const { recommend, pocket } = Indexed_DB.tb_name_dic;
                         [recommend, pocket].forEach(tb => this.#indexeddb_instance.delete(tb, bvid).then(() => Colorful_Console.print(`delete ${is_array ? bvid.join(';') : bvid} from ${tb}`)));
                     } else Statics_Variant_Manager.watch_later.remove(bvid);
-                    is_dele_cache && this.#configs._dele_cache(bvid, is_array ? (e, data) => data.includes(e.bvid) : (e, bvid) => e.bvid === bvid, true);
+                    is_dele_cache && this.#configs._dele_cache(bvid, is_array ? (e, data) => data.includes(e.bvid) : (e, bvid) => e.bvid === bvid, true, call_back);
                 },
                 /**
                  * @param {number | Array} mid
