@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.7.1
+// @version      3.7.2
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -20,6 +20,7 @@
 // @connect      files.superbed.cc
 // @connect      wkphoto.cdn.bcebos.com
 // @grant        GM_info
+// @grant        GM_cookie
 // @grant        GM_getTab
 // @grant        GM_getTabs
 // @grant        GM_saveTab
@@ -75,7 +76,7 @@
          * @param {string} css
          * @returns {HTMLElement}
          */
-        addstyle: (css) => GM_addStyle(css),
+        inject_css: (css) => GM_addStyle(css),
         /**
          * 注册菜单事件, 返回注册id
          * @param {string} name
@@ -156,6 +157,73 @@
         supportonurlchange: window.onurlchange,
         // httprequest, 可跨越
         xmlhttprequest: GM_xmlhttpRequest,
+        _set_cookie(cookie_options) {
+            let expirationDate = '';
+            if (cookie_options.expirationDate) {
+                if (typeof cookie_options.expirationDate === 'number') {
+                    const date = new Date();
+                    date.setTime(cookie_options.expirationDate * 1000);
+                    expirationDate = date.toUTCString();
+                } else if (cookie_options.expirationDate instanceof Date) expirationDate = cookie_options.expirationDate.toUTCString();
+            }
+            const cookietparts = [
+                `${encodeURIComponent(cookie_options.name)}=${encodeURIComponent(cookie_options.value)}`,
+                expirationDate && `expirationDate=${expirationDate}`,
+                cookie_options.path && `path=${cookie_options.path}`,
+                cookie_options.domain && `domain=${cookie_options.domain}`,
+                cookie_options.secure && 'secure',
+                cookie_options.samesite && `samesite=${cookie_options.samesite}`
+            ].filter(Boolean);
+            document.cookie = cookietparts.join('; ');
+        },
+        /**
+         * 设置cookie
+         * @param {object} cookie_configs
+         * @param {Function | null} call_back
+         * @returns {null}
+         */
+        set_cookie(cookie_configs, call_back = null) {
+            GM_cookie.set(cookie_configs, (e) => {
+                if (e) {
+                    console.log('GM_cookie.set, failed to setup cookie: ' + e);
+                    this._set_cookie(cookie_configs);
+                }
+                call_back && call_back();
+                console.log('succefully setup cookie');
+            });
+        },
+        /**
+         * 删除cookie
+         * @param {string} cookie_name
+         * @param {Function | null} call_back
+         * @returns {null}
+         */
+        delete_cookie(cookie_name, call_back = null) {
+            GM_cookie.delete({ name: cookie_name }, (e) => {
+                if (e) console.log('GM_cookie.delete, failed to delete cookie: ' + e);
+                call_back && call_back();
+                console.log('succefully delete cookie');
+            });
+        },
+        /**
+         * 获取cookie
+         * @param {string} cookie_name
+         * @param {Function | null} call_back
+         * @returns {Promise<object>}
+         */
+        get_cookie(cookie_name, call_back = null) {
+            return new Promise((resolve, reject) => {
+                GM_cookie.get({ name: cookie_name }, (cookie, err) => {
+                    if (err) {
+                        console.log('GM_cookie.get, failed to get cookie: ' + err);
+                        reject(err);
+                    } else {
+                        call_back && call_back(cookie);
+                        resolve(cookie);
+                    }
+                });
+            });
+        },
         author_bili_id: '441644010'
     };
     // GM内置函数/对象 ---------------
@@ -281,6 +349,7 @@
     };
 
     // 数据转换为对应的模板
+    // 需要注意bvid, aid(avid, id), cid等几个id都非常重要, 特别是aid/id, 为了兼容旧版本的代码, aid/id更重要
     const Data_Switch = {
         // 首页的aid没有使用aid, 而是id
         home: {
@@ -330,7 +399,7 @@
             if (module_name === 'home') {
                 // 假如没有 av, 内容不会被写入
                 if (!module.goto) module.goto = 'av';
-                if (!module.id) {
+                if (!module.id || module.id === 0 || module.id.length < 5) {
                     const id = module[check_id];
                     // 由于首页的aid没有使用aid, 而是id, 所以需要转换, 不做额外的处理
                     // aid不存在会导致视频的更新出现问题
@@ -363,9 +432,10 @@
             };
             this._get_key(module, target);
             this._get_key(b, target);
+            if (b.aid) b.aid = parseInt(b.aid);
             for (const k in a) {
-                const e = a[k];
-                if (!module[e]) module[e] = b[k];
+                const e = a[k], v = module[e];
+                if (!v || v.length < 5) module[e] = b[k];
             }
             const bp = b.play;
             if (!module.stat.view && bp) module.stat.view = bp.includes('万') ? Number(bp.replaceAll('万', '')) * 1e4 : parseInt(bp);
@@ -2727,6 +2797,7 @@
                             ['h', 'history', '打开历史记录', '主页'],
                             ['1-3', 'rate', '快捷评分', '视频'],
                             ['o', '', '添加视频到稍后再看列表', '视频'],
+                            ['e', '', '临时打开黑暗模式', '全部页面'],
                             ['alt', '鼠标右键(鼠标放置在需要操作元素上, cent浏览器需要关闭冲突快捷键)', '移除视频(不添加保存, 但从数据库中移除)', '首页'],
                             ['ctrl', '鼠标右键(鼠标放置在需要操作元素上)', '临时隐藏视频(仅在执行页面生效, 关闭后该数据将不被保存), 同时添加视频的标题到贝叶斯分类器的黑名单中.', '视频, 主页, 搜索'],
                             ['shift', '鼠标右键(鼠标放置在需要操作元素上)', '拦截视频', '视频, 主页, 搜索'],
@@ -2787,6 +2858,34 @@
         }
     };
     // -------- 帮助/展示内部数据/设置参数
+
+    const Dark_Mode = {
+        mode: false,
+        // 首页
+        set_bili_dark() {
+            const ele = document.documentElement;
+            ele.classList[(this.mode = ele.classList.contains('bili_dark')) ? 'remove' : 'add']('bili_dark');
+            return true;
+        },
+        // 搜索和播放页
+        set_bili_dark_by_css() {
+            const l = 'https://s1.hdslb.com/bfs/seed/jinkela/short/bili-theme/light.css',
+                d = 'https://s1.hdslb.com/bfs/seed/jinkela/short/bili-theme/dark.css';
+            const css = document.getElementById('__css-map__');
+            if (css) {
+                const href = css.href;
+                css.href = (this.mode = href && href.endsWith('dark.css')) ? l : d;
+            } else {
+                // const link = document.createElement('link');
+                // link.id = '__css-map__';
+                // link.rel = 'stylesheet';
+                // link.href = mode ? d : l;
+                // document.head.appendChild(link);
+                Colorful_Console.print('lack off ccs node, and add css link', 'warning');
+            }
+            return true;
+        }
+    };
 
     // 视频控制模块 ---------
     class Video_Module {
@@ -3708,6 +3807,7 @@
                         return acc;
                     }, {}), body);
                 },
+                dark_mode_action: Dark_Mode.set_bili_dark
             },
             video: {
                 id: 1,
@@ -4405,7 +4505,7 @@
                     const c = this[k];
                     c.run_in?.includes(id) && arr.push(c.css(user_is_login));
                 }
-                arr.length > 0 && GM_Objects.addstyle(arr.join(''));
+                arr.length > 0 && GM_Objects.inject_css(arr.join(''));
             }
         };
         // 事件函数模块
@@ -4454,10 +4554,10 @@
                 document.addEventListener('click', (event) => {
                     const r = click_action(event.composedPath());
                     if (!r) return;
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
                     const [url, target] = r;
                     if (url) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
                         const href = this.constructor.clear_track_tag(url);
                         event.ctrlKey && GM_Objects.set_value('speed_up_video', true);
                         if (target === '_blank') GM_Objects.openintab(href);
@@ -4567,10 +4667,14 @@
                     },
                     other_funs = {
                         run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
+                        // 打开历史播放页
                         h() {
                             GM_Objects.openintab('https://www.bilibili.com/account/history');
                             return true;
                         },
+                        // 启用或关闭黑暗模式
+                        // 替换掉视频页面的添加收藏操作
+                        e() { },
                         main(key) { return this[key]?.(); }
                     },
                     // 文本标签, 需要排除输入
@@ -4583,6 +4687,8 @@
                     id = this.#configs.id, funcs = [search, manage_black_key, other_funs].filter(e => e.run_in.includes(id)).map(e => e.main.bind(e)),
                     ka = this.#configs.keydown_action;
                 if (ka) funcs.push(ka.main.bind(this.#configs.keydown_action));
+                // 这里需要注意, 因为其他组件需要监听这个Dark_Mode的属性变化, 所以需要绑定this的指向
+                other_funs.e = (this.#configs.dark_mode_action || Dark_Mode.set_bili_dark_by_css).bind(Dark_Mode);
                 document.addEventListener('keydown', (event) => {
                     if (check_cas(event) || check_is_input(event.target)) return;
                     const key = event.key.toLowerCase();
@@ -5861,13 +5967,15 @@
         #html_modules = {
             // 遮罩
             _shade: {
-                run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index).filter(e => e !== 1),
+                run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
                 colors: {
                     yellow: "rgb(247, 232, 176)",
                     green: "rgb(202 ,232, 207)",
                     grey: "rgb(182, 182, 182)",
                     olive: "rgb(207, 230, 161)",
                 },
+                site_id: null,
+                _is_dark: 0,
                 current_color: '',
                 current_opacity: 0,
                 id_name: 'screen_shade_cover',
@@ -5879,7 +5987,7 @@
                             ? 0.65
                             : h > 15
                                 ? m > 9 && h > 16 ? 0.35 : h === 18
-                                    ? 0.35
+                                    ? 0.4
                                     : h === 19
                                         ? 0.45
                                         : h === 20
@@ -5892,7 +6000,7 @@
                  * @param {string} color
                  * @param {number} opacity
                  */
-                create_cover(color, opacity = 0.5) {
+                create_cover(color, opacity = 0.5, is_show = true) {
                     const html = `
                         <div
                             id="${this.id_name}"
@@ -5911,7 +6019,7 @@
                                 height: 120%;
                                 opacity: ${opacity};
                                 mix-blend-mode: multiply;
-                                display: block;
+                                display: ${is_show ? 'block' : 'none'};
                             "
                         ></div>`;
                     setTimeout(() => document.documentElement?.insertAdjacentHTML("afterbegin", html));
@@ -5927,29 +6035,83 @@
                     node && (node.style.background = color);
                 },
                 change_opacity(opacity) {
-                    if (this.current_opacity !== opacity) return;
+                    if (this.current_opacity === opacity) return;
                     this.current_opacity = opacity;
-                    const node = this.shade_node;
-                    node && (node.style.opacity = opacity);
+                    this._change_cover_property(opacity, (node, value) => (node.style.opacity = value));
+                    this._auto_set_dark_mode(opacity);
+                },
+                _add_header_css() {
+                    const css = `
+                        .bili-header .bili-header__banner {
+                            background: #242628 !important;
+                        }
+                    `;
+                    GM_Objects.inject_css(css);
+                },
+                _change_header_bgc(mode) {
+                    const h = document.getElementsByClassName('bili-header__banner');
+                    if (h.length > 0) h[0].style.backgroundColor = mode ? '#e3e5e7' : '#242628';
+                    else Colorful_Console.print('fail to get header element', 'warning');
                 },
                 init() {
-                    this.current_color = GM_Objects.get_value('shade_color') || this.colors.yellow;
                     this.current_opacity = this.opacity;
-                    this.create_cover(this.current_color, this.current_opacity);
+                    this.current_color = GM_Objects.get_value('shade_color') || this.colors.yellow;
+                    this._is_dark = Base_Info_Match.get_cookie_by_name('theme_style') === 'dark';
+                    if (this._is_dark && this.site_id === 0) this._add_header_css();
+                    if (this.site_id !== 1) this.create_cover(this.current_color, this.current_opacity, !this._is_dark);
                 },
-                main() {
-                    // 每次打开页面都写入透明度
+                _menus_id_list: null,
+                _setup_shader() {
                     GM_Objects.set_value('shade_opacity', this.current_opacity);
                     const uppercase = (e) => e.slice(0, 1).toUpperCase() + e.slice(1);
-                    Object.keys(this.colors).forEach((e, index) => GM_Objects.registermenucommand(uppercase(e), this.set_color.bind(this, e), e.slice(0, 1) + index));
+                    this._menus_id_list = Object.keys(this.colors).map((e, index) => GM_Objects.registermenucommand(uppercase(e), this.set_color.bind(this, e), e.slice(0, 1) + index));
                     GM_Objects.addvaluechangeistener('shade_color', ((...args) => this.set_color(args[2], false)).bind(this));
                     GM_Objects.addvaluechangeistener('shade_opacity', ((...args) => this.change_opacity(args[2])).bind(this));
+                },
+                /**
+                 * @param {string | number} value
+                 * @param {function} func
+                 */
+                _change_cover_property(value, func) {
+                    const node = this.shade_node;
+                    node && func(node, value);
+                },
+                _hide_cover(mode) { this._change_cover_property(mode ? 'block' : 'none', (node, value) => (node.style.display = value)); },
+                _set_cookie(mode) {
+                    // 'dark', light
+                    const cookie = {
+                        name: 'theme_style',
+                        value: mode ? 'light' : 'dark',
+                        domain: '.bilibili.com',
+                        path: '/',
+                        expirationDate: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 365)
+                    };
+                    GM_Objects.set_cookie(cookie);
+                },
+                _auto_set_dark_mode(opacity) { opacity > 0.35 && this._set_cookie(false); },
+                main() {
+                    if (!this._is_dark) this._auto_set_dark_mode(this.current_opacity);
+                    if (this.site_id !== 1) this._setup_shader();
+                    Object.defineProperty(Dark_Mode, 'mode', {
+                        set: (v) => {
+                            this._hide_cover(v);
+                            this._change_header_bgc(v);
+                            this._set_cookie(v);
+                        }
+                    });
+                },
+                // 备用
+                get _os_dark_mode() { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; },
+                _add_listen() {
+                    // 监听系统的设置变化
+                    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {});
                 }
             },
             get_funcs(id) {
                 const f = () => GM_Objects.registermenucommand('Support || Donation', Support_Me.main.bind(Support_Me));
                 f.start = 1, f.type = 1;
                 if (this._shade.run_in.includes(id)) {
+                    this._shade.site_id = id;
                     this._shade.init();
                     const a = this._shade.main.bind(this._shade);
                     a.start = 1, a.type = 1;
