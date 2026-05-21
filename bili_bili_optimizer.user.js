@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.7.2
+// @version      3.7.3
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -2206,7 +2206,7 @@
                 // 各个百分段的拦截次数
                 data = [0.25, 0.5, 0.75].map(e => ' ' + e * 100 + '% block times less than: ' + this.block_ups[Math.floor(e * i)].visited_times + ';'),
                 a = this.block_ups[i - 1];
-            data.push(' up of most block: ' + a.up_name + ', ' + a.visited_times + ';');
+            data.push(' up of most block: ' + a.name + ', ' + a.visited_times + ';');
             data.push('-'.repeat(42));
             return data;
         },
@@ -2446,12 +2446,12 @@
             // 2. 缓存up
             // 3. 拦截关键词, 如果包含a类关键词, 拉黑up在缓存
             // 4. 最后检查拦截视频
-            const { title, mid, bvid, up_name } = info;
+            const { title, mid, bvid, name } = info;
             if (this._user_id === mid || this._author_id === mid) return false;
             else if (this.block_ups.includes_r(mid) || (this.current_video_mid !== mid && this.cache_block_ups.includes_r(mid))) return true;
             else if (this.has_checked_videos.includes(bvid)) return false;
             else if (this.block_videos.includes_r(bvid) || this.cache_block_videos.includes_r(bvid)) return true;
-            const r = this.key_check(title + "_" + up_name);
+            const r = this.key_check(title + "_" + name);
             if (r > 0) {
                 r == 2 && this.cache_block_ups.push(mid);
                 return true;
@@ -3724,9 +3724,9 @@
                 /**
                  * 读取目标节点元素的视频标题和up名称, 由于上面的添加信息到节点的操作, 不能直接读取标题的内容而是悬浮时显示的title
                  * @param {HTMLElement} node
-                 * @returns {object} { up_name: '', title: '' }
+                 * @returns {object} { name: '', title: '' }
                  */
-                get_title_up_name: (node) => ({ up_name: node.getElementsByClassName('bili-video-card__info--author')[0]?.innerHTML.trim() || '', title: node.getElementsByTagName('h3')[0]?.innerText.trim() || '' }),
+                get_title_up_name: (node) => ({ name: node.getElementsByClassName('bili-video-card__info--author')[0]?.innerHTML.trim() || '', title: node.getElementsByTagName('h3')[0]?.innerText.trim() || '' }),
                 /**
                  * 用于处理节点名称的匹配方式
                  * @param {string} classname
@@ -3873,7 +3873,7 @@
                 // 不能采用清空数据的策略, 在视频播放页面该操作会导致侧边栏添加html元素时出现错误
                 // 筛选掉被过滤的内容, 重新生成新的数组
                 request_data_handler: (data, pre_data_check) => data.filter(e => !pre_data_check(e)),
-                get_title_up_name: (node) => [['title', 'title', 'title'], ['up_name', 'name', 'innerText']].reduce((t, c) => (t[c[0]] = node.getElementsByClassName(c[1])[0]?.[c[2]]?.trim() || '', t), {}),
+                get_title_up_name: (node) => [['title', 'title', 'title'], ['name', 'name', 'innerText']].reduce((t, c) => (t[c[0]] = node.getElementsByClassName(c[1])[0]?.[c[2]]?.trim() || '', t), {}),
                 /**
                  * 视频页面的数据请求会发生两种情况: 1. 第一次载入, 请求一次, 因为html上的数据
                  * B站在视频播放页这里的操作很迷, 最多可能产生3次数据请求, 一般为2次, 首次可能为1次
@@ -4116,7 +4116,7 @@
             get_up_video_info: (node) => {
                 const links = node.getElementsByTagName('a'), info = {
                     'mid': 0,
-                    'up_name': '',
+                    'name': '',
                     'bvid': '',
                     'title': '',
                 };
@@ -4131,7 +4131,7 @@
                     }
                 }
                 const data = this.#configs.get_title_up_name(node);
-                ['title', 'up_name'].forEach(e => (info[e] = data[e].toLowerCase()));
+                ['title', 'name'].forEach(e => (info[e] = data[e].toLowerCase()));
                 // 检查是否存在空的数据, 假如为空, 则表明内容可能不是视频
                 return Object.entries(info).every(([k, v]) => v ? true : Colorful_Console.print(`less data: ${k}`, 'debug')) ? info : null;
             },
@@ -4638,8 +4638,8 @@
                                 if (node.dataset.is_hidden) continue;
                                 const info = a(node);
                                 if (info) {
-                                    const { title, up_name } = info;
-                                    if (data.some(e => title.includes(e) || up_name.includes(e))) {
+                                    const { title, name } = info;
+                                    if (data.some(e => title.includes(e) || name.includes(e))) {
                                         b(node), c(node, 'is_hidden', 1);
                                     }
                                 }
@@ -4873,7 +4873,7 @@
                     document.body.appendChild(button);
                     return button;
                 },
-                _create_event(button, mode, mid, up_name) {
+                _create_event(button, mode, mid, name) {
                     button.onclick = (event) => {
                         const target = event.target;
                         let text = "Block";
@@ -4883,7 +4883,7 @@
                             const now = Date.now();
                             const info = {
                                 mid: mid,
-                                up_name: up_name,
+                                name: name,
                                 add_date: now,
                                 last_active_date: now,
                                 visited_times: 1,
@@ -4901,14 +4901,14 @@
                 main() {
                     this._maintain();
                     setTimeout(() => {
-                        const title = document.title, up_name = title.split('的个人空间')[0];
-                        if (up_name === 'undefined' || up_name.length === title.length) return Colorful_Console.print('fail to get the upname', 'debug');
+                        const title = document.title, name = title.split('的个人空间')[0];
+                        if (name === 'undefined' || name.length === title.length) return Colorful_Console.print('fail to get the upname', 'debug');
                         const mid = Base_Info_Match.get_mid(location.href);
                         if (mid) {
                             const info = this._check_whitelist_user(mid);
                             if (info) return Colorful_Console.print(info, 'debug');
                             const mode = Statics_Variant_Manager.up_part.check(mid);
-                            this._create_event(this._create_button(mode), mode, mid, up_name);
+                            this._create_event(this._create_button(mode), mode, mid, name);
                         } else Colorful_Console.print('mid is null', 'debug');
                     }, 3000);
                 }
@@ -6040,18 +6040,20 @@
                     this._change_cover_property(opacity, (node, value) => (node.style.opacity = value));
                     this._auto_set_dark_mode(opacity);
                 },
+                _header_css : null,
                 _add_header_css() {
                     const css = `
                         .bili-header .bili-header__banner {
                             background: #242628 !important;
                         }
                     `;
-                    GM_Objects.inject_css(css);
+                    this._header_css = GM_Objects.inject_css(css);
                 },
                 _change_header_bgc(mode) {
-                    const h = document.getElementsByClassName('bili-header__banner');
-                    if (h.length > 0) h[0].style.backgroundColor = mode ? '#e3e5e7' : '#242628';
-                    else Colorful_Console.print('fail to get header element', 'warning');
+                    if (mode && this._header_css){
+                        this._header_css.remove();
+                        this._header_css = null;
+                    } else if (!mode) this._add_header_css();
                 },
                 init() {
                     this.current_opacity = this.opacity;
@@ -6150,7 +6152,7 @@
                     // 读取基本的四个元素信息
                     const info = {
                         mid: parseInt(e.mid || e.owner?.mid || 0),
-                        up_name: check_data(e.author || e.owner?.name),
+                        name: check_data(e.author || e.owner?.name),
                         title: check_data(e.title),
                         bvid: check_data(e.bvid)
                     };
