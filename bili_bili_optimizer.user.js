@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bili_bili_optimizer
 // @namespace    https://github.com/Kyouichirou
-// @version      3.7.3
+// @version      3.7.5
 // @description  control and enjoy bilibili!
 // @author       Lian, https://lianhwang.netlify.app/
 // @icon         https://www.bilibili.com/favicon.ico
@@ -3621,7 +3621,7 @@
         // 启动时需要启动的函数
         #start_load_funcs = [];
         // 追踪标记
-        static track_tags = ['spm_id_from', '?vid', 'vd_source', 'from_spmid', 'buvid'];
+        static track_tags = ['spm_id_from', '?vid', 'vd_source', 'from_spmid', 'buvid', 'trackid'];
         // 清除url中的追踪标记
         static clear_track_tag(url) {
             // static, 相互之间访问的时候, this的指向是class自身而不是实例对象
@@ -3765,7 +3765,7 @@
                     }).catch(() => Colorful_Console.print('watch_later: get_video_base_info error', 'crash', true));
                 },
                 keydown_action: {
-                    get _button() { return document.getElementsByClassName('primary-btn roll-btn')[0]; },
+                    get _button() { return document.getElementsByClassName('roll-btn')[0]; },
                     // 判断元素是否在可视区域内
                     _element_is_inview(el) {
                         const rect = el.getBoundingClientRect();
@@ -4356,10 +4356,7 @@
             _all: {
                 run_in: Array.from({ length: Object.entries(this.#site_configs).length }, (_val, index) => index),
                 css: (_user_is_login) => `
-                .bili-header .left-entry .default-entry,
-                a.download-entry.download-client-trigger,
-                .bili-header .loc-mc-box,
-                .bili-header .bili-header__banner .banner-img,
+                .v-popover-wrap.left-entry__item,
                 .bili-header .bili-header__banner .header-banner__inner,
                 .animated-banner,
                 li.v-popover-wrap.left-loc-entry{
@@ -6318,7 +6315,7 @@
                 check_other_requets: this.#user_is_login ? (url) => {
                     // 点赞可以取消, 这里不对post的内容拦截来判断到底是点赞还是取消点赞, 硬币不可撤销, 这里不处理取消点赞操作
                     const api_prefix = this.#configs.interpose_api_prefix,
-                        i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.endsWith(api_prefix + e));
+                        i = ['web-interface/archive/like', 'web-interface/coin/add', 'web-interface/archive/like/tripl'].findIndex(e => url.includes(api_prefix + e));
                     if (i < 0) return url.includes(api_prefix + 'web-show/res/locs?');
                     else this.#video_instance.key_rate_video(i + 1, false);
                 } : (url) => url.includes(this.#configs.interpose_api_prefix + 'web-show/res/locs?'),
